@@ -82,6 +82,7 @@ import './services/model/common/modelService.js';
 import './services/notebook/common/notebookDocumentService.js';
 import './services/commands/common/commandService.js';
 import './services/themes/browser/workbenchThemeService.js';
+import './services/themes/browser/userThemeService.js';
 import './services/label/common/labelService.js';
 import './services/extensions/common/extensionManifestPropertiesService.js';
 import './services/extensionManagement/common/extensionGalleryService.js';
@@ -191,6 +192,7 @@ import './services/accounts/common/defaultAccount.js';
 
 // Preferences
 import './contrib/preferences/browser/preferences.contribution.js';
+import './contrib/themeStudio/browser/themeStudio.contribution.js';
 import './contrib/preferences/browser/keybindingsEditorContribution.js';
 import './contrib/preferences/browser/preferencesSearch.js';
 
