@@ -4,8 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../nls.js';
-import { registerEditorPane, EditorPaneDescriptor } from '../../../browser/editor.js';
-import { EditorExtensions, IEditorFactoryRegistry } from '../../../common/editor.js';
+import { EditorPaneDescriptor, IEditorPaneRegistry } from '../../../browser/editor.js';
+import { EditorExtensions, IEditorFactoryRegistry, IEditorSerializer } from '../../../common/editor.js';
 import { ThemeStudioEditor } from './themeStudioEditor.js';
 import { ThemeStudioInput } from './themeStudioInput.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -17,19 +17,20 @@ import { Categories } from '../../../../platform/action/common/actionCommonCateg
 import { EditorInput } from '../../../common/editor/editorInput.js';
 
 // Register the editor pane
-registerEditorPane(
-	EditorPaneDescriptor.create(
-		ThemeStudioEditor,
-		ThemeStudioEditor.ID,
-		localize('themeStudio', "Theme Studio")
-	),
-	[
-		new SyncDescriptor(ThemeStudioInput)
-	]
-);
+Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane)
+	.registerEditorPane(
+		EditorPaneDescriptor.create(
+			ThemeStudioEditor,
+			ThemeStudioEditor.ID,
+			localize('themeStudio', "Theme Studio")
+		),
+		[
+			new SyncDescriptor(ThemeStudioInput)
+		]
+	);
 
-// Register editor input factory
-class ThemeStudioInputFactory implements any {
+// Register editor input serializer
+class ThemeStudioInputSerializer implements IEditorSerializer {
 	canSerialize(): boolean {
 		return true;
 	}
@@ -43,10 +44,11 @@ class ThemeStudioInputFactory implements any {
 	}
 }
 
-Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorFactory(
-	ThemeStudioInput.ID,
-	ThemeStudioInputFactory
-);
+Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory)
+	.registerEditorSerializer(
+		ThemeStudioInput.ID,
+		ThemeStudioInputSerializer
+	);
 
 // Register command to open Theme Studio
 registerAction2(class OpenThemeStudioAction extends Action2 {
