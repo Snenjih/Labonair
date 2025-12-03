@@ -1,0 +1,68 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Zen Mode HUD */
+.zen-mode-hud {
+	position: fixed;
+	top: 20px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10000;
+	pointer-events: none;
+	transition: opacity 0.3s ease;
+}
+
+.zen-mode-hud .zen-hud-content {
+	background: rgba(0, 0, 0, 0.7);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	border-radius: 8px;
+	padding: 12px 24px;
+	display: flex;
+	align-items: center;
+	gap: 20px;
+	color: rgba(255, 255, 255, 0.9);
+	font-size: 13px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Light theme support */
+.monaco-workbench.vs .zen-mode-hud .zen-hud-content {
+	background: rgba(255, 255, 255, 0.7);
+	color: rgba(0, 0, 0, 0.9);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.zen-mode-hud .zen-hud-info {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.zen-mode-hud .zen-hud-filename {
+	font-weight: 600;
+}
+
+.zen-mode-hud .zen-hud-separator {
+	opacity: 0.5;
+}
+
+.zen-mode-hud .zen-hud-project {
+	opacity: 0.8;
+	font-size: 12px;
+}
+
+.zen-mode-hud .zen-hud-time {
+	font-family: monospace;
+	font-weight: 600;
+	min-width: 60px;
+	text-align: center;
+}
+
+.zen-mode-hud .zen-hud-hint {
+	opacity: 0.6;
+	font-size: 11px;
+	font-style: italic;
+}

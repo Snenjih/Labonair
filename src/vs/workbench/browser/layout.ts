@@ -47,6 +47,7 @@ import { AuxiliaryBarPart } from './parts/auxiliarybar/auxiliaryBarPart.js';
 import { ITelemetryService } from '../../platform/telemetry/common/telemetry.js';
 import { IAuxiliaryWindowService } from '../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { CodeWindow, mainWindow } from '../../base/browser/window.js';
+import { ZenModeHUD } from './parts/zenMode/zenModeHUD.js';
 
 //#region Layout Implementation
 
@@ -289,6 +290,8 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 	private themeService!: IThemeService;
 	private statusBarService!: IStatusbarService;
 	private logService!: ILogService;
+
+	private zenModeHUD: ZenModeHUD | undefined;
 	private telemetryService!: ITelemetryService;
 	private auxiliaryWindowService!: IAuxiliaryWindowService;
 
@@ -1389,6 +1392,21 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 				this.setActivityBarHidden(true);
 			}
 
+			// Labonair: Show Zen Mode 2.0 HUD
+			const showHUD = this.configurationService.getValue<boolean>('zenMode.showHUD') !== false;
+			const hudTimeout = this.configurationService.getValue<number>('zenMode.hudTimeout') || 3;
+			if (!this.zenModeHUD && this.mainContainer) {
+				this.zenModeHUD = new ZenModeHUD(
+					this.mainContainer,
+					{ showHUD, hudTimeout },
+					this.editorService,
+					this.contextService
+				);
+			}
+			if (this.zenModeHUD) {
+				this.zenModeHUD.show();
+			}
+
 			if (config.hideStatusBar) {
 				this.setStatusBarHidden(true);
 			}
@@ -1457,6 +1475,13 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 		// Zen Mode Inactive
 		else {
+			// Labonair: Hide and dispose Zen Mode HUD
+			if (this.zenModeHUD) {
+				this.zenModeHUD.hide();
+				this.zenModeHUD.dispose();
+				this.zenModeHUD = undefined;
+			}
+
 			if (zenModeExitInfo.wasVisible.panel) {
 				this.setPanelHidden(false, true);
 			}

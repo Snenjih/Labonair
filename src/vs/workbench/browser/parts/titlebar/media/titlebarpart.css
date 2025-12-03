@@ -465,3 +465,58 @@
 	border-radius: 16px;
 	text-align: center;
 }
+
+/* Labonair Titlebar Components */
+
+/* Settings Split-Button */
+.monaco-workbench .part.titlebar .settings-split-button {
+	display: flex;
+	align-items: center;
+	height: 100%;
+	-webkit-app-region: no-drag;
+}
+
+.monaco-workbench .part.titlebar .settings-split-button .action-label {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 35px;
+	padding: 0 8px;
+	cursor: pointer;
+	transition: background-color 0.1s ease;
+}
+
+.monaco-workbench .part.titlebar .settings-split-button .action-label:hover {
+	background-color: rgba(255, 255, 255, 0.1);
+}
+
+.monaco-workbench .part.titlebar.light .settings-split-button .action-label:hover {
+	background-color: rgba(0, 0, 0, 0.1);
+}
+
+.monaco-workbench .part.titlebar .settings-split-button .settings-button {
+	border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.monaco-workbench .part.titlebar.light .settings-split-button .settings-button {
+	border-right: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.monaco-workbench .part.titlebar .settings-split-button .dropdown-button {
+	padding: 0 4px;
+}
+
+.monaco-workbench .part.titlebar .settings-split-button .action-label .codicon {
+	font-size: 16px;
+	line-height: 16px;
+}
+
+/* Drag region adjustments for new titlebar elements */
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-drag-region {
+	pointer-events: none;
+}
+
+.monaco-workbench .part.titlebar .settings-split-button,
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container {
+	pointer-events: auto;
+}

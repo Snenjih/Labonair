@@ -47,7 +47,9 @@ import { ResolvedKeybinding } from '../../../../base/common/keybindings.js';
 import { EditorCommandsContextActionRunner } from '../editor/editorTabsControl.js';
 import { IEditorCommandsContext, IEditorPartOptionsChangeEvent, IToolbarActions } from '../../../common/editor.js';
 import { CodeWindow, mainWindow } from '../../../../base/browser/window.js';
-import { ACCOUNTS_ACTIVITY_TILE_ACTION, GLOBAL_ACTIVITY_TITLE_ACTION } from './titlebarActions.js';
+import { ACCOUNTS_ACTIVITY_TILE_ACTION, GLOBAL_ACTIVITY_TITLE_ACTION, SETTINGS_SPLIT_BUTTON_ACTION, TITLEBAR_ACCOUNT_ACTION, SETTINGS_SPLIT_BUTTON_ACTION_ID, TITLEBAR_ACCOUNT_ACTION_ID } from './titlebarActions.js';
+import { SettingsSplitButtonActionViewItem } from './settingsSplitButton.js';
+import { TitlebarAccountActionViewItem } from './titlebarAccountAction.js';
 import { IView } from '../../../../base/browser/ui/grid/grid.js';
 import { createInstantHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
@@ -584,6 +586,16 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 
 	private actionViewItemProvider(action: IAction, options: IBaseActionViewItemOptions): IActionViewItem | undefined {
 
+		// --- Labonair Titlebar Actions
+		if (!this.isAuxiliary) {
+			if (action.id === SETTINGS_SPLIT_BUTTON_ACTION_ID) {
+				return this.instantiationService.createInstance(SettingsSplitButtonActionViewItem, action, options);
+			}
+			if (action.id === TITLEBAR_ACCOUNT_ACTION_ID) {
+				return this.instantiationService.createInstance(TitlebarAccountActionViewItem, options);
+			}
+		}
+
 		// --- Activity Actions
 		if (!this.isAuxiliary) {
 			if (action.id === GLOBAL_ACTIVITY_ID) {
@@ -677,6 +689,14 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 					actions,
 					() => !this.editorActionsEnabled || this.isCompact // layout actions move to "..." if editor actions are enabled unless compact
 				);
+			}
+
+			// --- Labonair Titlebar Actions (User + Settings)
+			if (!this.isAuxiliary && !this.isCompact) {
+				// Add Account/User icon
+				actions.primary.push(TITLEBAR_ACCOUNT_ACTION);
+				// Add Settings split-button
+				actions.primary.push(SETTINGS_SPLIT_BUTTON_ACTION);
 			}
 
 			// --- Activity Actions (always at the end)

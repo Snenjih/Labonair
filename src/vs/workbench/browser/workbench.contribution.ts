@@ -915,6 +915,17 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 				'type': 'boolean',
 				'default': true,
 				'description': localize('zenMode.silentNotifications', "Controls whether notifications do not disturb mode should be enabled while in Zen Mode. If true, only error notifications will pop out.")
+			},
+			'zenMode.showHUD': {
+				'type': 'boolean',
+				'default': true,
+				'description': localize('zenMode.showHUD', "Controls whether to show a transparent HUD overlay with contextual information (file name, project, time) when in Zen Mode.")
+			},
+			'zenMode.hudTimeout': {
+				'type': 'number',
+				'default': 3,
+				'minimum': 0,
+				'description': localize('zenMode.hudTimeout', "Controls how many seconds the Zen Mode HUD should remain visible before auto-hiding. Set to 0 to disable auto-hide.")
 			}
 		}
 	});

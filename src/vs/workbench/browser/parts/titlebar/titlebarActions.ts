@@ -276,3 +276,26 @@ export const GLOBAL_ACTIVITY_TITLE_ACTION: IAction = {
 	enabled: true,
 	run: function (): void { }
 };
+
+// --- Labonair Titlebar Actions --- //
+
+export const SETTINGS_SPLIT_BUTTON_ACTION_ID = 'workbench.action.titlebar.settings';
+export const TITLEBAR_ACCOUNT_ACTION_ID = 'workbench.action.titlebar.account';
+
+export const SETTINGS_SPLIT_BUTTON_ACTION: IAction = {
+	id: SETTINGS_SPLIT_BUTTON_ACTION_ID,
+	label: localize('settings', "Settings"),
+	tooltip: localize('settings', "Settings"),
+	class: undefined,
+	enabled: true,
+	run: function (): void { }
+};
+
+export const TITLEBAR_ACCOUNT_ACTION: IAction = {
+	id: TITLEBAR_ACCOUNT_ACTION_ID,
+	label: localize('account', "Account"),
+	tooltip: localize('account', "Account"),
+	class: undefined,
+	enabled: true,
+	run: function (): void { }
+};
