@@ -186,8 +186,8 @@ registerSingleton(IAllowedMcpServersService, AllowedMcpServersService, Instantia
 // Default Account
 import './services/accounts/common/defaultAccount.js';
 
-// Telemetry
-import './contrib/telemetry/browser/telemetry.contribution.js';
+// Telemetry - Disabled for Labonair (privacy-first)
+// import './contrib/telemetry/browser/telemetry.contribution.js';
 
 // Preferences
 import './contrib/preferences/browser/preferences.contribution.js';
@@ -203,12 +203,12 @@ import './contrib/notebook/browser/notebook.contribution.js';
 // Speech
 import './contrib/speech/browser/speech.contribution.js';
 
-// Chat
-import './contrib/chat/browser/chat.contribution.js';
-import './contrib/inlineChat/browser/inlineChat.contribution.js';
-import './contrib/mcp/browser/mcp.contribution.js';
-import './contrib/chat/browser/chatSessions.contribution.js';
-import './contrib/chat/browser/chatContext.contribution.js';
+// Chat - Disabled for Labonair (cloud-AI features removed, can be installed as extensions)
+// import './contrib/chat/browser/chat.contribution.js';
+// import './contrib/inlineChat/browser/inlineChat.contribution.js';
+// import './contrib/mcp/browser/mcp.contribution.js';
+// import './contrib/chat/browser/chatSessions.contribution.js';
+// import './contrib/chat/browser/chatContext.contribution.js';
 
 // Interactive
 import './contrib/interactive/browser/interactive.contribution.js';
@@ -342,13 +342,13 @@ import './contrib/themes/browser/themes.contribution.js';
 // Update
 import './contrib/update/browser/update.contribution.js';
 
-// Surveys
-import './contrib/surveys/browser/nps.contribution.js';
-import './contrib/surveys/browser/languageSurveys.contribution.js';
+// Surveys - Disabled for Labonair (no marketing/promotional content)
+// import './contrib/surveys/browser/nps.contribution.js';
+// import './contrib/surveys/browser/languageSurveys.contribution.js';
 
-// Welcome
-import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
-import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
+// Welcome - Disabled for Labonair (no marketing/promotional content)
+// import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
+// import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
 import './contrib/welcomeViews/common/viewsWelcome.contribution.js';
 import './contrib/welcomeViews/common/newFile.contribution.js';
 
@@ -371,8 +371,8 @@ import './contrib/languageStatus/browser/languageStatus.contribution.js';
 // Authentication
 import './contrib/authentication/browser/authentication.contribution.js';
 
-// User Data Sync
-import './contrib/userDataSync/browser/userDataSync.contribution.js';
+// User Data Sync - Disabled for Labonair (cloud sync removed for privacy)
+// import './contrib/userDataSync/browser/userDataSync.contribution.js';
 
 // User Data Profiles
 import './contrib/userDataProfile/browser/userDataProfile.contribution.js';

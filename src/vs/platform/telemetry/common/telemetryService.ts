@@ -4,10 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { DisposableStore } from '../../../base/common/lifecycle.js';
-import { mixin } from '../../../base/common/objects.js';
-import { isWeb } from '../../../base/common/platform.js';
 import { PolicyCategory } from '../../../base/common/policy.js';
-import { escapeRegExpCharacters } from '../../../base/common/strings.js';
 import { localize } from '../../../nls.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { ConfigurationScope, Extensions, IConfigurationRegistry } from '../../configuration/common/configurationRegistry.js';
@@ -16,7 +13,7 @@ import { IProductService } from '../../product/common/productService.js';
 import { Registry } from '../../registry/common/platform.js';
 import { ClassifiedEvent, IGDPRProperty, OmitMetadata, StrictPropertyCheck } from './gdprTypings.js';
 import { ITelemetryData, ITelemetryService, TelemetryConfiguration, TelemetryLevel, TELEMETRY_CRASH_REPORTER_SETTING_ID, TELEMETRY_OLD_SETTING_ID, TELEMETRY_SECTION_ID, TELEMETRY_SETTING_ID, ICommonProperties } from './telemetry.js';
-import { cleanData, getTelemetryLevel, ITelemetryAppender } from './telemetryUtils.js';
+import { getTelemetryLevel, ITelemetryAppender } from './telemetryUtils.js';
 
 export interface ITelemetryServiceConfig {
 	appenders: ITelemetryAppender[];
@@ -39,22 +36,19 @@ export class TelemetryService implements ITelemetryService {
 	readonly firstSessionDate: string;
 	readonly msftInternal: boolean | undefined;
 
-	private _appenders: ITelemetryAppender[];
+	// Labonair: Telemetry disabled - keeping only necessary fields
 	private _commonProperties: ICommonProperties;
-	private _experimentProperties: { [name: string]: string } = {};
-	private _piiPaths: string[];
 	private _telemetryLevel: TelemetryLevel;
 	private _sendErrorTelemetry: boolean;
 
 	private readonly _disposables = new DisposableStore();
-	private _cleanupPatterns: RegExp[] = [];
 
 	constructor(
 		config: ITelemetryServiceConfig,
 		@IConfigurationService private _configurationService: IConfigurationService,
 		@IProductService private _productService: IProductService
 	) {
-		this._appenders = config.appenders;
+		// Labonair: Telemetry disabled - minimal initialization
 		this._commonProperties = config.commonProperties ?? Object.create(null);
 
 		this.sessionId = this._commonProperties['sessionID'] as string;
@@ -64,20 +58,8 @@ export class TelemetryService implements ITelemetryService {
 		this.firstSessionDate = this._commonProperties['common.firstSessionDate'] as string;
 		this.msftInternal = this._commonProperties['common.msftInternal'] as boolean | undefined;
 
-		this._piiPaths = config.piiPaths || [];
 		this._telemetryLevel = TelemetryLevel.USAGE;
 		this._sendErrorTelemetry = !!config.sendErrorTelemetry;
-
-		// static cleanup pattern for: `vscode-file:///DANGEROUS/PATH/resources/app/Useful/Information`
-		this._cleanupPatterns = [/(vscode-)?file:\/\/.*?\/resources\/app\//gi];
-
-		for (const piiPath of this._piiPaths) {
-			this._cleanupPatterns.push(new RegExp(escapeRegExpCharacters(piiPath), 'gi'));
-
-			if (piiPath.indexOf('\\') >= 0) {
-				this._cleanupPatterns.push(new RegExp(escapeRegExpCharacters(piiPath.replace(/\\/g, '/')), 'gi'));
-			}
-		}
 
 		this._updateTelemetryLevel();
 		this._disposables.add(this._configurationService.onDidChangeConfiguration(e => {
@@ -93,7 +75,8 @@ export class TelemetryService implements ITelemetryService {
 	}
 
 	setExperimentProperty(name: string, value: string): void {
-		this._experimentProperties[name] = value;
+		// Labonair: Telemetry is completely disabled - No-Op implementation
+		return;
 	}
 
 	private _updateTelemetryLevel(): void {
@@ -122,53 +105,31 @@ export class TelemetryService implements ITelemetryService {
 		this._disposables.dispose();
 	}
 
-	private _log(eventName: string, eventLevel: TelemetryLevel, data?: ITelemetryData) {
-		// don't send events when the user is optout
-		if (this._telemetryLevel < eventLevel) {
-			return;
-		}
-
-		// add experiment properties
-		data = mixin(data, this._experimentProperties);
-
-		// remove all PII from data
-		data = cleanData(data, this._cleanupPatterns);
-
-		// add common properties
-		data = mixin(data, this._commonProperties);
-
-		// Log to the appenders of sufficient level
-		this._appenders.forEach(a => a.log(eventName, data ?? {}));
-	}
-
 	publicLog(eventName: string, data?: ITelemetryData) {
-		this._log(eventName, TelemetryLevel.USAGE, data);
+		// Labonair: Telemetry is completely disabled - No-Op implementation
+		return;
 	}
 
 	publicLog2<E extends ClassifiedEvent<OmitMetadata<T>> = never, T extends IGDPRProperty = never>(eventName: string, data?: StrictPropertyCheck<T, E>) {
-		this.publicLog(eventName, data as ITelemetryData);
+		// Labonair: Telemetry is completely disabled - No-Op implementation
+		return;
 	}
 
 	publicLogError(errorEventName: string, data?: ITelemetryData) {
-		if (!this._sendErrorTelemetry) {
-			return;
-		}
-
-		// Send error event and anonymize paths
-		this._log(errorEventName, TelemetryLevel.ERROR, data);
+		// Labonair: Telemetry is completely disabled - No-Op implementation
+		return;
 	}
 
 	publicLogError2<E extends ClassifiedEvent<OmitMetadata<T>> = never, T extends IGDPRProperty = never>(eventName: string, data?: StrictPropertyCheck<T, E>) {
-		this.publicLogError(eventName, data as ITelemetryData);
+		// Labonair: Telemetry is completely disabled - No-Op implementation
+		return;
 	}
 }
 
 function getTelemetryLevelSettingDescription(): string {
-	const telemetryText = localize('telemetry.telemetryLevelMd', "Controls {0} telemetry, first-party extension telemetry, and participating third-party extension telemetry. Some third party extensions might not respect this setting. Consult the specific extension's documentation to be sure. Telemetry helps us better understand how {0} is performing, where improvements need to be made, and how features are being used.", product.nameLong);
-	const externalLinksStatement = !product.privacyStatementUrl ?
-		localize("telemetry.docsStatement", "Read more about the [data we collect]({0}).", 'https://aka.ms/vscode-telemetry') :
-		localize("telemetry.docsAndPrivacyStatement", "Read more about the [data we collect]({0}) and our [privacy statement]({1}).", 'https://aka.ms/vscode-telemetry', product.privacyStatementUrl);
-	const restartString = !isWeb ? localize('telemetry.restart', 'A full restart of the application is necessary for crash reporting changes to take effect.') : '';
+	const telemetryText = localize('telemetry.telemetryLevelMd', "Labonair does NOT collect any telemetry data. This setting controls third-party extension telemetry only. Some third party extensions might not respect this setting. Consult the specific extension's documentation to be sure.", product.nameLong);
+	const externalLinksStatement = '';
+	const restartString = '';
 
 	const crashReportsHeader = localize('telemetry.crashReports', "Crash Reports");
 	const errorsHeader = localize('telemetry.errors', "Error Telemetry");
@@ -212,13 +173,13 @@ configurationRegistry.registerConfiguration({
 			'type': 'string',
 			'enum': [TelemetryConfiguration.ON, TelemetryConfiguration.ERROR, TelemetryConfiguration.CRASH, TelemetryConfiguration.OFF],
 			'enumDescriptions': [
-				localize('telemetry.telemetryLevel.default', "Sends usage data, errors, and crash reports."),
-				localize('telemetry.telemetryLevel.error', "Sends general error telemetry and crash reports."),
-				localize('telemetry.telemetryLevel.crash', "Sends OS level crash reports."),
-				localize('telemetry.telemetryLevel.off', "Disables all product telemetry.")
+				localize('telemetry.telemetryLevel.default', "Labonair does not send any telemetry. This controls third-party extensions only."),
+				localize('telemetry.telemetryLevel.error', "Labonair does not send any telemetry. This controls third-party extensions only."),
+				localize('telemetry.telemetryLevel.crash', "Labonair does not send any telemetry. This controls third-party extensions only."),
+				localize('telemetry.telemetryLevel.off', "Disables all telemetry including third-party extensions.")
 			],
 			'markdownDescription': getTelemetryLevelSettingDescription(),
-			'default': TelemetryConfiguration.ON,
+			'default': TelemetryConfiguration.OFF,
 			'restricted': true,
 			'scope': ConfigurationScope.APPLICATION,
 			'tags': ['usesOnlineServices', 'telemetry'],

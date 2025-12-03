@@ -137,8 +137,8 @@ import './contrib/terminal/electron-browser/terminal.contribution.js';
 // Themes
 import './contrib/themes/browser/themes.test.contribution.js';
 import './services/themes/electron-browser/themes.contribution.js';
-// User Data Sync
-import './contrib/userDataSync/electron-browser/userDataSync.contribution.js';
+// User Data Sync - Disabled for Labonair (cloud sync removed for privacy)
+// import './contrib/userDataSync/electron-browser/userDataSync.contribution.js';
 
 // Tags
 import './contrib/tags/electron-browser/workspaceTagsService.js';
@@ -170,9 +170,9 @@ import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
 // Remote Tunnel
 import './contrib/remoteTunnel/electron-browser/remoteTunnel.contribution.js';
 
-// Chat
-import './contrib/chat/electron-browser/chat.contribution.js';
-import './contrib/inlineChat/electron-browser/inlineChat.contribution.js';
+// Chat - Disabled for Labonair (cloud-AI features removed, can be installed as extensions)
+// import './contrib/chat/electron-browser/chat.contribution.js';
+// import './contrib/inlineChat/electron-browser/inlineChat.contribution.js';
 // Encryption
 import './contrib/encryption/electron-browser/encryption.contribution.js';
 
