@@ -27,7 +27,8 @@ const editorConfiguration: IConfigurationNode = {
 			default: EDITOR_MODEL_DEFAULTS.tabSize,
 			minimum: 1,
 			maximum: 100,
-			markdownDescription: nls.localize('tabSize', "The number of spaces a tab is equal to. This setting is overridden based on the file contents when {0} is on.", '`#editor.detectIndentation#`')
+			markdownDescription: nls.localize('tabSize', "The number of spaces a tab is equal to. This setting is overridden based on the file contents when {0} is on.", '`#editor.detectIndentation#`'),
+			tags: ['common']
 		},
 		'editor.indentSize': {
 			'anyOf': [

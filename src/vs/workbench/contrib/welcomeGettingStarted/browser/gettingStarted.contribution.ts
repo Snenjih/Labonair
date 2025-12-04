@@ -316,7 +316,8 @@ configurationRegistry.registerConfiguration({
 				localize({ comment: ['This is the description for a setting. Values surrounded by single quotes are not to be translated.'], key: 'workbench.startupEditor.terminal' }, "Open a new terminal in the editor area."),
 			],
 			'default': 'welcomePage',
-			'description': localize('workbench.startupEditor', "Controls which editor is shown at startup, if none are restored from the previous session.")
+			'description': localize('workbench.startupEditor', "Controls which editor is shown at startup, if none are restored from the previous session."),
+			'tags': ['common']
 		},
 		'workbench.welcomePage.preferReducedMotion': {
 			scope: ConfigurationScope.APPLICATION,

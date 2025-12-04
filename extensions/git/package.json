@@ -3104,7 +3104,10 @@
           "type": "boolean",
           "scope": "resource",
           "description": "%config.enabled%",
-          "default": true
+          "default": true,
+          "tags": [
+            "common"
+          ]
         },
         "git.path": {
           "type": [
@@ -3155,7 +3158,8 @@
           "markdownDescription": "%config.autofetch%",
           "default": false,
           "tags": [
-            "usesOnlineServices"
+            "usesOnlineServices",
+            "common"
           ]
         },
         "git.autofetchPeriod": {
