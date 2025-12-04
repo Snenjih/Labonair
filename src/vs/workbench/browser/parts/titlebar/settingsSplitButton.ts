@@ -133,9 +133,9 @@ export class SettingsSplitButtonActionViewItem extends BaseActionViewItem {
 				run: () => this.commandService.executeCommand('workbench.extensions.action.showInstalledExtensions')
 			}),
 			toAction({
-				id: 'workbench.action.selectTheme',
-				label: localize('colorTheme', "Color Theme"),
-				run: () => this.commandService.executeCommand('workbench.action.selectTheme')
+				id: 'workbench.action.openThemeStudio',
+				label: localize('themeStudio', "Theme Studio"),
+				run: () => this.commandService.executeCommand('workbench.action.openThemeStudio')
 			})
 		];
 	}

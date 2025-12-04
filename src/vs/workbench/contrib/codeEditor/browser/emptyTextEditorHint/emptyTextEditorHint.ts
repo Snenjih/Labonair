@@ -52,7 +52,9 @@ export class EmptyTextEditorHintContribution extends Disposable implements IEdit
 		this._register(this.editor.onDidChangeModel(() => this.update()));
 		this._register(this.editor.onDidChangeModelLanguage(() => this.update()));
 		this._register(this.editor.onDidChangeModelContent(() => this.update()));
-		this._register(this.chatAgentService.onDidChangeAgents(() => this.update()));
+		if (this.chatAgentService) {
+			this._register(this.chatAgentService.onDidChangeAgents(() => this.update()));
+		}
 		this._register(this.editor.onDidChangeModelDecorations(() => this.update()));
 		this._register(this.editor.onDidChangeConfiguration((e: ConfigurationChangedEvent) => {
 			if (e.hasChanged(EditorOption.readOnly)) {
@@ -110,7 +112,7 @@ export class EmptyTextEditorHintContribution extends Disposable implements IEdit
 			return false;
 		}
 
-		const hasEditorAgents = Boolean(this.chatAgentService.getDefaultAgent(ChatAgentLocation.EditorInline));
+		const hasEditorAgents = Boolean(this.chatAgentService?.getDefaultAgent(ChatAgentLocation.EditorInline));
 		const shouldRenderDefaultHint = model?.uri.scheme === Schemas.untitled && languageId === PLAINTEXT_LANGUAGE_ID;
 		return hasEditorAgents || shouldRenderDefaultHint;
 	}
@@ -200,7 +202,7 @@ class EmptyTextEditorHintContentWidget extends Disposable implements IContentWid
 	}
 
 	private getHint() {
-		const hasInlineChatProvider = this.chatAgentService.getActivatedAgents().filter(candidate => candidate.locations.includes(ChatAgentLocation.EditorInline)).length > 0;
+		const hasInlineChatProvider = Boolean(this.chatAgentService?.getActivatedAgents().filter(candidate => candidate.locations.includes(ChatAgentLocation.EditorInline)).length);
 
 		const hintHandler: IContentActionHandler = {
 			disposables: this._store,

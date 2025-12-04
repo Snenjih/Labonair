@@ -9,9 +9,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IChatTerminalToolProgressPart, ITerminalChatService, ITerminalInstance, ITerminalService } from '../../../terminal/browser/terminal.js';
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { IChatService } from '../../../chat/common/chatService.js';
 import { TerminalChatContextKeys } from './terminalChat.js';
-import { LocalChatSessionUri } from '../../../chat/common/chatUri.js';
 import { isNumber, isString } from '../../../../../base/common/types.js';
 
 const enum StorageKeys {
@@ -57,8 +55,7 @@ export class TerminalChatService extends Disposable implements ITerminalChatServ
 		@ILogService private readonly _logService: ILogService,
 		@ITerminalService private readonly _terminalService: ITerminalService,
 		@IStorageService private readonly _storageService: IStorageService,
-		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
-		@IChatService private readonly _chatService: IChatService,
+		@IContextKeyService private readonly _contextKeyService: IContextKeyService
 	) {
 		super();
 
@@ -82,21 +79,6 @@ export class TerminalChatService extends Disposable implements ITerminalChatServ
 			this._terminalInstanceListenersByToolSessionId.deleteAndDispose(terminalToolSessionId);
 			this._persistToStorage();
 			this._updateHasToolTerminalContextKeys();
-		}));
-
-		this._register(this._chatService.onDidDisposeSession(e => {
-			if (LocalChatSessionUri.parseLocalSessionId(e.sessionResource) === terminalToolSessionId) {
-				this._terminalInstancesByToolSessionId.delete(terminalToolSessionId);
-				this._toolSessionIdByTerminalInstance.delete(instance);
-				this._terminalInstanceListenersByToolSessionId.deleteAndDispose(terminalToolSessionId);
-				// Clean up session auto approval state
-				const sessionId = LocalChatSessionUri.parseLocalSessionId(e.sessionResource);
-				if (sessionId) {
-					this._sessionAutoApprovalEnabled.delete(sessionId);
-				}
-				this._persistToStorage();
-				this._updateHasToolTerminalContextKeys();
-			}
 		}));
 
 		// Update context keys when terminal instances change (including when terminals are created, disposed, revealed, or hidden)
