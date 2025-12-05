@@ -47,6 +47,7 @@ import { defaultButtonStyles, defaultToggleStyles } from '../../../../platform/t
 import { asCssVariable, asCssVariableWithDefault, badgeBackground, badgeForeground, contrastBorder, editorForeground, inputBackground } from '../../../../platform/theme/common/colorRegistry.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IUserDataSyncEnablementService, IUserDataSyncService, SyncStatus } from '../../../../platform/userDataSync/common/userDataSync.js';
+import { IWorkbenchThemeService } from '../../../services/themes/common/workbenchThemeService.js';
 import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
 import { registerNavigableContainer } from '../../../browser/actions/widgetNavigationCommands.js';
 import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
@@ -255,6 +256,7 @@ export class SettingsEditor2 extends EditorPane {
 		@IWorkbenchConfigurationService private readonly configurationService: IWorkbenchConfigurationService,
 		@ITextResourceConfigurationService textResourceConfigurationService: ITextResourceConfigurationService,
 		@IThemeService themeService: IThemeService,
+		@IWorkbenchThemeService private readonly workbenchThemeService: IWorkbenchThemeService,
 		@IPreferencesService private readonly preferencesService: IPreferencesService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IPreferencesSearchService private readonly preferencesSearchService: IPreferencesSearchService,
@@ -1144,6 +1146,9 @@ export class SettingsEditor2 extends EditorPane {
 	}
 
 	private createSettingsTree(container: HTMLElement): void {
+		// Create Hero-Settings section first
+		this.createHeroSection(container);
+
 		this.settingRenderers = this._register(this.instantiationService.createInstance(SettingTreeRenderers));
 		this._register(this.settingRenderers.onDidChangeSetting(e => this.onDidChangeSetting(e.key, e.value, e.type, e.manualReset, e.scope)));
 		this._register(this.settingRenderers.onDidDismissExtensionSetting((e) => this.onDidDismissExtensionSetting(e)));
@@ -1237,6 +1242,87 @@ export class SettingsEditor2 extends EditorPane {
 			}
 
 			this.settingsTree.setSelection(element ? [element] : []);
+		}));
+	}
+
+	private createHeroSection(container: HTMLElement): void {
+		const heroSection = DOM.append(container, $('.settings-hero-section'));
+
+		// Theme Card
+		const themeCard = DOM.append(heroSection, $('.hero-card', { role: 'button', tabindex: '0' }));
+		DOM.append(themeCard, $('.codicon.codicon-symbol-color'));
+		DOM.append(themeCard, $('.hero-label', undefined, localize('heroTheme', "Color Theme")));
+
+		const themeSelect = DOM.append(themeCard, $('select.hero-control')) as HTMLSelectElement;
+		themeSelect.setAttribute('aria-label', localize('selectTheme', "Select Color Theme"));
+
+		// Populate themes
+		const currentTheme = this.configurationService.getValue<string>('workbench.colorTheme');
+		this.workbenchThemeService.getColorThemes().then(themes => {
+			themes.forEach(theme => {
+				const option = document.createElement('option');
+				option.value = theme.id;
+				option.textContent = theme.label;
+				if (theme.id === currentTheme) {
+					option.selected = true;
+				}
+				themeSelect.appendChild(option);
+			});
+		});
+
+		this._register(DOM.addStandardDisposableListener(themeSelect, 'change', () => {
+			this.configurationService.updateValue('workbench.colorTheme', themeSelect.value, ConfigurationTarget.USER);
+		}));
+
+		// Font Size Card
+		const fontSizeCard = DOM.append(heroSection, $('.hero-card'));
+		DOM.append(fontSizeCard, $('.codicon.codicon-text-size'));
+		DOM.append(fontSizeCard, $('.hero-label', undefined, localize('heroFontSize', "Font Size")));
+
+		const fontSizeInput = DOM.append(fontSizeCard, $('input.hero-control')) as HTMLInputElement;
+		fontSizeInput.type = 'number';
+		fontSizeInput.min = '6';
+		fontSizeInput.max = '100';
+		fontSizeInput.value = String(this.configurationService.getValue<number>('editor.fontSize') || 14);
+		fontSizeInput.setAttribute('aria-label', localize('setFontSize', "Set Font Size"));
+
+		this._register(DOM.addStandardDisposableListener(fontSizeInput, 'change', () => {
+			const value = parseInt(fontSizeInput.value, 10);
+			if (!isNaN(value) && value >= 6 && value <= 100) {
+				this.configurationService.updateValue('editor.fontSize', value, ConfigurationTarget.USER);
+			}
+		}));
+
+		// Zoom Card
+		const zoomCard = DOM.append(heroSection, $('.hero-card'));
+		DOM.append(zoomCard, $('.codicon.codicon-zoom-in'));
+		DOM.append(zoomCard, $('.hero-label', undefined, localize('heroZoom', "Zoom Level")));
+
+		const zoomControls = DOM.append(zoomCard, $('.hero-control.zoom-controls'));
+		const zoomDecrease = DOM.append(zoomControls, $('button.zoom-button', { 'aria-label': localize('decreaseZoom', "Decrease Zoom") }, '−'));
+		const zoomValue = DOM.append(zoomControls, $('span.zoom-value', undefined, '100%'));
+		const zoomIncrease = DOM.append(zoomControls, $('button.zoom-button', { 'aria-label': localize('increaseZoom', "Increase Zoom") }, '+'));
+
+		// Get current zoom level
+		const updateZoomDisplay = () => {
+			const zoom = this.configurationService.getValue<number>('window.zoomLevel') || 0;
+			const percentage = Math.round(100 * Math.pow(1.2, zoom));
+			zoomValue.textContent = `${percentage}%`;
+		};
+		updateZoomDisplay();
+
+		this._register(DOM.addStandardDisposableListener(zoomDecrease, DOM.EventType.CLICK, () => {
+			const currentZoom = this.configurationService.getValue<number>('window.zoomLevel') || 0;
+			const newZoom = Math.max(currentZoom - 1, -8);
+			this.configurationService.updateValue('window.zoomLevel', newZoom, ConfigurationTarget.USER);
+			updateZoomDisplay();
+		}));
+
+		this._register(DOM.addStandardDisposableListener(zoomIncrease, DOM.EventType.CLICK, () => {
+			const currentZoom = this.configurationService.getValue<number>('window.zoomLevel') || 0;
+			const newZoom = Math.min(currentZoom + 1, 9);
+			this.configurationService.updateValue('window.zoomLevel', newZoom, ConfigurationTarget.USER);
+			updateZoomDisplay();
 		}));
 	}
 
