@@ -164,3 +164,370 @@
 	color: var(--vscode-badge-foreground);
 	border-radius: 10px;
 }
+
+/* Sort Select */
+.host-manager .sort-select {
+	padding: 6px;
+	background-color: var(--vscode-dropdown-background);
+	color: var(--vscode-dropdown-foreground);
+	border: 1px solid var(--vscode-dropdown-border);
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+/* Import/Export Buttons */
+.host-manager .import-button,
+.host-manager .export-button {
+	padding: 6px 12px;
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+.host-manager .import-button:hover,
+.host-manager .export-button:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Active Session Indicator */
+.host-manager .host-card.active-session {
+	border: 2px solid var(--vscode-focusBorder);
+	box-shadow: 0 0 8px var(--vscode-focusBorder);
+}
+
+.host-manager .active-badge {
+	color: var(--vscode-testing-iconPassed);
+	font-size: 14px;
+}
+
+/* Group Headers */
+.host-manager .host-group {
+	margin-bottom: 12px;
+}
+
+.host-manager .host-group-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px;
+	background-color: var(--vscode-sideBarSectionHeader-background);
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 4px;
+	cursor: pointer;
+	user-select: none;
+	transition: background-color 0.2s;
+}
+
+.host-manager .host-group-header:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.host-manager .group-expand-icon {
+	font-size: 12px;
+	transition: transform 0.2s;
+}
+
+.host-manager .group-expand-icon.codicon-chevron-right {
+	transform: rotate(0deg);
+}
+
+.host-manager .group-expand-icon.codicon-chevron-down {
+	transform: rotate(0deg);
+}
+
+.host-manager .group-name {
+	flex: 1;
+	font-weight: 600;
+	color: var(--vscode-sideBarSectionHeader-foreground);
+}
+
+.host-manager .group-count {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.host-manager .group-settings-btn {
+	padding: 4px;
+	background: transparent;
+	border: none;
+	color: var(--vscode-icon-foreground);
+	cursor: pointer;
+	opacity: 0.7;
+	transition: opacity 0.2s;
+}
+
+.host-manager .group-settings-btn:hover {
+	opacity: 1;
+}
+
+.host-manager .host-group-content {
+	margin-top: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding-left: 20px;
+	transition: max-height 0.3s ease-out;
+}
+
+.host-manager .host-group-content.collapsed {
+	display: none;
+}
+
+/* Identity View */
+.labonair-identity-view {
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+}
+
+.labonair-identity-view .list-container {
+	height: 100%;
+	overflow: auto;
+	padding: 8px;
+}
+
+.identity-manager {
+	padding: 8px;
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-sideBar-background);
+}
+
+.identity-manager .header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 16px;
+}
+
+.identity-manager .view-title {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	margin: 0;
+}
+
+.identity-manager .add-identity-button {
+	padding: 6px 12px;
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+.identity-manager .add-identity-button:hover {
+	background-color: var(--vscode-button-hoverBackground);
+}
+
+.identity-manager .identity-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.identity-manager .identity-card {
+	padding: 12px;
+	background-color: var(--vscode-list-inactiveSelectionBackground);
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 4px;
+	transition: background-color 0.2s;
+}
+
+.identity-manager .identity-card:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.identity-manager .identity-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.identity-manager .identity-icon {
+	font-size: 16px;
+}
+
+.identity-manager .identity-name {
+	flex: 1;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+}
+
+.identity-manager .identity-type {
+	font-size: 11px;
+	padding: 2px 8px;
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	border-radius: 10px;
+}
+
+.identity-manager .identity-comment {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 8px;
+}
+
+.identity-manager .identity-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.identity-manager .identity-edit-btn,
+.identity-manager .identity-delete-btn {
+	padding: 4px 8px;
+	font-size: 11px;
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+.identity-manager .identity-edit-btn:hover,
+.identity-manager .identity-delete-btn:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Script View */
+.labonair-script-view {
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+}
+
+.labonair-script-view .list-container {
+	height: 100%;
+	overflow: auto;
+	padding: 8px;
+}
+
+.script-manager {
+	padding: 8px;
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-sideBar-background);
+}
+
+.script-manager .header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 16px;
+}
+
+.script-manager .view-title {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	margin: 0;
+}
+
+.script-manager .add-script-button {
+	padding: 6px 12px;
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+.script-manager .add-script-button:hover {
+	background-color: var(--vscode-button-hoverBackground);
+}
+
+.script-manager .script-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.script-manager .script-card {
+	padding: 12px;
+	background-color: var(--vscode-list-inactiveSelectionBackground);
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 4px;
+	cursor: grab;
+	transition: background-color 0.2s, transform 0.2s;
+}
+
+.script-manager .script-card:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.script-manager .script-card:active {
+	cursor: grabbing;
+	transform: scale(0.98);
+}
+
+.script-manager .script-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.script-manager .script-icon {
+	font-size: 16px;
+	color: var(--vscode-icon-foreground);
+}
+
+.script-manager .script-name {
+	flex: 1;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+}
+
+.script-manager .script-description {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	margin-bottom: 8px;
+}
+
+.script-manager .script-tags {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+	margin-bottom: 8px;
+}
+
+.script-manager .script-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.script-manager .script-edit-btn,
+.script-manager .script-delete-btn {
+	padding: 4px 8px;
+	font-size: 11px;
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+.script-manager .script-edit-btn:hover,
+.script-manager .script-delete-btn:hover {
+	background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Form Overlays */
+.identity-form-overlay,
+.script-form-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: var(--vscode-sideBar-background);
+	z-index: 1000;
+	overflow: auto;
+	padding: 16px;
+}
+
+.identity-form-overlay.hidden,
+.script-form-overlay.hidden {
+	display: none;
+}

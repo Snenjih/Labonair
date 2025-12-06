@@ -11,6 +11,8 @@ import { SyncDescriptor } from '../../../../platform/instantiation/common/descri
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { IViewContainersRegistry, ViewContainerLocation, Extensions as ViewContainerExtensions, IViewsRegistry } from '../../../common/views.js';
 import { LabonairHostView } from './hostView.js';
+import { LabonairIdentityView } from './identityView.js';
+import { LabonairScriptView } from './scriptView.js';
 import { VIEWLET_ID, VIEW_PANE_ID } from '../common/labonair.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
@@ -20,6 +22,8 @@ import { IIdentityService } from '../common/identityService.js';
 import { IdentityService } from './identityService.js';
 import { ISSHConfigService } from '../common/sshConfigService.js';
 import { SSHConfigService } from './sshConfigService.js';
+import { IScriptService } from '../common/scriptService.js';
+import { ScriptService } from './scriptService.js';
 import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { KeyMod, KeyCode } from '../../../../base/common/keyCodes.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
@@ -58,11 +62,34 @@ viewsRegistry.registerViews([{
 	order: 1,
 	weight: 100,
 	focusCommand: { id: 'workbench.view.labonair.focus' }
+}, {
+	id: 'labonair.views.identities',
+	name: localize2('identities', "Identities"),
+	containerIcon: labonairViewIcon,
+	ctorDescriptor: new SyncDescriptor(LabonairIdentityView),
+	canToggleVisibility: true,
+	canMoveView: true,
+	hideByDefault: false,
+	collapsed: true,
+	order: 2,
+	weight: 50
+}, {
+	id: 'labonair.views.scripts',
+	name: localize2('scripts', "Scripts & Snippets"),
+	containerIcon: labonairViewIcon,
+	ctorDescriptor: new SyncDescriptor(LabonairScriptView),
+	canToggleVisibility: true,
+	canMoveView: true,
+	hideByDefault: false,
+	collapsed: true,
+	order: 3,
+	weight: 50
 }], viewContainer);
 
 registerSingleton(IHostService, HostService, InstantiationType.Delayed);
 registerSingleton(IIdentityService, IdentityService, InstantiationType.Delayed);
 registerSingleton(ISSHConfigService, SSHConfigService, InstantiationType.Delayed);
+registerSingleton(IScriptService, ScriptService, InstantiationType.Delayed);
 
 KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: 'workbench.view.labonair.focus',

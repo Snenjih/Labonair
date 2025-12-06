@@ -202,6 +202,24 @@ export class HostService extends Disposable implements IHostService {
 		this.logService.info(`[HostService] Updated host: ${host.name} (${id})`);
 	}
 
+	/**
+	 * Marks a host as recently used by updating its lastUsed timestamp
+	 * This should be called whenever a connection to the host is initiated
+	 * @param id The host ID
+	 */
+	async markHostAsUsed(id: string): Promise<void> {
+		const host = this._hosts.get(id);
+		if (!host) {
+			this.logService.warn(`[HostService] Cannot mark host as used - not found: ${id}`);
+			return;
+		}
+
+		const updatedHost = { ...host, lastUsed: Date.now() };
+		this._hosts.set(id, updatedHost);
+		await this._saveHosts();
+		this.logService.debug(`[HostService] Marked host as used: ${host.name} (${id})`);
+	}
+
 	async deleteHost(id: string): Promise<void> {
 		const host = this._hosts.get(id);
 		if (!host) {
@@ -382,41 +400,86 @@ export class HostService extends Disposable implements IHostService {
 			return host;
 		}
 
-		const effective: IHost = { ...host };
+		// Create a deep copy of the host to avoid mutating the original
+		const effective: IHost = JSON.parse(JSON.stringify(host));
 
+		// Merge connection settings
+		// Priority: Host > Group > Global defaults
 		if (group.defaults.connection) {
 			effective.connection = {
 				...group.defaults.connection,
-				...host.connection
+				...host.connection,
+				// Ensure required fields are not overridden with undefined
+				host: host.connection.host || group.defaults.connection.host,
+				port: host.connection.port || group.defaults.connection.port || 22,
+				username: host.connection.username || group.defaults.connection.username || 'root',
+				protocol: host.connection.protocol || group.defaults.connection.protocol || 'ssh',
+				osIcon: host.connection.osIcon || group.defaults.connection.osIcon || 'linux'
 			};
 		}
 
-		if (group.defaults.auth && !host.auth.identityId) {
+		// Merge auth settings
+		// If host has specific auth, use it; otherwise use group defaults
+		if (group.defaults.auth && !host.auth.identityId && host.auth.type === 'password') {
 			effective.auth = {
 				...group.defaults.auth,
 				...host.auth
 			};
 		}
 
+		// Merge advanced settings
 		if (group.defaults.advanced) {
 			effective.advanced = {
 				...group.defaults.advanced,
-				...host.advanced
+				...host.advanced,
+				// Specific field merging for advanced settings
+				jumpHostId: host.advanced?.jumpHostId || group.defaults.advanced.jumpHostId,
+				keepAliveInterval: host.advanced?.keepAliveInterval ?? group.defaults.advanced.keepAliveInterval ?? 60,
+				encoding: host.advanced?.encoding || group.defaults.advanced.encoding || 'auto'
 			};
 		}
 
+		// Merge terminal settings
 		if (group.defaults.terminal) {
 			effective.terminal = {
 				...group.defaults.terminal,
-				...host.terminal
+				...host.terminal,
+				// Specific field merging
+				cursorStyle: host.terminal?.cursorStyle || group.defaults.terminal.cursorStyle || 'block',
+				blinking: host.terminal?.blinking ?? group.defaults.terminal.blinking ?? true,
+				fontFamily: host.terminal?.fontFamily || group.defaults.terminal.fontFamily || 'monospace',
+				fontSize: host.terminal?.fontSize || group.defaults.terminal.fontSize || 14,
+				tabColor: host.terminal?.tabColor || group.defaults.terminal.tabColor || '#007acc',
+				copyOnSelect: host.terminal?.copyOnSelect ?? group.defaults.terminal.copyOnSelect ?? false,
+				rightClickBehavior: host.terminal?.rightClickBehavior || group.defaults.terminal.rightClickBehavior || 'menu'
 			};
 		}
 
+		// Merge SFTP settings
 		if (group.defaults.sftp) {
 			effective.sftp = {
 				...group.defaults.sftp,
-				...host.sftp
+				...host.sftp,
+				// Specific field merging
+				design: host.sftp?.design || group.defaults.sftp.design || 'explorer',
+				resolveSymlinks: host.sftp?.resolveSymlinks ?? group.defaults.sftp.resolveSymlinks ?? true,
+				sudoSave: host.sftp?.sudoSave ?? group.defaults.sftp.sudoSave ?? false
 			};
+		}
+
+		// Merge tags (combine group and host tags)
+		if (group.defaults.tags && host.tags) {
+			const combinedTags = [...(group.defaults.tags || []), ...(host.tags || [])];
+			effective.tags = Array.from(new Set(combinedTags)); // Remove duplicates
+		} else if (group.defaults.tags) {
+			effective.tags = group.defaults.tags;
+		}
+
+		// Merge tunnels (combine group and host tunnels)
+		if (group.defaults.tunnels && host.tunnels) {
+			effective.tunnels = [...(group.defaults.tunnels || []), ...(host.tunnels || [])];
+		} else if (group.defaults.tunnels) {
+			effective.tunnels = group.defaults.tunnels;
 		}
 
 		return effective;

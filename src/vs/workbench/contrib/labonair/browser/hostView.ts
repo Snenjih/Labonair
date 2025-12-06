@@ -14,6 +14,7 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IHostService, IHost, AuthType, HostProtocol, OSIcon, IPortTunnel } from '../common/hostService.js';
+import { IIdentityService } from '../common/identityService.js';
 import { $, addDisposableListener } from '../../../../base/browser/dom.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
@@ -21,6 +22,7 @@ import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { URI } from '../../../../base/common/uri.js';
 import { LabonairImporter, FileZillaImporter, WinSCPImporter, PuTTYImporter } from '../node/importers.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
 
 enum FormMode {
 	Hidden,
@@ -37,6 +39,8 @@ export class LabonairHostView extends ViewPane {
 	private _editingHost: IHost | null = null;
 	private _tags: string[] = [];
 	private _tunnels: IPortTunnel[] = [];
+	private _activeSessions: Set<string> = new Set(); // Track active host sessions
+	private _sortBy: 'alphabetical' | 'lastUsed' | 'status' = 'alphabetical'; // Current sort mode
 
 	constructor(
 		options: IViewPaneOptions,
@@ -49,9 +53,20 @@ export class LabonairHostView extends ViewPane {
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
-		@IHostService private readonly hostService: IHostService
+		@IHostService private readonly hostService: IHostService,
+		@IIdentityService private readonly identityService: IIdentityService,
+		@IEditorService private readonly editorService: IEditorService
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
+
+		// Listen for editor changes to track active sessions
+		this._register(this.editorService.onDidActiveEditorChange(() => {
+			this._updateActiveSessions();
+		}));
+
+		this._register(this.editorService.onDidCloseEditor(() => {
+			this._updateActiveSessions();
+		}));
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -86,6 +101,11 @@ export class LabonairHostView extends ViewPane {
 					</div>
 					<div class="toolbar">
 						<input type="text" class="search-input" placeholder="Search hosts..." />
+						<select class="sort-select" id="sortSelect">
+							<option value="alphabetical">Sort: Alphabetical</option>
+							<option value="lastUsed">Sort: Last Used</option>
+							<option value="status">Sort: Status</option>
+						</select>
 						<button class="add-host-button">Add Host</button>
 						<button class="import-button">Import</button>
 						<button class="export-button">Export</button>
@@ -113,6 +133,15 @@ export class LabonairHostView extends ViewPane {
 		const exportButton = this._listContainer.querySelector('.export-button');
 		if (exportButton) {
 			this._register(addDisposableListener(exportButton, 'click', () => this._handleExport()));
+		}
+
+		// Sort select
+		const sortSelect = this._listContainer.querySelector('#sortSelect') as HTMLSelectElement;
+		if (sortSelect) {
+			this._register(addDisposableListener(sortSelect, 'change', () => {
+				this._sortBy = sortSelect.value as 'alphabetical' | 'lastUsed' | 'status';
+				this._loadHosts();
+			}));
 		}
 
 		this._loadHosts();
@@ -273,6 +302,12 @@ export class LabonairHostView extends ViewPane {
 					<!-- Agent Info -->
 					<div class="form-row auth-field hidden" id="authAgentField">
 						<div class="form-field">
+							<div id="agentStatusIndicator" style="padding: 12px; border-radius: 4px; margin-bottom: 8px;">
+								<div style="display: flex; align-items: center; gap: 8px;">
+									<span class="codicon codicon-loading codicon-modifier-spin"></span>
+									<span>Checking SSH agent...</span>
+								</div>
+							</div>
 							<p style="color: var(--vscode-descriptionForeground); font-size: 12px;">
 								Will use SSH agent for authentication. Make sure your SSH agent is running and has the key loaded.
 							</p>
@@ -726,7 +761,65 @@ export class LabonairHostView extends ViewPane {
 				break;
 			case 'agent':
 				agentField?.classList.remove('hidden');
+				this._checkSSHAgentStatus();
 				break;
+		}
+	}
+
+	/**
+	 * Checks SSH agent status and updates the UI indicator
+	 * NOTE: Full implementation will be available in Phase 3 when SSH connectivity is added
+	 * For now, this shows the UI structure for agent detection
+	 */
+	private async _checkSSHAgentStatus(): Promise<void> {
+		const agentStatusIndicator = this._formContainer?.querySelector('#agentStatusIndicator');
+		if (!agentStatusIndicator) {
+			return;
+		}
+
+		// Show loading state
+		agentStatusIndicator.innerHTML = `
+			<div style="display: flex; align-items: center; gap: 8px;">
+				<span class="codicon codicon-loading codicon-modifier-spin"></span>
+				<span>Checking SSH agent...</span>
+			</div>
+		`;
+
+		try {
+			// NOTE: This will be properly implemented in Phase 3
+			// For now, we'll check for SSH_AUTH_SOCK environment variable as a basic check
+			const hasAuthSock = typeof process !== 'undefined' && process.env && process.env.SSH_AUTH_SOCK;
+
+			setTimeout(() => {
+				if (hasAuthSock) {
+					agentStatusIndicator.innerHTML = `
+						<div style="display: flex; align-items: center; gap: 8px;">
+							<span class="codicon codicon-pass-filled" style="color: var(--vscode-testing-iconPassed);"></span>
+							<span style="color: var(--vscode-testing-iconPassed);">SSH Agent detected</span>
+						</div>
+					`;
+					agentStatusIndicator.style.backgroundColor = 'var(--vscode-inputValidation-infoBackground)';
+					agentStatusIndicator.style.border = '1px solid var(--vscode-inputValidation-infoBorder)';
+				} else {
+					agentStatusIndicator.innerHTML = `
+						<div style="display: flex; align-items: center; gap: 8px;">
+							<span class="codicon codicon-warning" style="color: var(--vscode-inputValidation-warningForeground);"></span>
+							<span style="color: var(--vscode-inputValidation-warningForeground);">No SSH Agent found</span>
+						</div>
+					`;
+					agentStatusIndicator.style.backgroundColor = 'var(--vscode-inputValidation-warningBackground)';
+					agentStatusIndicator.style.border = '1px solid var(--vscode-inputValidation-warningBorder)';
+				}
+			}, 500); // Small delay to show loading state
+		} catch (error) {
+			agentStatusIndicator.innerHTML = `
+				<div style="display: flex; align-items: center; gap: 8px;">
+					<span class="codicon codicon-error" style="color: var(--vscode-inputValidation-errorForeground);"></span>
+					<span style="color: var(--vscode-inputValidation-errorForeground);">Error checking agent</span>
+				</div>
+			`;
+			agentStatusIndicator.style.backgroundColor = 'var(--vscode-inputValidation-errorBackground)';
+			agentStatusIndicator.style.border = '1px solid var(--vscode-inputValidation-errorBorder)';
 		}
 	}
 
@@ -736,8 +829,24 @@ export class LabonairHostView extends ViewPane {
 			return;
 		}
 
-		// This would load from IdentityService - placeholder for now
-		identitySelector.innerHTML = '<option value="">No identities configured</option>';
+		const identities = await this.identityService.getAllIdentities();
+
+		if (identities.length === 0) {
+			identitySelector.innerHTML = '<option value="">No identities configured</option>';
+			return;
+		}
+
+		const optionsHtml = '<option value="">Select an identity...</option>' +
+			identities.map(identity =>
+				`<option value="${identity.id}">${identity.name} (${identity.type === 'ssh-key' ? 'SSH Key' : 'Password'})</option>`
+			).join('');
+
+		identitySelector.innerHTML = optionsHtml;
+
+		// Select current identity if editing
+		if (this._editingHost && this._editingHost.auth.identityId) {
+			identitySelector.value = this._editingHost.auth.identityId;
+		}
 	}
 
 	private _addTag(tag: string): void {
@@ -1201,6 +1310,51 @@ export class LabonairHostView extends ViewPane {
 		return hostnameRegex.test(host) || ipRegex.test(host);
 	}
 
+	/**
+	 * Sorts hosts based on the current sort mode
+	 */
+	private _sortHosts(hosts: IHost[]): IHost[] {
+		const hostsCopy = [...hosts];
+
+		switch (this._sortBy) {
+			case 'alphabetical':
+				return hostsCopy.sort((a, b) => a.name.localeCompare(b.name));
+
+			case 'lastUsed':
+				return hostsCopy.sort((a, b) => {
+					const aTime = a.lastUsed || 0;
+					const bTime = b.lastUsed || 0;
+					return bTime - aTime; // Most recently used first
+				});
+
+			case 'status':
+				return hostsCopy.sort((a, b) => {
+					const statusOrder: Record<HostStatus, number> = {
+						'online': 0,
+						'connecting': 1,
+						'unknown': 2,
+						'offline': 3
+					};
+
+					const aStatus = this.hostService.getHostStatus(a.id);
+					const bStatus = this.hostService.getHostStatus(b.id);
+
+					const aOrder = statusOrder[aStatus];
+					const bOrder = statusOrder[bStatus];
+
+					if (aOrder !== bOrder) {
+						return aOrder - bOrder;
+					}
+
+					// If same status, sort alphabetically
+					return a.name.localeCompare(b.name);
+				});
+
+			default:
+				return hostsCopy;
+		}
+	}
+
 	private async _loadHosts(): Promise<void> {
 		const hosts = await this.hostService.getAllHosts();
 		const hostListElement = this._listContainer?.querySelector('#hostList');
@@ -1214,23 +1368,93 @@ export class LabonairHostView extends ViewPane {
 			return;
 		}
 
-		const hostsHtml = hosts.map(host => `
-			<div class="host-card" data-host-id="${host.id}">
-				<div class="host-header">
-					<span class="os-icon">${this._getOSIcon(host.connection.osIcon)}</span>
-					<span class="host-name">${host.name}</span>
-					<span class="status-indicator ${this.hostService.getHostStatus(host.id)}"></span>
+		// Sort hosts based on current sort mode
+		const sortedHosts = this._sortHosts(hosts);
+
+		// Group hosts by group name
+		const groupedHosts = new Map<string, IHost[]>();
+		const ungroupedHosts: IHost[] = [];
+
+		sortedHosts.forEach(host => {
+			if (host.group) {
+				if (!groupedHosts.has(host.group)) {
+					groupedHosts.set(host.group, []);
+				}
+				groupedHosts.get(host.group)!.push(host);
+			} else {
+				ungroupedHosts.push(host);
+			}
+		});
+
+		let hostsHtml = '';
+
+		// Render grouped hosts
+		groupedHosts.forEach((groupHosts, groupName) => {
+			hostsHtml += `
+				<div class="host-group" data-group-name="${groupName}">
+					<div class="host-group-header" data-group-name="${groupName}">
+						<span class="group-expand-icon codicon codicon-chevron-down"></span>
+						<span class="group-name">${groupName}</span>
+						<span class="group-count">(${groupHosts.length})</span>
+						<button class="group-settings-btn codicon codicon-settings-gear" data-group-name="${groupName}" title="Group Settings"></button>
+					</div>
+					<div class="host-group-content">
+						${groupHosts.map(host => this._renderHostCard(host)).join('')}
+					</div>
 				</div>
-				<div class="host-info">
-					<span class="connection-info">${host.connection.username}@${host.connection.host}:${host.connection.port}</span>
+			`;
+		});
+
+		// Render ungrouped hosts
+		if (ungroupedHosts.length > 0) {
+			hostsHtml += `
+				<div class="host-group">
+					<div class="host-group-header">
+						<span class="group-expand-icon codicon codicon-chevron-down"></span>
+						<span class="group-name">Ungrouped</span>
+						<span class="group-count">(${ungroupedHosts.length})</span>
+					</div>
+					<div class="host-group-content">
+						${ungroupedHosts.map(host => this._renderHostCard(host)).join('')}
+					</div>
 				</div>
-				<div class="host-tags">
-					${host.tags?.map(tag => `<span class="tag">${tag}</span>`).join('') || ''}
-				</div>
-			</div>
-		`).join('');
+			`;
+		}
 
 		hostListElement.innerHTML = hostsHtml;
+
+		// Add click handlers for group headers (toggle expand/collapse)
+		const groupHeaders = hostListElement.querySelectorAll('.host-group-header');
+		groupHeaders.forEach(header => {
+			this._register(addDisposableListener(header, 'click', (e) => {
+				// Don't toggle if clicking the settings button
+				if ((e.target as HTMLElement).classList.contains('group-settings-btn')) {
+					return;
+				}
+
+				const group = header.parentElement;
+				const content = group?.querySelector('.host-group-content');
+				const icon = header.querySelector('.group-expand-icon');
+
+				if (content && icon) {
+					content.classList.toggle('collapsed');
+					icon.classList.toggle('codicon-chevron-down');
+					icon.classList.toggle('codicon-chevron-right');
+				}
+			}));
+		});
+
+		// Add click handlers for group settings buttons
+		const groupSettingsBtns = hostListElement.querySelectorAll('.group-settings-btn');
+		groupSettingsBtns.forEach(btn => {
+			this._register(addDisposableListener(btn, 'click', (e) => {
+				e.stopPropagation();
+				const groupName = (btn as HTMLElement).dataset['groupName'];
+				if (groupName) {
+					this._showGroupSettingsDialog(groupName);
+				}
+			}));
+		});
 
 		// Add click handlers for cards
 		const cards = hostListElement.querySelectorAll('.host-card');
@@ -1245,6 +1469,162 @@ export class LabonairHostView extends ViewPane {
 				}
 			}));
 		});
+	}
+
+	private _renderHostCard(host: IHost): string {
+		const isActive = this._activeSessions.has(host.id);
+		const activeClass = isActive ? 'active-session' : '';
+
+		return `
+			<div class="host-card ${activeClass}" data-host-id="${host.id}">
+				<div class="host-header">
+					<span class="os-icon">${this._getOSIcon(host.connection.osIcon)}</span>
+					<span class="host-name">${host.name}</span>
+					${isActive ? '<span class="active-badge codicon codicon-play"></span>' : ''}
+					<span class="status-indicator ${this.hostService.getHostStatus(host.id)}"></span>
+				</div>
+				<div class="host-info">
+					<span class="connection-info">${host.connection.username}@${host.connection.host}:${host.connection.port}</span>
+				</div>
+				<div class="host-tags">
+					${host.tags?.map(tag => `<span class="tag">${tag}</span>`).join('') || ''}
+				</div>
+			</div>
+		`;
+	}
+
+	/**
+	 * Updates the active sessions by checking all open editors for Labonair remote URIs.
+	 * In Phase 3, this will detect actual SSH/SFTP connections.
+	 * For now, it's infrastructure for future implementation.
+	 */
+	private _updateActiveSessions(): void {
+		const previousActiveSessions = new Set(this._activeSessions);
+		this._activeSessions.clear();
+
+		// Get all editors
+		const editors = this.editorService.editors;
+
+		// Check each editor for Labonair remote URIs
+		// URI format: labonair-remote://<hostId>/path/to/file
+		for (const editor of editors) {
+			const resource = editor.resource;
+			if (resource && resource.scheme === 'labonair-remote') {
+				// Extract host ID from URI authority
+				const hostId = resource.authority;
+				if (hostId) {
+					this._activeSessions.add(hostId);
+				}
+			}
+		}
+
+		// If active sessions changed, reload the host list to update visuals
+		const hasChanges =
+			previousActiveSessions.size !== this._activeSessions.size ||
+			[...previousActiveSessions].some(id => !this._activeSessions.has(id));
+
+		if (hasChanges) {
+			this._loadHosts();
+		}
+	}
+
+	private async _showGroupSettingsDialog(groupName: string): Promise<void> {
+		const quickInputService = this.instantiationService.invokeFunction(accessor => accessor.get(IQuickInputService));
+
+		// Get existing group settings
+		const groups = await this.hostService.getGroups();
+		const group = groups.find(g => g.name === groupName);
+
+		// Get identities for dropdown
+		const identities = await this.identityService.getAllIdentities();
+
+		// Create a multi-step quick input
+		const disposables: any[] = [];
+
+		try {
+			// Step 1: Default Username
+			const defaultUsername = await quickInputService.input({
+				prompt: `Default username for "${groupName}" group`,
+				value: group?.defaults?.connection?.username || '',
+				placeHolder: 'e.g., root, admin'
+			});
+
+			if (defaultUsername === undefined) {
+				return; // User cancelled
+			}
+
+			// Step 2: Default Port
+			const defaultPort = await quickInputService.input({
+				prompt: `Default port for "${groupName}" group`,
+				value: group?.defaults?.connection?.port?.toString() || '22',
+				placeHolder: '22',
+				validateInput: async (value) => {
+					const port = parseInt(value, 10);
+					if (isNaN(port) || port < 1 || port > 65535) {
+						return 'Invalid port number (1-65535)';
+					}
+					return undefined;
+				}
+			});
+
+			if (defaultPort === undefined) {
+				return; // User cancelled
+			}
+
+			// Step 3: Default Identity
+			const identityItems = [
+				{ label: 'None', id: '' },
+				...identities.map(identity => ({
+					label: identity.name,
+					description: identity.type === 'ssh-key' ? 'SSH Key' : 'Password',
+					id: identity.id
+				}))
+			];
+
+			const selectedIdentity = await quickInputService.pick(identityItems, {
+				placeHolder: `Select default identity for "${groupName}" group`,
+				title: 'Default Identity'
+			});
+
+			if (selectedIdentity === undefined) {
+				return; // User cancelled
+			}
+
+			// Step 4: Group Color (optional)
+			const defaultColor = await quickInputService.input({
+				prompt: `Group color for "${groupName}" (optional, hex format)`,
+				value: (group?.defaults as any)?.groupColor || '',
+				placeHolder: '#007acc'
+			});
+
+			// Save group settings
+			const groupDefaults: any = {
+				connection: {
+					username: defaultUsername || undefined,
+					port: parseInt(defaultPort, 10) || 22
+				},
+				auth: selectedIdentity.id ? {
+					type: 'identity_ref' as AuthType,
+					identityId: selectedIdentity.id
+				} : undefined,
+				groupColor: defaultColor || undefined
+			};
+
+			if (group) {
+				await this.hostService.updateGroup(groupName, { defaults: groupDefaults });
+			} else {
+				await this.hostService.addGroup({ name: groupName, defaults: groupDefaults });
+			}
+
+			const notificationService = this.instantiationService.invokeFunction(accessor => accessor.get(INotificationService));
+			notificationService.info(`Group "${groupName}" settings updated`);
+
+			// Reload hosts to reflect changes
+			await this._loadHosts();
+
+		} finally {
+			disposables.forEach(d => d.dispose());
+		}
 	}
 
 	private _getOSIcon(osIcon: string): string {
