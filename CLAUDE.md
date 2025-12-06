@@ -2,6 +2,105 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Projektübersicht
+
+**Projektname**: Labonair
+**Basis**: Visual Studio Code Fork (Open Source)
+**Projektziel**: Ein datenschutzorientierter, schlanker und benutzerfreundlicher Code-Editor mit revolutionärem UI/UX-Design, der sich von der Microsoft-Telemetrie und Cloud-Abhängigkeiten befreit und gleichzeitig innovative Features für Theme-Management, Settings-Verwaltung und Benutzerinteraktion einführt.
+
+**Architekturübersicht**: Labonair basiert auf der VS Code Architektur - einem mehrschichtigen, serviceorientierten System mit strikten Abhängigkeitsgrenzen:
+- **Base Layer** (`src/vs/base/`): Plattformübergreifende Utilities
+- **Platform Layer** (`src/vs/platform/`): 95+ injectable Services
+- **Workbench Layer** (`src/vs/workbench/`): Anwendungs-UI und Komposition
+- **Editor Layer** (`src/vs/editor/`): Monaco Editor Integration
+- **Contributions** (`src/vs/workbench/contrib/`): Feature-Beiträge (91+ Features)
+
+**Technologie-Stack**:
+- **Core**: TypeScript, Electron
+- **Build System**: Gulp, npm
+- **Testing**: Mocha, Playwright (Smoke Tests)
+- **UI**: Custom DOM-basierte UI-Komponenten
+- **Dienste**: Dependency Injection mit Decorators
+- **Architektur**: Multi-Process (Main, Renderer, Extension Host, Shared Process)
+
+---
+
+## Operational & Maintenance Protocols
+
+### 1. Performance & Resource Constraints
+Labonair adds heavy features (SSH listeners, Pings, Webviews) to a web-based app. To prevent "bloat":
+*   **Lazy Loading:** ALL views (Host Manager, Theme Studio) must only load their heavy data when they are *visible*.
+*   **Ping Intervals:** Network pings in the Host Manager must run in a non-blocking way (async) and not more often than every 60s.
+*   **Webview Lifecycle:** Webviews consume high RAM.
+    *   Use `retainContextWhenHidden: true` ONLY for active operations (SSH connection, File Transfer).
+    *   Static views (Theme Studio) should dispose/serialize state when hidden if memory pressure is high.
+*   **Disposable Pattern:** Every listener (`.onDid...`) must be pushed to a `subscriptions` array and disposed when the view closes. Memory leaks in a long-running IDE are unacceptable.
+
+### 2. Production Build Pipeline
+The command `npm run watch` is for development only. It is slow and unoptimized.
+To create the shippable product:
+*   **Clean Build:** Always run `git clean -fdX` before a release build to remove stale artifacts.
+*   **Minification:** Use the specific platform gulp tasks:
+    *   macOS (Apple Silicon): `npm run gulp vscode-darwin-arm64-min`
+    *   Windows: `npm run gulp vscode-win32-x64-min`
+    *   Linux: `npm run gulp vscode-linux-x64-min`
+*   **Signing:** (Future Scope) Builds must be signed to run on macOS Gatekeeper/Windows SmartScreen without warnings.
+
+### 3. Troubleshooting Common Fork Issues
+*   **"Corrupted Installation":** If VS Code complains about corruption, it's often due to modified core checksums.
+    *   *Fix:* Disable checksum verification in `product.json` during dev (`checksums: { ... }`).
+*   **Native Module Mismatch:** If `ssh2` or `node-pty` crashes:
+    *   *Fix:* Run `npm run electron-rebuild` to compile native C++ modules against the specific Electron version used by VS Code.
+
+---
+
+## Implementation Guidelines & Architectural Standards
+
+**CRITICAL:** All development within the Labonair project must adhere strictly to the following architectural patterns and standards to ensure maintainability, security, and seamless integration with the existing VS Code core.
+
+### 1. Directory Structure & Module Location
+*   **New Features:** All new core features (Host Manager, Theme Studio, Dashboard) must be implemented as **Workbench Contributions**.
+    *   Path: `src/vs/workbench/contrib/[feature-name]/`
+*   **Shared Services:** Services required by multiple contributions (e.g., `UserThemeService`) reside in:
+    *   Path: `src/vs/workbench/services/[service-name]/`
+*   **Built-in Extensions:** Standalone tools (Hex Editor, RegEx Studio) that do not require deep core access go to:
+    *   Path: `extensions/labonair-[feature-name]/`
+
+### 2. UI/UX Design System
+Labonair aims for a "Native & Industrial Clean" look. To guarantee theme compatibility:
+*   **No Hardcoded Colors:** NEVER use hex codes (e.g., `#ffffff`) in CSS.
+*   **CSS Variables:** ALWAYS use VS Code native CSS variables.
+    *   *Backgrounds:* `var(--vscode-editor-background)`, `var(--vscode-sideBar-background)`
+    *   *Text:* `var(--vscode-foreground)`, `var(--vscode-descriptionForeground)`
+    *   *Borders:* `var(--vscode-panel-border)`, `var(--vscode-focusBorder)`
+    *   *Interactive:* `var(--vscode-list-hoverBackground)`, `var(--vscode-button-background)`
+*   **Icons:** Use the native Codicon library (`<i class="codicon codicon-remote"></i>`) for UI consistency.
+
+### 3. Data Persistence & Security
+*   **Configuration Files:** User-generated content (Hosts, Themes) must be stored in the user's data directory, NOT in the workspace.
+    *   Path: `~/.labonair/` (Platform dependent user data path).
+    *   Format: JSON.
+*   **Secrets & Credentials:** Passwords, SSH Keys, and Tokens must **NEVER** be written to JSON files or logs.
+    *   **Requirement:** Use the `ISecretStorageService` (VS Code Core API) to store sensitive data in the OS Keychain/Credential Manager.
+*   **State:** Use `IStorageService` for non-critical UI state (e.g., "Last active tab", "Panel size").
+
+### 4. Webview Architecture
+Complex interfaces (Host Manager, Theme Studio) use Webviews. The architecture must follow the **Message Passing Pattern**:
+*   **Frontend (Webview):** Dumb rendering layer (HTML/CSS/JS). No direct FS access. Sends events via `vscode.postMessage({ command: 'saveHost', payload: ... })`.
+*   **Backend (Editor/ViewPane):** Handles business logic, filesystem operations, and connection handling. Listens via `webview.onDidReceiveMessage`.
+*   **State Sync:** The Backend pushes state updates to the Frontend. The Frontend does not hold state that isn't persisted in the Backend.
+
+### 5. Coding Standards
+*   **Dependency Injection:** Use the VS Code Instantiation Service. Do not create service instances manually via `new`. Use `@IServiceName` decorators in constructors.
+*   **Disposables:** All event listeners and resources must be registered to a `DisposableStore` or extend `Disposable` to prevent memory leaks.
+*   **Promises:** Use `async/await` over raw Promises where possible.
+
+### 6. Testing & Debugging
+*   **Dev Build:** Always run `npm run watch` in one terminal and `./scripts/code.sh` (or `.bat`) in another.
+*   **Webview Debugging:** Open the Developer Tools (`Help > Toggle Developer Tools`) and switch to the context of the Webview (iframe) to debug UI logic.
+*   **Reloading:** Use `Reload Window` (Cmd+R) to apply changes to the Renderer process (UI/Webviews). Changes to the Main process require a full restart.
+
+
 ## Project Overview
 
 This is **Labonair**, the open-source codebase for Visual Studio Code. It's a large-scale TypeScript application built on Electron, using a layered service-oriented architecture with strict dependency boundaries.
