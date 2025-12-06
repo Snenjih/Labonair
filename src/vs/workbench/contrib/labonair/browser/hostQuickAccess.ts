@@ -5,7 +5,7 @@
 
 import { localize } from '../../../../nls.js';
 import { IQuickPickSeparator } from '../../../../platform/quickinput/common/quickInput.js';
-import { IPickerQuickAccessItem, PickerQuickAccessProvider } from '../../../../platform/quickinput/browser/pickerQuickAccess.js';
+import { IPickerQuickAccessItem, PickerQuickAccessProvider, TriggerAction } from '../../../../platform/quickinput/browser/pickerQuickAccess.js';
 import { matchesFuzzy } from '../../../../base/common/filters.js';
 import { IHostService, IHost } from '../common/hostService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
@@ -71,11 +71,13 @@ export class HostQuickAccessProvider extends PickerQuickAccessProvider<IPickerQu
 					accept: () => this._connectToHost(host, 'ssh'),
 					trigger: (buttonIndex) => {
 						if (buttonIndex === 0) {
-							return this._connectToHost(host, 'ssh');
+							this._connectToHost(host, 'ssh');
+							return TriggerAction.CLOSE_PICKER;
 						} else if (buttonIndex === 1) {
-							return this._connectToHost(host, 'sftp');
+							this._connectToHost(host, 'sftp');
+							return TriggerAction.CLOSE_PICKER;
 						}
-						return false;
+						return TriggerAction.NO_ACTION;
 					}
 				});
 			}

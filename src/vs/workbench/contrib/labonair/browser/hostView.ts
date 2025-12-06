@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../base/common/dispose.js';
 import { IViewPaneOptions, ViewPane } from '../../../browser/parts/views/viewPane.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
@@ -13,10 +12,9 @@ import { IViewDescriptorService } from '../../../common/views.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
+import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IHostService } from '../common/hostService.js';
-import { IIdentityService } from '../common/identityService.js';
-import { $, addDisposableListener, append, Dimension } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append } from '../../../../base/browser/dom.js';
 
 export class LabonairHostView extends ViewPane {
 	private _container?: HTMLElement;
@@ -32,11 +30,10 @@ export class LabonairHostView extends ViewPane {
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
-		@ITelemetryService telemetryService: ITelemetryService,
-		@IHostService private readonly hostService: IHostService,
-		@IIdentityService private readonly identityService: IIdentityService
+		@IHoverService hoverService: IHoverService,
+		@IHostService private readonly hostService: IHostService
 	) {
-		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService);
+		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 	}
 
 	protected override renderBody(container: HTMLElement): void {

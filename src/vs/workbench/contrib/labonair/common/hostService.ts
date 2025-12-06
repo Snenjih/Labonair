@@ -14,7 +14,10 @@ export type OSIcon = 'linux' | 'windows' | 'macos' | 'freebsd' | 'unknown';
 export type SFTPDesign = 'explorer' | 'commander';
 export type HostStatus = 'online' | 'offline' | 'unknown' | 'connecting';
 
+export type TunnelType = 'local' | 'remote' | 'dynamic';
+
 export interface IPortTunnel {
+	type: TunnelType;
 	localPort: number;
 	remoteHost: string;
 	remotePort: number;
@@ -37,15 +40,21 @@ export interface IHostAdvanced {
 	jumpHostId?: string;
 	proxyCommand?: string;
 	keepAliveInterval?: number;
+	maxAuthTries?: number;
 	encoding?: string;
-	postExecScript?: string;
+	postExecScript?: string[];
 }
+
+export type RightClickBehavior = 'menu' | 'paste';
 
 export interface IHostTerminal {
 	cursorStyle?: string;
 	blinking?: boolean;
 	tabColor?: string;
+	fontFamily?: string;
 	fontSize?: number;
+	copyOnSelect?: boolean;
+	rightClickBehavior?: RightClickBehavior;
 }
 
 export interface IHostSFTP {
@@ -53,6 +62,8 @@ export interface IHostSFTP {
 	layout?: string;
 	localPath?: string;
 	remotePath?: string;
+	sudoSave?: boolean;
+	resolveSymlinks?: boolean;
 }
 
 export interface IHost {
@@ -68,6 +79,7 @@ export interface IHost {
 	sftp?: IHostSFTP;
 	notes?: string;
 	status?: HostStatus;
+	created?: number;
 	lastUsed?: number;
 }
 
@@ -95,6 +107,7 @@ export interface IHostService {
 
 	getHostStatus(id: string): HostStatus;
 	refreshStatus(id: string): Promise<void>;
+	getEffectiveConfig(host: IHost): IHost;
 
 	importHosts(source: 'ssh-config' | 'filezilla' | 'labonair', data: string): Promise<IHost[]>;
 	exportHosts(hostIds: string[], encrypt?: boolean): Promise<string>;

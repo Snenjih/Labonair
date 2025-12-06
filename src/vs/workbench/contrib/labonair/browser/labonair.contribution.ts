@@ -17,11 +17,13 @@ import { IHostService } from '../common/hostService.js';
 import { HostService } from './hostService.js';
 import { IIdentityService } from '../common/identityService.js';
 import { IdentityService } from './identityService.js';
+import { ISSHConfigService } from '../common/sshConfigService.js';
+import { SSHConfigService } from './sshConfigService.js';
 import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { KeyMod, KeyCode } from '../../../../base/common/keyCodes.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
-import { registerQuickAccessProvider } from '../../../../platform/quickinput/browser/quickAccess.js';
+import { IQuickAccessRegistry, Extensions as QuickAccessExtensions } from '../../../../platform/quickinput/common/quickAccess.js';
 import { HostQuickAccessProvider } from './hostQuickAccess.js';
 
 const labonairViewIcon = registerIcon('labonair-view-icon', Codicon.serverProcess, localize('labonairViewIcon', 'View icon of the Labonair Host Manager view.'));
@@ -59,6 +61,7 @@ viewsRegistry.registerViews([{
 
 registerSingleton(IHostService, HostService, InstantiationType.Delayed);
 registerSingleton(IIdentityService, IdentityService, InstantiationType.Delayed);
+registerSingleton(ISSHConfigService, SSHConfigService, InstantiationType.Delayed);
 
 KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: 'workbench.view.labonair.focus',
@@ -71,7 +74,8 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	}
 });
 
-registerQuickAccessProvider({
+const quickAccessRegistry = Registry.as<IQuickAccessRegistry>(QuickAccessExtensions.Quickaccess);
+quickAccessRegistry.registerQuickAccessProvider({
 	ctor: HostQuickAccessProvider,
 	prefix: HostQuickAccessProvider.PREFIX,
 	placeholder: localize('hostQuickAccessPlaceholder', "Type the name of a host to connect"),
