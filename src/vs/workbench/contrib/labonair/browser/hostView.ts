@@ -13,7 +13,7 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
-import { IHostService, IHost, AuthType, HostProtocol, OSIcon, IPortTunnel } from '../common/hostService.js';
+import { IHostService, IHost, AuthType, HostProtocol, OSIcon, IPortTunnel, HostStatus } from '../common/hostService.js';
 import { IIdentityService } from '../common/identityService.js';
 import { $, addDisposableListener } from '../../../../base/browser/dom.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -798,8 +798,8 @@ export class LabonairHostView extends ViewPane {
 							<span style="color: var(--vscode-testing-iconPassed);">SSH Agent detected</span>
 						</div>
 					`;
-					agentStatusIndicator.style.backgroundColor = 'var(--vscode-inputValidation-infoBackground)';
-					agentStatusIndicator.style.border = '1px solid var(--vscode-inputValidation-infoBorder)';
+					(agentStatusIndicator as HTMLElement).style.backgroundColor = 'var(--vscode-inputValidation-infoBackground)';
+					(agentStatusIndicator as HTMLElement).style.border = '1px solid var(--vscode-inputValidation-infoBorder)';
 				} else {
 					agentStatusIndicator.innerHTML = `
 						<div style="display: flex; align-items: center; gap: 8px;">
@@ -807,8 +807,8 @@ export class LabonairHostView extends ViewPane {
 							<span style="color: var(--vscode-inputValidation-warningForeground);">No SSH Agent found</span>
 						</div>
 					`;
-					agentStatusIndicator.style.backgroundColor = 'var(--vscode-inputValidation-warningBackground)';
-					agentStatusIndicator.style.border = '1px solid var(--vscode-inputValidation-warningBorder)';
+					(agentStatusIndicator as HTMLElement).style.backgroundColor = 'var(--vscode-inputValidation-warningBackground)';
+					(agentStatusIndicator as HTMLElement).style.border = '1px solid var(--vscode-inputValidation-warningBorder)';
 				}
 			}, 500); // Small delay to show loading state
 		} catch (error) {
@@ -818,8 +818,8 @@ export class LabonairHostView extends ViewPane {
 					<span style="color: var(--vscode-inputValidation-errorForeground);">Error checking agent</span>
 				</div>
 			`;
-			agentStatusIndicator.style.backgroundColor = 'var(--vscode-inputValidation-errorBackground)';
-			agentStatusIndicator.style.border = '1px solid var(--vscode-inputValidation-errorBorder)';
+			(agentStatusIndicator as HTMLElement).style.backgroundColor = 'var(--vscode-inputValidation-errorBackground)';
+			(agentStatusIndicator as HTMLElement).style.border = '1px solid var(--vscode-inputValidation-errorBorder)';
 		}
 	}
 

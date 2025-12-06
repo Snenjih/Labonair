@@ -17,7 +17,6 @@ import { IScriptService, IScript } from '../common/scriptService.js';
 import { $, addDisposableListener } from '../../../../base/browser/dom.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
-import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 
 enum FormMode {
 	Hidden,
@@ -41,7 +40,7 @@ export class LabonairScriptView extends ViewPane {
 		@IConfigurationService configurationService: IConfigurationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IInstantiationService override readonly instantiationService: IInstantiationService,
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,

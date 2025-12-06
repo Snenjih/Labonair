@@ -17,7 +17,6 @@ import { IIdentityService, IIdentity, IdentityType } from '../common/identitySer
 import { $, addDisposableListener } from '../../../../base/browser/dom.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
-import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 
 enum FormMode {
 	Hidden,
@@ -40,13 +39,12 @@ export class LabonairIdentityView extends ViewPane {
 		@IConfigurationService configurationService: IConfigurationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IInstantiationService override readonly instantiationService: IInstantiationService,
 		@IOpenerService openerService: IOpenerService,
 		@IThemeService themeService: IThemeService,
 		@IHoverService hoverService: IHoverService,
 		@IIdentityService private readonly identityService: IIdentityService,
-		@INotificationService private readonly notificationService: INotificationService,
-		@IFileDialogService private readonly fileDialogService: IFileDialogService
+		@INotificationService private readonly notificationService: INotificationService
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
