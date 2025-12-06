@@ -23,6 +23,9 @@ import { INotificationService } from '../../../../platform/notification/common/n
 import { URI } from '../../../../base/common/uri.js';
 import { LabonairImporter, FileZillaImporter, WinSCPImporter, PuTTYImporter } from '../node/importers.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { showPortForwardingDialog } from './dialogs/portForwardingDialog.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { Action } from '../../../../base/common/actions.js';
 
 enum FormMode {
 	Hidden,
@@ -41,11 +44,12 @@ export class LabonairHostView extends ViewPane {
 	private _tunnels: IPortTunnel[] = [];
 	private _activeSessions: Set<string> = new Set(); // Track active host sessions
 	private _sortBy: 'alphabetical' | 'lastUsed' | 'status' = 'alphabetical'; // Current sort mode
+	private _selectedHostId: string | null = null; // Track selected host card
 
 	constructor(
 		options: IViewPaneOptions,
 		@IKeybindingService keybindingService: IKeybindingService,
-		@IContextMenuService contextMenuService: IContextMenuService,
+		@IContextMenuService override readonly contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
@@ -55,7 +59,9 @@ export class LabonairHostView extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@IHostService private readonly hostService: IHostService,
 		@IIdentityService private readonly identityService: IIdentityService,
-		@IEditorService private readonly editorService: IEditorService
+		@IEditorService private readonly editorService: IEditorService,
+		@IDialogService private readonly dialogService: IDialogService,
+		@INotificationService private readonly notificationService: INotificationService
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -141,6 +147,18 @@ export class LabonairHostView extends ViewPane {
 			this._register(addDisposableListener(sortSelect, 'change', () => {
 				this._sortBy = sortSelect.value as 'alphabetical' | 'lastUsed' | 'status';
 				this._loadHosts();
+			}));
+		}
+
+		// Quick Connect button
+		const quickConnectButton = this._listContainer.querySelector('.quick-connect-button');
+		const quickConnectInput = this._listContainer.querySelector('.quick-connect-input') as HTMLInputElement;
+		if (quickConnectButton && quickConnectInput) {
+			this._register(addDisposableListener(quickConnectButton, 'click', () => this._handleQuickConnect(quickConnectInput.value)));
+			this._register(addDisposableListener(quickConnectInput, 'keydown', (e: KeyboardEvent) => {
+				if (e.key === 'Enter') {
+					this._handleQuickConnect(quickConnectInput.value);
+				}
 			}));
 		}
 
@@ -1364,7 +1382,39 @@ export class LabonairHostView extends ViewPane {
 		}
 
 		if (hosts.length === 0) {
-			hostListElement.innerHTML = '<div class="empty-state">No hosts configured. Click "Add Host" to get started.</div>';
+			hostListElement.innerHTML = `
+				<div class="empty-state">
+					<div style="text-align: center; padding: 40px 20px;">
+						<div style="font-size: 48px; margin-bottom: 16px; opacity: 0.5;">
+							<span class="codicon codicon-server"></span>
+						</div>
+						<div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--vscode-foreground);">
+							No hosts configured
+						</div>
+						<div style="font-size: 12px; color: var(--vscode-descriptionForeground); margin-bottom: 16px;">
+							Add your first host to get started with SSH connections
+						</div>
+						<button class="add-first-host-button" style="
+							padding: 8px 16px;
+							background-color: var(--vscode-button-background);
+							color: var(--vscode-button-foreground);
+							border: none;
+							border-radius: 2px;
+							cursor: pointer;
+							font-size: 13px;
+						">
+							<span class="codicon codicon-add"></span> Add Host
+						</button>
+					</div>
+				</div>
+			`;
+
+			// Add click handler for the empty state button
+			const addButton = hostListElement.querySelector('.add-first-host-button');
+			if (addButton) {
+				this._register(addDisposableListener(addButton, 'click', () => this._showForm(FormMode.Add)));
+			}
+
 			return;
 		}
 
@@ -1459,6 +1509,20 @@ export class LabonairHostView extends ViewPane {
 		// Add click handlers for cards
 		const cards = hostListElement.querySelectorAll('.host-card');
 		cards.forEach(card => {
+			// Single click for selection
+			this._register(addDisposableListener(card, 'click', (e: MouseEvent) => {
+				// Don't select if clicking on notes icon or other interactive elements
+				if ((e.target as HTMLElement).classList.contains('notes-icon')) {
+					return;
+				}
+
+				const hostId = (card as HTMLElement).dataset['hostId'];
+				if (hostId) {
+					this._selectedHostId = hostId;
+					this._loadHosts(); // Reload to update selection state
+				}
+			}));
+
 			this._register(addDisposableListener(card, 'dblclick', async () => {
 				const hostId = (card as HTMLElement).dataset['hostId'];
 				if (hostId) {
@@ -1468,19 +1532,54 @@ export class LabonairHostView extends ViewPane {
 					}
 				}
 			}));
+
+			// Add context menu handler
+			this._register(addDisposableListener(card, 'contextmenu', async (e: MouseEvent) => {
+				e.preventDefault();
+				e.stopPropagation();
+
+				const hostId = (card as HTMLElement).dataset['hostId'];
+				if (!hostId) {
+					return;
+				}
+
+				const host = await this.hostService.getHost(hostId);
+				if (!host) {
+					return;
+				}
+
+				this._showHostContextMenu(e, host);
+			}));
+
+			// Add tooltip handlers for notes icons
+			const notesIcon = card.querySelector('.notes-icon');
+			if (notesIcon) {
+				this._register(addDisposableListener(notesIcon, 'mouseenter', (e: MouseEvent) => {
+					const notes = (card as HTMLElement).dataset['notes'];
+					if (notes) {
+						this._showTooltip(e, notes);
+					}
+				}));
+				this._register(addDisposableListener(notesIcon, 'mouseleave', () => {
+					this._hideTooltip();
+				}));
+			}
 		});
 	}
 
 	private _renderHostCard(host: IHost): string {
 		const isActive = this._activeSessions.has(host.id);
 		const activeClass = isActive ? 'active-session' : '';
+		const selectedClass = this._selectedHostId === host.id ? 'selected' : '';
+		const hasNotes = host.notes && host.notes.trim().length > 0;
 
 		return `
-			<div class="host-card ${activeClass}" data-host-id="${host.id}">
+			<div class="host-card ${activeClass} ${selectedClass}" data-host-id="${host.id}" ${hasNotes && host.notes ? `data-notes="${this._escapeHtml(host.notes)}"` : ''}>
 				<div class="host-header">
 					<span class="os-icon">${this._getOSIcon(host.connection.osIcon)}</span>
 					<span class="host-name">${host.name}</span>
 					${isActive ? '<span class="active-badge codicon codicon-play"></span>' : ''}
+					${hasNotes ? '<span class="notes-icon codicon codicon-info"></span>' : ''}
 					<span class="status-indicator ${this.hostService.getHostStatus(host.id)}"></span>
 				</div>
 				<div class="host-info">
@@ -1518,13 +1617,26 @@ export class LabonairHostView extends ViewPane {
 			}
 		}
 
-		// If active sessions changed, reload the host list to update visuals
+		// If active sessions changed, reload the host list to update visuals and badge
 		const hasChanges =
 			previousActiveSessions.size !== this._activeSessions.size ||
 			[...previousActiveSessions].some(id => !this._activeSessions.has(id));
 
 		if (hasChanges) {
+			this._updateBadge();
 			this._loadHosts();
+		}
+	}
+
+	/**
+	 * Updates the view badge with the number of active connections
+	 */
+	private _updateBadge(): void {
+		const count = this._activeSessions.size;
+		if (count > 0) {
+			this.updateTitleDescription(`${count} active`);
+		} else {
+			this.updateTitleDescription('');
 		}
 	}
 
@@ -1873,6 +1985,211 @@ export class LabonairHostView extends ViewPane {
 
 		} catch (error) {
 			notificationService.error(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	/**
+	 * Shows the context menu for a host card
+	 */
+	private _showHostContextMenu(e: MouseEvent, host: IHost): void {
+		const actions = [
+			new Action('labonair.editHost', 'Edit Host', undefined, true, async () => {
+				this._showForm(FormMode.Edit, host);
+			}),
+			new Action('labonair.editPortForwards', 'Edit Port Forwards', undefined, true, async () => {
+				const result = await showPortForwardingDialog(
+					host.tunnels || [],
+					this.dialogService,
+					this.notificationService
+				);
+
+				if (!result.cancelled) {
+					// Update host with new tunnels
+					await this.hostService.updateHost(host.id, { tunnels: result.tunnels });
+					this.notificationService.info('Port forwarding rules updated');
+					await this._loadHosts();
+				}
+			}),
+			new Action('labonair.duplicateHost', 'Duplicate Host', undefined, true, async () => {
+				const duplicatedHost: IHost = {
+					...host,
+					id: generateUuid(),
+					name: `${host.name} (Copy)`,
+					created: Date.now()
+				};
+				await this.hostService.addHost(duplicatedHost);
+				this.notificationService.info('Host duplicated');
+				await this._loadHosts();
+			}),
+			new Action('labonair.deleteHost', 'Delete Host', undefined, true, async () => {
+				const confirmed = await this.dialogService.confirm({
+					title: 'Delete Host',
+					message: `Are you sure you want to delete "${host.name}"?`,
+					primaryButton: 'Delete',
+					type: 'warning'
+				});
+
+				if (confirmed.confirmed) {
+					await this.hostService.deleteHost(host.id);
+					this.notificationService.info(`Host "${host.name}" deleted`);
+					await this._loadHosts();
+				}
+			})
+		];
+
+		this.contextMenuService.showContextMenu({
+			getAnchor: () => ({ x: e.clientX, y: e.clientY }),
+			getActions: () => actions
+		});
+	}
+
+	/**
+	 * Shows a tooltip with markdown-rendered notes
+	 */
+	private _showTooltip(e: MouseEvent, markdown: string): void {
+		// Remove existing tooltip if any
+		this._hideTooltip();
+
+		// Create tooltip element
+		const tooltip = document.createElement('div');
+		tooltip.className = 'host-tooltip';
+		tooltip.id = 'labonair-host-tooltip';
+
+		// Simple markdown rendering (basic support)
+		const html = this._renderMarkdown(markdown);
+		tooltip.innerHTML = html;
+
+		// Position tooltip
+		const rect = (e.target as HTMLElement).getBoundingClientRect();
+		tooltip.style.left = `${rect.right + 10}px`;
+		tooltip.style.top = `${rect.top}px`;
+
+		// Add to DOM
+		document.body.appendChild(tooltip);
+
+		// Trigger reflow for transition
+		setTimeout(() => {
+			tooltip.classList.add('visible');
+		}, 10);
+	}
+
+	/**
+	 * Hides the tooltip
+	 */
+	private _hideTooltip(): void {
+		const tooltip = document.getElementById('labonair-host-tooltip');
+		if (tooltip) {
+			tooltip.classList.remove('visible');
+			setTimeout(() => {
+				tooltip.remove();
+			}, 200); // Wait for fade out transition
+		}
+	}
+
+	/**
+	 * Simple markdown renderer for tooltips
+	 */
+	private _renderMarkdown(markdown: string): string {
+		let html = this._escapeHtml(markdown);
+
+		// Headers
+		html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+		html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+		html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+		// Bold
+		html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+		html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+		// Italic
+		html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+		html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+
+		// Code
+		html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+
+		// Line breaks
+		html = html.replace(/\n/g, '<br>');
+
+		// Lists
+		html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+		html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+		return html;
+	}
+
+	/**
+	 * Escapes HTML special characters
+	 */
+	private _escapeHtml(text: string): string {
+		const div = document.createElement('div');
+		div.textContent = text;
+		return div.innerHTML;
+	}
+
+	/**
+	 * Handles Quick Connect logic
+	 * Parses user@host[:port] format and creates an ephemeral in-memory host
+	 */
+	private async _handleQuickConnect(input: string): Promise<void> {
+		const notificationService = this.instantiationService.invokeFunction(accessor => accessor.get(INotificationService));
+
+		if (!input || !input.trim()) {
+			notificationService.warn('Please enter a connection string (e.g., user@host or user@host:port)');
+			return;
+		}
+
+		try {
+			// Parse connection string: user@host or user@host:port
+			const match = input.match(/^([^@]+)@([^:]+)(?::(\d+))?$/);
+
+			if (!match) {
+				notificationService.error('Invalid connection string. Format: user@host or user@host:port');
+				return;
+			}
+
+			const username = match[1];
+			const host = match[2];
+			const port = match[3] ? parseInt(match[3], 10) : 22;
+
+			// Create ephemeral in-memory host
+			const ephemeralHost: IHost = {
+				id: generateUuid(),
+				name: `Quick: ${username}@${host}`,
+				connection: {
+					host,
+					port,
+					username,
+					protocol: 'ssh',
+					osIcon: 'unknown'
+				},
+				auth: {
+					type: 'agent' // Default to SSH agent for quick connections
+				},
+				created: Date.now()
+			};
+
+			// TODO: In Phase 3, this will trigger the actual SSH connection
+			// For now, we'll show a notification and ask if they want to save the host
+			notificationService.info(`Quick Connect to ${username}@${host}:${port} - Connection will be implemented in Phase 3`);
+
+			// Ask if user wants to save this host
+			const quickInputService = this.instantiationService.invokeFunction(accessor => accessor.get(IQuickInputService));
+			const saveChoice = await quickInputService.pick([
+				{ label: 'Save this host', id: 'save' },
+				{ label: 'Connect without saving', id: 'nosave' }
+			], {
+				placeHolder: 'Do you want to save this host for future use?',
+				title: 'Quick Connect'
+			});
+
+			if (saveChoice && saveChoice.id === 'save') {
+				// Open the form with pre-filled values
+				this._showForm(FormMode.Add, ephemeralHost);
+			}
+
+		} catch (error) {
+			notificationService.error(`Quick Connect failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 

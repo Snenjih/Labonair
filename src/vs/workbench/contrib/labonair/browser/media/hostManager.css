@@ -191,6 +191,17 @@
 	background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
+/* Selected State */
+.host-manager .host-card.selected {
+	background-color: var(--vscode-list-activeSelectionBackground);
+	border-color: var(--vscode-list-activeSelectionForeground);
+}
+
+.host-manager .host-card.selected .host-name,
+.host-manager .host-card.selected .connection-info {
+	color: var(--vscode-list-activeSelectionForeground);
+}
+
 /* Active Session Indicator */
 .host-manager .host-card.active-session {
 	border: 2px solid var(--vscode-focusBorder);
@@ -511,6 +522,75 @@
 .script-manager .script-edit-btn:hover,
 .script-manager .script-delete-btn:hover {
 	background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Notes Icon in Host Card */
+.host-manager .notes-icon {
+	color: var(--vscode-icon-foreground);
+	font-size: 14px;
+	opacity: 0.7;
+	cursor: help;
+	transition: opacity 0.2s;
+}
+
+.host-manager .notes-icon:hover {
+	opacity: 1;
+}
+
+/* Tooltip */
+.host-manager .host-tooltip {
+	position: fixed;
+	max-width: 300px;
+	padding: 12px;
+	background-color: var(--vscode-editorHoverWidget-background);
+	border: 1px solid var(--vscode-editorHoverWidget-border);
+	border-radius: 4px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+	color: var(--vscode-editorHoverWidget-foreground);
+	font-size: 12px;
+	line-height: 1.5;
+	z-index: 10000;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.2s;
+}
+
+.host-manager .host-tooltip.visible {
+	opacity: 1;
+}
+
+.host-manager .host-tooltip h1,
+.host-manager .host-tooltip h2,
+.host-manager .host-tooltip h3,
+.host-manager .host-tooltip h4,
+.host-manager .host-tooltip h5,
+.host-manager .host-tooltip h6 {
+	margin: 8px 0 4px 0;
+	color: var(--vscode-editorHoverWidget-foreground);
+}
+
+.host-manager .host-tooltip p {
+	margin: 4px 0;
+}
+
+.host-manager .host-tooltip code {
+	background-color: var(--vscode-textCodeBlock-background);
+	padding: 2px 4px;
+	border-radius: 2px;
+	font-family: monospace;
+}
+
+.host-manager .host-tooltip pre {
+	background-color: var(--vscode-textCodeBlock-background);
+	padding: 8px;
+	border-radius: 4px;
+	overflow: auto;
+}
+
+.host-manager .host-tooltip ul,
+.host-manager .host-tooltip ol {
+	margin: 4px 0;
+	padding-left: 20px;
 }
 
 /* Form Overlays */
