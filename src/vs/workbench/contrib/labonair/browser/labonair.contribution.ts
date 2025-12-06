@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/hostManager.css';
+import './media/hostForm.css';
 import { localize, localize2 } from '../../../../nls.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
