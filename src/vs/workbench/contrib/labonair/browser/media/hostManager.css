@@ -1,0 +1,166 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.labonair-host-view {
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+}
+
+.labonair-host-view .webview-container {
+	height: 100%;
+	width: 100%;
+	overflow: auto;
+}
+
+.host-manager {
+	padding: 8px;
+	color: var(--vscode-foreground);
+	background-color: var(--vscode-sideBar-background);
+}
+
+.host-manager .header {
+	margin-bottom: 12px;
+}
+
+.host-manager .quick-connect {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.host-manager .quick-connect-input {
+	flex: 1;
+	padding: 6px;
+	background-color: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border: 1px solid var(--vscode-input-border);
+	border-radius: 2px;
+}
+
+.host-manager .quick-connect-button,
+.host-manager .add-host-button {
+	padding: 6px 12px;
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+}
+
+.host-manager .quick-connect-button:hover,
+.host-manager .add-host-button:hover {
+	background-color: var(--vscode-button-hoverBackground);
+}
+
+.host-manager .toolbar {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.host-manager .search-input {
+	flex: 1;
+	padding: 6px;
+	background-color: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	border: 1px solid var(--vscode-input-border);
+	border-radius: 2px;
+}
+
+.host-manager .host-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.host-manager .empty-state,
+.host-manager .loading {
+	padding: 20px;
+	text-align: center;
+	color: var(--vscode-descriptionForeground);
+}
+
+.host-manager .host-card {
+	padding: 12px;
+	background-color: var(--vscode-list-inactiveSelectionBackground);
+	border: 1px solid var(--vscode-panel-border);
+	border-radius: 4px;
+	cursor: pointer;
+	transition: background-color 0.2s;
+}
+
+.host-manager .host-card:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.host-manager .host-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.host-manager .os-icon {
+	font-size: 18px;
+}
+
+.host-manager .host-name {
+	flex: 1;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+}
+
+.host-manager .status-indicator {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background-color: var(--vscode-descriptionForeground);
+}
+
+.host-manager .status-indicator.online {
+	background-color: #4ec9b0;
+}
+
+.host-manager .status-indicator.offline {
+	background-color: #f48771;
+}
+
+.host-manager .status-indicator.connecting {
+	background-color: #ffcc00;
+	animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+	0%, 100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.5;
+	}
+}
+
+.host-manager .host-info {
+	margin-bottom: 8px;
+}
+
+.host-manager .connection-info {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.host-manager .host-tags {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+
+.host-manager .tag {
+	padding: 2px 8px;
+	font-size: 11px;
+	background-color: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	border-radius: 10px;
+}
