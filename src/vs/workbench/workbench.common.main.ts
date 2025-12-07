@@ -196,9 +196,6 @@ import './contrib/themeStudio/browser/themeStudio.contribution.js';
 import './contrib/preferences/browser/keybindingsEditorContribution.js';
 import './contrib/preferences/browser/preferencesSearch.js';
 
-// Labonair Host Manager
-import './contrib/labonair/browser/labonair.contribution.js';
-
 // Performance
 import './contrib/performance/browser/performance.contribution.js';
 
