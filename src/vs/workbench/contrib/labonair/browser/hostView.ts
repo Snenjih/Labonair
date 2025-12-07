@@ -21,7 +21,7 @@ import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickin
 import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { URI } from '../../../../base/common/uri.js';
-import { LabonairImporter, FileZillaImporter, WinSCPImporter, PuTTYImporter } from '../node/importers.js';
+import { LabonairImporter, FileZillaImporter, WinSCPImporter, PuTTYImporter } from './importers.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { showPortForwardingDialog } from './dialogs/portForwardingDialog.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
