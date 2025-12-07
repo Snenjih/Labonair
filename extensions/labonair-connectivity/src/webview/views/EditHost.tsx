@@ -7,11 +7,12 @@ import '../styles/forms.css';
 
 interface EditHostProps {
 	initialHost?: Host | null;
+	agentAvailable?: boolean;
 	onSave: (host: Host, password?: string, keyPath?: string) => void;
 	onCancel: () => void;
 }
 
-const EditHost: React.FC<EditHostProps> = ({ initialHost, onSave, onCancel }) => {
+const EditHost: React.FC<EditHostProps> = ({ initialHost, agentAvailable, onSave, onCancel }) => {
 	const [activeTab, setActiveTab] = useState<'general' | 'auth' | 'advanced'>('general');
 
 	// Form State
@@ -23,6 +24,7 @@ const EditHost: React.FC<EditHostProps> = ({ initialHost, onSave, onCancel }) =>
 	const [osIcon, setOsIcon] = useState<Host['osIcon']>(initialHost?.osIcon || 'linux');
 	const [tags, setTags] = useState<string[]>(initialHost?.tags || []);
 	const [jumpHostId, setJumpHostId] = useState(initialHost?.jumpHostId || '');
+
 	const [tunnels, setTunnels] = useState<Tunnel[]>(initialHost?.tunnels || []);
 	const [notes, setNotes] = useState(initialHost?.notes || '');
 	const [keepAlive, setKeepAlive] = useState(initialHost?.keepAlive || false);
@@ -177,6 +179,20 @@ const EditHost: React.FC<EditHostProps> = ({ initialHost, onSave, onCancel }) =>
 
 						<label>Notes</label>
 						<textarea className="vscode-input" value={notes} onChange={e => setNotes(e.target.value)} rows={4} />
+					</div>
+				)}
+
+				{authType === 'agent' && (
+					<div className="form-info">
+						{agentAvailable ? (
+							<span style={{ color: 'var(--vscode-testing-iconPassed)' }}>
+								<i className="codicon codicon-check"></i> SSH Agent Active
+							</span>
+						) : (
+							<span style={{ color: 'var(--vscode-testing-iconFailed)' }}>
+								<i className="codicon codicon-error"></i> Agent Not Found
+							</span>
+						)}
 					</div>
 				)}
 

@@ -4,18 +4,13 @@ interface ToolbarProps {
 	onRefresh: () => void;
 	onImport: (format: 'json' | 'ssh-config') => void;
 	onExport: () => void;
+	onSort: (criteria: 'name' | 'lastUsed' | 'group') => void;
+	sortCriteria?: 'name' | 'lastUsed' | 'group';
 }
 
-const Toolbar: React.FC<ToolbarProps> = ({ onRefresh, onImport, onExport }) => {
+const Toolbar: React.FC<ToolbarProps> = ({ onRefresh, onImport, onExport, onSort, sortCriteria }) => {
 
 	const handleImportClick = () => {
-		// For simplicity, just import SSH Config by default or show a small menu.
-		// Instructions say "Import button... can import an SSH Config file".
-		// But importer service supports JSON too.
-		// Let's defaulted to ssh-config or maybe let user valid via separate buttons?
-		// For now simple alert or default.
-		// Actually, let's just trigger import ssh-config as primary action for now or open a choice logic if possible.
-		// But easier is just to pass 'ssh-config' as it's the main requirement.
 		onImport('ssh-config');
 	};
 
@@ -30,6 +25,20 @@ const Toolbar: React.FC<ToolbarProps> = ({ onRefresh, onImport, onExport }) => {
 			<button onClick={onExport} title="Export JSON">
 				<i className="codicon codicon-cloud-download"></i>
 			</button>
+
+			<div className="toolbar-separator"></div>
+
+			<div className="dropdown-wrapper">
+				<i className="codicon codicon-sort-precedence dropdown-icon"></i>
+				<select className="toolbar-select" onChange={(e) => onSort(e.target.value as any)} defaultValue="name">
+					<option value="name">Name</option>
+					<option value="lastUsed">Last Used</option>
+					<option value="group">Group</option>
+				</select>
+			</div>
+
+			<div className="toolbar-separator"></div>
+
 			<button title="Local Terminal">
 				<i className="codicon codicon-terminal"></i>
 			</button>

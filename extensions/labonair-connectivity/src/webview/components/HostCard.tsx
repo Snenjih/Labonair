@@ -3,15 +3,45 @@ import { Host } from '../../common/types';
 
 interface HostCardProps {
 	host: Host;
+	isActive?: boolean;
 	onConnect: () => void;
 	onEdit: () => void;
 	onDelete: () => void;
 }
 
-const HostCard: React.FC<HostCardProps> = ({ host, onConnect, onEdit, onDelete }) => {
+const HostCard: React.FC<HostCardProps> = ({ host, isActive, onConnect, onEdit, onDelete }) => {
+	const handleDragOver = (e: React.DragEvent) => {
+		if (e.dataTransfer.types.includes('application/labonair-script')) {
+			e.preventDefault();
+			e.dataTransfer.dropEffect = 'copy';
+			e.currentTarget.classList.add('drag-over');
+		}
+	};
+
+	const handleDragLeave = (e: React.DragEvent) => {
+		e.currentTarget.classList.remove('drag-over');
+	};
+
+	const handleDrop = (e: React.DragEvent) => {
+		e.preventDefault();
+		e.currentTarget.classList.remove('drag-over');
+		const scriptId = e.dataTransfer.getData('application/labonair-script');
+		if (scriptId) {
+			// @ts-ignore
+			vscode.postMessage({ command: 'RUN_SCRIPT', payload: { scriptId, hostId: host.id } });
+		}
+	};
+
 	return (
-		<div className="host-card">
+		<div
+			className={`host-card ${isActive ? 'active-session' : ''}`}
+			onDoubleClick={onConnect}
+			onDragOver={handleDragOver}
+			onDragLeave={handleDragLeave}
+			onDrop={handleDrop}
+		>
 			<div className="card-top">
+				{isActive && <div className="active-indicator" title="Active Session"></div>}
 				<input type="checkbox" />
 				<div className="host-info">
 					<div className="host-name">

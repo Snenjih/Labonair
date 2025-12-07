@@ -18,6 +18,9 @@ export interface Host {
 	tunnels?: Tunnel[];
 	notes?: string;
 	keepAlive?: boolean;
+	authType?: 'password' | 'key' | 'agent' | 'credential';
+	credentialId?: string;
+	lastUsed?: number;
 }
 
 export interface Credential {
@@ -25,21 +28,50 @@ export interface Credential {
 	name: string;
 	username: string;
 	type: 'password' | 'key';
+	folder?: string;
+}
+
+export interface Script {
+	id: string;
+	name: string;
+	content: string;
+	shell?: string;
 }
 
 export interface WebviewState {
 	view: 'list' | 'edit' | 'credentials';
 	hosts: Host[];
 	selectedHost: Host | null;
+	credentials?: Credential[];
+	scripts?: Script[];
+	sshAgentAvailable?: boolean;
+	activeSessionHostIds?: string[];
+}
+
+export interface GroupConfig {
+	name: string;
+	username?: string;
+	port?: number;
+	credentialId?: string;
 }
 
 export type Message =
 	| { command: 'FETCH_DATA' }
-	| { command: 'UPDATE_DATA', payload: { hosts: Host[] } }
+	| { command: 'UPDATE_DATA', payload: { hosts: Host[], credentials?: Credential[], scripts?: Script[] } }
 	| { command: 'SAVE_HOST', payload: { host: Host, password?: string, keyPath?: string } }
 	| { command: 'DELETE_HOST', payload: { id: string } }
 	| { command: 'CONNECT_SSH', payload: { id: string } }
 	| { command: 'PICK_KEY_FILE' }
 	| { command: 'KEY_FILE_PICKED', payload: { path: string } }
 	| { command: 'IMPORT_REQUEST', payload: { format: 'json' | 'ssh-config' } }
-	| { command: 'EXPORT_REQUEST' };
+	| { command: 'EXPORT_REQUEST' }
+	| { command: 'GET_CREDENTIALS' }
+	| { command: 'SAVE_CREDENTIAL', payload: { credential: Credential, secret: string } }
+	| { command: 'DELETE_CREDENTIAL', payload: { id: string } }
+	| { command: 'RUN_SCRIPT', payload: { scriptId: string, hostId: string } }
+	| { command: 'SAVE_SCRIPT', payload: { script: Script } }
+	| { command: 'DELETE_SCRIPT', payload: { id: string } }
+	| { command: 'SESSION_UPDATE', payload: { activeHostIds: string[] } }
+	| { command: 'AGENT_STATUS', payload: { available: boolean } }
+	| { command: 'GET_CONFIG', payload: { hostId: string } }
+	| { command: 'SAVE_GROUP_CONFIG', payload: { config: GroupConfig } };
