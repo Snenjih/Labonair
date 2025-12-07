@@ -6,16 +6,48 @@ interface ToolbarProps {
 	onExport: () => void;
 	onSort: (criteria: 'name' | 'lastUsed' | 'group') => void;
 	sortCriteria?: 'name' | 'lastUsed' | 'group';
+	onQuickConnect: (connectionString: string) => void;
 }
 
-const Toolbar: React.FC<ToolbarProps> = ({ onRefresh, onImport, onExport, onSort, sortCriteria }) => {
+const Toolbar: React.FC<ToolbarProps> = ({ onRefresh, onImport, onExport, onSort, sortCriteria, onQuickConnect }) => {
 
 	const handleImportClick = () => {
 		onImport('ssh-config');
 	};
 
+	const [quickConnect, setQuickConnect] = React.useState('');
+
+	const handleConnectClick = () => {
+		if (quickConnect) {
+			onQuickConnect(quickConnect);
+			setQuickConnect('');
+		}
+	};
+
+	const handleKeyDown = (e: React.KeyboardEvent) => {
+		if (e.key === 'Enter') {
+			handleConnectClick();
+		}
+	};
+
 	return (
 		<div className="toolbar">
+			<div className="quick-connect">
+				<input
+					type="text"
+					className="vscode-input"
+					placeholder="user@host:port"
+					value={quickConnect}
+					onChange={e => setQuickConnect(e.target.value)}
+					onKeyDown={handleKeyDown}
+				/>
+				<button onClick={handleConnectClick} title="Quick Connect">
+					<i className="codicon codicon-plug"></i>
+				</button>
+			</div>
+
+			<div className="toolbar-separator"></div>
+
 			<button onClick={onRefresh} title="Refresh">
 				<i className="codicon codicon-refresh"></i>
 			</button>

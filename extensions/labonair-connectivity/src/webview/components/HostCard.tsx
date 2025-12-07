@@ -7,9 +7,10 @@ interface HostCardProps {
 	onConnect: () => void;
 	onEdit: () => void;
 	onDelete: () => void;
+	onManageTunnels: () => void;
 }
 
-const HostCard: React.FC<HostCardProps> = ({ host, isActive, onConnect, onEdit, onDelete }) => {
+const HostCard: React.FC<HostCardProps> = ({ host, isActive, onConnect, onEdit, onDelete, onManageTunnels }) => {
 	const handleDragOver = (e: React.DragEvent) => {
 		if (e.dataTransfer.types.includes('application/labonair-script')) {
 			e.preventDefault();
@@ -58,6 +59,11 @@ const HostCard: React.FC<HostCardProps> = ({ host, isActive, onConnect, onEdit, 
 				{host.tags.map((tag, index) => (
 					<span key={index} className="tag-pill">{tag}</span>
 				))}
+				{host.notes && (
+					<span className="notes-icon" title={host.notes}>
+						<i className="codicon codicon-note"></i>
+					</span>
+				)}
 			</div>
 
 			<div className="card-bottom">
@@ -69,6 +75,9 @@ const HostCard: React.FC<HostCardProps> = ({ host, isActive, onConnect, onEdit, 
 				</button>
 				<button className="action-btn" title="SFTP">
 					<i className="codicon codicon-file-symlink-directory"></i>
+				</button>
+				<button className="action-btn secondary" onClick={onManageTunnels} title="Tunnels">
+					<i className="codicon codicon-plug"></i>
 				</button>
 				<button className="action-btn secondary" onClick={onEdit} title="Edit">
 					<i className="codicon codicon-edit"></i>

@@ -21,6 +21,7 @@ export interface Host {
 	authType?: 'password' | 'key' | 'agent' | 'credential';
 	credentialId?: string;
 	lastUsed?: number;
+	protocol?: 'ssh' | 'local' | 'wsl';
 }
 
 export interface Credential {
@@ -46,6 +47,7 @@ export interface WebviewState {
 	scripts?: Script[];
 	sshAgentAvailable?: boolean;
 	activeSessionHostIds?: string[];
+	availableShells?: string[];
 }
 
 export interface GroupConfig {
@@ -57,10 +59,10 @@ export interface GroupConfig {
 
 export type Message =
 	| { command: 'FETCH_DATA' }
-	| { command: 'UPDATE_DATA', payload: { hosts: Host[], credentials?: Credential[], scripts?: Script[] } }
+	| { command: 'UPDATE_DATA', payload: { hosts: Host[], credentials?: Credential[], scripts?: Script[], activeSessionHostIds?: string[] } }
 	| { command: 'SAVE_HOST', payload: { host: Host, password?: string, keyPath?: string } }
 	| { command: 'DELETE_HOST', payload: { id: string } }
-	| { command: 'CONNECT_SSH', payload: { id: string } }
+	| { command: 'CONNECT_SSH', payload: { id?: string; host?: Host } }
 	| { command: 'PICK_KEY_FILE' }
 	| { command: 'KEY_FILE_PICKED', payload: { path: string } }
 	| { command: 'IMPORT_REQUEST', payload: { format: 'json' | 'ssh-config' } }
@@ -74,4 +76,12 @@ export type Message =
 	| { command: 'SESSION_UPDATE', payload: { activeHostIds: string[] } }
 	| { command: 'AGENT_STATUS', payload: { available: boolean } }
 	| { command: 'GET_CONFIG', payload: { hostId: string } }
-	| { command: 'SAVE_GROUP_CONFIG', payload: { config: GroupConfig } };
+	| { command: 'GET_CONFIG', payload: { hostId: string } }
+	| { command: 'SAVE_GROUP_CONFIG', payload: { config: GroupConfig } }
+	| { command: 'CHECK_HOST_KEY', payload: { host: string, port: number, fingerprint: string, status: 'unknown' | 'invalid' } }
+	| { command: 'CHECK_HOST_KEY', payload: { host: string, port: number, fingerprint: string, status: 'unknown' | 'invalid' } }
+	| { command: 'ACCEPT_HOST_KEY', payload: { host: string, port: number, fingerprint: string, save: boolean } }
+	| { command: 'DENY_HOST_KEY' }
+	| { command: 'AVAILABLE_SHELLS', payload: { shells: string[] } };
+
+

@@ -7,10 +7,14 @@ import HostGroup from './components/HostGroup';
 import HostCard from './components/HostCard';
 import EditHost from './views/EditHost';
 import CredentialsView from './views/CredentialsView';
+import HostKeyDialog from './dialogs/HostKeyDialog';
 import ScriptList from './components/ScriptList';
 import SearchBar from './components/SearchBar';
+import TunnelDialog from './dialogs/TunnelDialog';
+import EmptyState from './components/EmptyState';
 
 const App: React.FC = () => {
+	// ... existing ...
 	const [state, setState] = useState<WebviewState>({
 		view: 'list',
 		hosts: [],
@@ -22,6 +26,15 @@ const App: React.FC = () => {
 
 	const [filterText, setFilterText] = useState('');
 	const [sortCriteria, setSortCriteria] = useState<'name' | 'lastUsed' | 'group'>('name');
+
+	// Dialogs
+	const [tunnelDialogHost, setTunnelDialogHost] = useState<Host | null>(null);
+	const [hostKeyRequest, setHostKeyRequest] = useState<{
+		host: string;
+		port: number;
+		fingerprint: string;
+		status: 'unknown' | 'invalid';
+	} | null>(null);
 
 	useEffect(() => {
 		window.addEventListener('message', event => {
@@ -42,12 +55,38 @@ const App: React.FC = () => {
 						activeSessionHostIds: message.payload.activeHostIds
 					}));
 					break;
+				case 'CHECK_HOST_KEY':
+					setHostKeyRequest(message.payload);
+					break;
+				case 'AVAILABLE_SHELLS':
+					setState(prev => ({ ...prev, availableShells: message.payload.shells }));
+					break;
 			}
 		});
 
 		// Initial fetch
 		vscode.postMessage({ command: 'FETCH_DATA' });
 	}, []);
+
+	const handleHostKeyAccept = (save: boolean) => {
+		if (hostKeyRequest) {
+			vscode.postMessage({
+				command: 'ACCEPT_HOST_KEY',
+				payload: {
+					host: hostKeyRequest.host,
+					port: hostKeyRequest.port,
+					fingerprint: hostKeyRequest.fingerprint,
+					save
+				}
+			});
+			setHostKeyRequest(null);
+		}
+	};
+
+	const handleHostKeyDeny = () => {
+		vscode.postMessage({ command: 'DENY_HOST_KEY' });
+		setHostKeyRequest(null);
+	};
 
 	const handleNavigate = (view: 'list' | 'edit' | 'credentials') => {
 		setState(prev => ({ ...prev, view }));
@@ -108,34 +147,83 @@ const App: React.FC = () => {
 
 	return (
 		<div className="app-container">
+			{hostKeyRequest && (
+				<HostKeyDialog
+					host={hostKeyRequest.host}
+					port={hostKeyRequest.port}
+					fingerprint={hostKeyRequest.fingerprint}
+					status={hostKeyRequest.status}
+					onAccept={handleHostKeyAccept}
+					onDeny={handleHostKeyDeny}
+				/>
+			)}
 			<TopNav activeView={state.view} onNavigate={handleNavigate} />
 
 			{state.view === 'list' && (
 				<>
 					<Toolbar
-						onRefresh={handleRefresh} // Changed to handleRefresh
+						onRefresh={handleRefresh}
 						onImport={handleImport}
 						onExport={handleExport}
-						onSort={setSortCriteria} // Added onSort prop
-						sortCriteria={sortCriteria} // Added sortCriteria prop
+						onSort={setSortCriteria}
+						sortCriteria={sortCriteria}
+						onQuickConnect={(input) => {
+							// Parse user@host:port
+							let user = '';
+							let host = input;
+							let port = 22;
+
+							if (host.includes('@')) {
+								const parts = host.split('@');
+								user = parts[0];
+								host = parts[1];
+							}
+
+							if (host.includes(':')) {
+								const parts = host.split(':');
+								host = parts[0];
+								port = parseInt(parts[1]) || 22;
+							}
+
+							const ephemeralHost: Host = {
+								id: crypto.randomUUID(),
+								name: input,
+								group: 'Quick Connect',
+								host: host,
+								port: port,
+								username: user || 'root', // Default to root if no user? Or prompt?
+								osIcon: 'linux',
+								tags: [],
+								authType: 'key' // Default to key? Or try password?
+							};
+
+							// Just connect
+							vscode.postMessage({ command: 'CONNECT_SSH', payload: { host: ephemeralHost } });
+						}}
 					/>
-					<SearchBar value={filterText} onChange={setFilterText} /> {/* Added SearchBar */}
+					<SearchBar value={filterText} onChange={setFilterText} />
 					<div className="host-list">
-						{Object.entries(groupedHosts).map(([group, hosts]) => (
-							<HostGroup key={group} name={group} count={hosts.length} credentials={state.credentials}>
-								{hosts.map(host => (
-									<HostCard
-										key={host.id}
-										host={host}
-										onConnect={() => handleConnect(host.id)}
-										onDelete={() => handleDeleteHost(host.id)}
-										onEdit={() => {
-											setState(prev => ({ ...prev, view: 'edit', selectedHost: host }));
-										}}
-									/>
-								))}
-							</HostGroup>
-						))}
+						{state.hosts.length === 0 ? (
+							<EmptyState />
+						) : (
+							Object.entries(groupedHosts).map(([group, hosts]) => (
+								<HostGroup key={group} name={group} count={hosts.length} credentials={state.credentials}>
+									{hosts.map(host => (
+										<HostCard
+											key={host.id}
+											host={host}
+											isActive={state.activeSessionHostIds?.includes(host.id)}
+											onConnect={() => handleConnect(host.id)}
+											onDelete={() => handleDeleteHost(host.id)}
+											onManageTunnels={() => setTunnelDialogHost(host)}
+											onEdit={() => {
+												setState(prev => ({ ...prev, view: 'edit', selectedHost: host }));
+											}}
+										/>
+									))}
+								</HostGroup>
+							))
+						)}
 					</div>
 					<ScriptList scripts={state.scripts || []} />
 				</>
@@ -145,6 +233,7 @@ const App: React.FC = () => {
 				<EditHost
 					initialHost={state.selectedHost}
 					agentAvailable={state.sshAgentAvailable}
+					availableShells={state.availableShells || []}
 					onSave={handleSaveHost}
 					onCancel={() => setState(prev => ({ ...prev, view: 'list', selectedHost: null }))}
 				/>
@@ -152,6 +241,14 @@ const App: React.FC = () => {
 
 			{state.view === 'credentials' && (
 				<CredentialsView credentials={state.credentials || []} />
+			)}
+
+			{tunnelDialogHost && (
+				<TunnelDialog
+					host={tunnelDialogHost}
+					onSave={(updatedHost) => handleSaveHost(updatedHost)}
+					onClose={() => setTunnelDialogHost(null)}
+				/>
 			)}
 		</div>
 	);

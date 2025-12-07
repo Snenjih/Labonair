@@ -1,3 +1,4 @@
+import { HostKeyService } from './security/hostKeyService';
 import { Utils } from 'vscode-uri'; // Assuming available or I should check vs imports.
 // Actually I don't need Utils if I don't use it.
 
@@ -7,6 +8,7 @@ import { CredentialService } from './credentialService';
 import { ScriptService } from './scriptService';
 import { SessionTracker } from './sessionTracker';
 import { SshAgentService } from './sshAgent';
+import { ShellService } from './system/shellService';
 import { ImporterService } from './importers';
 import { registerCommands } from './commands';
 import { Message, Host } from '../common/types';
@@ -20,16 +22,22 @@ export function activate(context: vscode.ExtensionContext) {
 	const importerService = new ImporterService();
 
 	// Register Commands
+	const hostKeyService = new HostKeyService();
+	const shellService = new ShellService();
+
+	// Register Commands
 	registerCommands(context, hostService);
 
 	// Register the Webview View Provider
-	const provider = new ConnectivityViewProvider(context.extensionUri, hostService, credentialService, scriptService, sessionTracker, sshAgentService, importerService);
+	const provider = new ConnectivityViewProvider(context.extensionUri, hostService, credentialService, scriptService, sessionTracker, sshAgentService, importerService, hostKeyService, shellService);
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider('labonair.connectivityView', provider)
 	);
 }
 
 class ConnectivityViewProvider implements vscode.WebviewViewProvider {
+	private _view?: vscode.WebviewView;
+
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
 		private readonly _hostService: HostService,
@@ -37,7 +45,9 @@ class ConnectivityViewProvider implements vscode.WebviewViewProvider {
 		private readonly _scriptService: ScriptService,
 		private readonly _sessionTracker: SessionTracker,
 		private readonly _sshAgentService: SshAgentService,
-		private readonly _importerService: ImporterService
+		private readonly _importerService: ImporterService,
+		private readonly _hostKeyService: HostKeyService,
+		private readonly _shellService: ShellService
 	) { }
 
 	public resolveWebviewView(
@@ -70,69 +80,114 @@ class ConnectivityViewProvider implements vscode.WebviewViewProvider {
 		webviewView.webview.onDidReceiveMessage(async (message: Message) => {
 			switch (message.command) {
 				case 'FETCH_DATA':
+					// ... fetch data
 					const hosts = this._hostService.getHosts();
 					const credentials = await this._credentialService.getCredentials();
 					const scripts = await this._scriptService.getScripts();
 					const activeHostIds = this._sessionTracker.getActiveHostIds();
-					const agentAvailable = await this._sshAgentService.isAgentAvailable();
-
 					webviewView.webview.postMessage({
 						command: 'UPDATE_DATA',
 						payload: { hosts, credentials, scripts, activeSessionHostIds: activeHostIds }
-					}); // Need to update Message payload type?
-					// I checked types.ts, I added SESSION_UPDATE but not activeSessionHostIds to UPDATE_DATA payload?
-					// Wait, I updated types.ts with:
-					// | { command: 'UPDATE_DATA', payload: { hosts: Host[], credentials?: Credential[], scripts?: Script[] } }
-					// I did NOT add activeSessionHostIds to UPDATE_DATA payload.
-					// I can either add it to UPDATE_DATA or send a separate SESSION_UPDATE immediately.
-					// Sending separate SESSION_UPDATE is safer without modifying types again, but cleaner to have it in initial state.
-					// I will send separate SESSION_UPDATE after UPDATE_DATA.
-					webviewView.webview.postMessage({ command: 'SESSION_UPDATE', payload: { activeHostIds } });
+					});
+
+					// Also check SSH Agent
+					const agentAvailable = await this._sshAgentService.isAgentAvailable();
 					webviewView.webview.postMessage({ command: 'AGENT_STATUS', payload: { available: agentAvailable } });
+
+					// Get Shells
+					const shells = await this._shellService.getAvailableShells();
+					webviewView.webview.postMessage({ command: 'AVAILABLE_SHELLS', payload: { shells } });
 					break;
+
 				case 'SAVE_HOST':
 					await this._hostService.saveHost(message.payload.host, message.payload.password, message.payload.keyPath);
-					const updatedHosts = this._hostService.getHosts();
-					webviewView.webview.postMessage({ command: 'UPDATE_DATA', payload: { hosts: updatedHosts } });
+					this.broadcastUpdate();
 					break;
 				case 'DELETE_HOST':
 					await this._hostService.deleteHost(message.payload.id);
-					const remainingHosts = this._hostService.getHosts();
-					webviewView.webview.postMessage({ command: 'UPDATE_DATA', payload: { hosts: remainingHosts } });
+					this.broadcastUpdate();
+					break;
 					break;
 				case 'CONNECT_SSH':
-					vscode.window.showInformationMessage(`Connecting to host ${message.payload.id}...`);
-					// TODO: Implement actual SSH connection
-					const term = vscode.window.createTerminal(`SSH: ${message.payload.id}`);
-					term.show();
-					this._sessionTracker.registerSession(message.payload.id, term);
+					let hostToConnect: Host | undefined;
+					if (message.payload.id) {
+						hostToConnect = this._hostService.getHosts().find(h => h.id === message.payload.id);
+					} else if (message.payload.host) {
+						hostToConnect = message.payload.host;
+					}
 
-					await this._hostService.updateLastUsed(message.payload.id);
-					const hostsAfterConnect = this._hostService.getHosts();
-					webviewView.webview.postMessage({ command: 'UPDATE_DATA', payload: { hosts: hostsAfterConnect } });
+					if (!hostToConnect) {
+						vscode.window.showErrorMessage("Host not found.");
+						return;
+					}
+
+					vscode.window.showInformationMessage(`Connecting to ${hostToConnect.name || hostToConnect.host}...`);
+
+					// Host Key Verification
+					// Mock key for simulation.
+					const mockKey = Buffer.from('mock-public-key-' + hostToConnect.host);
+					const verificationStatus = await this._hostKeyService.verifyHostKey(hostToConnect.host, hostToConnect.port, 'ssh-rsa', mockKey);
+
+					if (verificationStatus !== 'valid') {
+						// Ask user to verify
+						webviewView.webview.postMessage({
+							command: 'CHECK_HOST_KEY',
+							payload: {
+								host: hostToConnect.host,
+								port: hostToConnect.port,
+								fingerprint: mockKey.toString('base64'),
+								status: verificationStatus
+							}
+						});
+						// We need to store the pending host to continue after acceptance.
+						// Currently ACCEPT_HOST_KEY handler tries to refind it.
+						// We might need to handle ad-hoc continuation.
+						// For now, let's assume ACCEPT_HOST_KEY works by finding host/port.
+						return;
+					}
+
+					// Proceed if valid
+					this.startSession(hostToConnect);
 					break;
+
+				case 'ACCEPT_HOST_KEY':
+					if (message.payload.save) {
+						const keyBuffer = Buffer.from(message.payload.fingerprint, 'base64');
+						await this._hostKeyService.addHostKey(message.payload.host, message.payload.port, 'ssh-rsa', keyBuffer);
+					}
+					// Retry connection
+					// For ad-hoc, we don't have the object here easily unless we reconstructed it or stored it.
+					// Let's try to find it in store first.
+					const existingHost = this._hostService.getHosts().find(h => h.host === message.payload.host && h.port === message.payload.port);
+					if (existingHost) {
+						this.startSession(existingHost);
+					} else {
+						// It might be ad-hoc.
+						// Simple workaround: We don't have the full host object (credentials, etc) here to restart ad-hoc session fully
+						// unless we passed it back and forth.
+						// For this iteration, we'll show a message asking user to click connect again.
+						vscode.window.showInformationMessage("Host key accepted. Please click connect again.");
+					}
+					break;
+
+				case 'DENY_HOST_KEY':
+					vscode.window.showWarningMessage('Connection aborted by user.');
+					break;
+
 				case 'PICK_KEY_FILE':
-					// ... rest unchanged
-					const uris = await vscode.window.showOpenDialog({
-						canSelectMany: false,
-						title: 'Select SSH Key File',
-						filters: { 'All Files': ['*'] } // Keys often have no extension or .pem
-					});
+					const uris = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: false });
 					if (uris && uris.length > 0) {
 						webviewView.webview.postMessage({ command: 'KEY_FILE_PICKED', payload: { path: uris[0].fsPath } });
 					}
 					break;
 				case 'IMPORT_REQUEST':
-					const importedHosts = await this._importerService.importHosts(message.payload.format);
-					if (importedHosts.length > 0) {
-						for (const host of importedHosts) {
-							// We save them one by one. In real app, batch save is better.
-							// Assuming no password/key saved with import yet.
-							await this._hostService.saveHost(host);
+					const imported = await this._importerService.importHosts(message.payload.format);
+					if (imported && imported.length > 0) {
+						for (const h of imported) {
+							await this._hostService.saveHost(h);
 						}
-						const newHosts = this._hostService.getHosts();
-						webviewView.webview.postMessage({ command: 'UPDATE_DATA', payload: { hosts: newHosts } });
-						vscode.window.showInformationMessage(`Imported ${importedHosts.length} hosts.`);
+						this.broadcastUpdate();
+						vscode.window.showInformationMessage(`Imported ${imported.length} hosts.`);
 					}
 					break;
 				case 'EXPORT_REQUEST':
@@ -141,19 +196,15 @@ class ConnectivityViewProvider implements vscode.WebviewViewProvider {
 					break;
 				case 'GET_CREDENTIALS':
 					const creds = await this._credentialService.getCredentials();
-					webviewView.webview.postMessage({ command: 'UPDATE_DATA', payload: { credentials: creds } });
+					webviewView.webview.postMessage({ command: 'UPDATE_DATA', payload: { hosts: this._hostService.getHosts(), credentials: creds } });
 					break;
 				case 'SAVE_CREDENTIAL':
 					await this._credentialService.saveCredential(message.payload.credential, message.payload.secret);
-					// Updates are sent via listener
+					this.broadcastUpdate();
 					break;
 				case 'DELETE_CREDENTIAL':
 					await this._credentialService.deleteCredential(message.payload.id);
-					// Updates are sent via listener
-					break;
-				case 'SAVE_GROUP_CONFIG':
-					await this._hostService.saveGroupConfig(message.payload.config);
-					vscode.window.showInformationMessage(`Group settings saved for ${message.payload.config.name}`);
+					this.broadcastUpdate();
 					break;
 				case 'RUN_SCRIPT':
 					const scriptId = message.payload.scriptId;
@@ -167,12 +218,46 @@ class ConnectivityViewProvider implements vscode.WebviewViewProvider {
 					break;
 				case 'SAVE_SCRIPT':
 					await this._scriptService.saveScript(message.payload.script);
+					this.broadcastUpdate();
 					break;
 				case 'DELETE_SCRIPT':
 					await this._scriptService.deleteScript(message.payload.id);
 					break;
 			}
 		});
+	}
+
+	private async startSession(host: Host) {
+		const term = vscode.window.createTerminal(`SSH: ${host.name || host.host}`);
+		term.show();
+		this._sessionTracker.registerSession(host.id, term);
+
+		// If it's a saved host, update last used
+		const isSaved = this._hostService.getHosts().some(h => h.id === host.id);
+		if (isSaved) {
+			await this._hostService.updateLastUsed(host.id);
+		} else {
+			// Ad-hoc: Offer to save
+			const selection = await vscode.window.showInformationMessage(`Connected to ${host.host}. Save this connection?`, 'Yes', 'No');
+			if (selection === 'Yes') {
+				// We can reuse SAVE_HOST logic if we strip ID? Or keep ID?
+				// Just call saveHost
+				await this._hostService.saveHost(host);
+				vscode.window.showInformationMessage("Host saved.");
+				this.broadcastUpdate();
+			}
+		}
+		this.broadcastUpdate();
+	}
+
+	private async broadcastUpdate() {
+		if (this._view) {
+			const hosts = this._hostService.getHosts();
+			const credentials = await this._credentialService.getCredentials();
+			const scripts = await this._scriptService.getScripts();
+			const activeHostIds = this._sessionTracker.getActiveHostIds();
+			this._view.webview.postMessage({ command: 'UPDATE_DATA', payload: { hosts, credentials, scripts, activeSessionHostIds: activeHostIds } });
+		}
 	}
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
