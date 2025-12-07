@@ -1,27 +1,11 @@
-import type { WebviewMessage } from '../../common/types';
+import { Message } from '../../common/types';
 
-// Declare global vscode acquire function
 declare const acquireVsCodeApi: () => {
-	postMessage: (message: WebviewMessage) => void;
+	postMessage: (message: Message) => void;
 	getState: () => any;
 	setState: (state: any) => void;
 };
 
-class VSCodeAPIWrapper {
-	private readonly vscodeApi = acquireVsCodeApi();
+const vscode = acquireVsCodeApi();
 
-	public postMessage(message: WebviewMessage) {
-		this.vscodeApi.postMessage(message);
-	}
-
-	public getState() {
-		return this.vscodeApi.getState();
-	}
-
-	public setState(state: any) {
-		this.vscodeApi.setState(state);
-	}
-}
-
-// Singleton instance
-export const vscodeApi = new VSCodeAPIWrapper();
+export default vscode;
