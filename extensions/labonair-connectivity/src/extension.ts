@@ -1,81 +1,32 @@
-/*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
- *--------------------------------------------------------------------------------------------*/
-
 import * as vscode from 'vscode';
-import { HostService } from './hostService';
-import { IdentityService } from './identityService';
-import { ScriptService } from './scriptService';
-import { HostViewProvider } from './hostViewProvider';
-import { IdentityViewProvider } from './identityViewProvider';
-import { ScriptViewProvider } from './scriptViewProvider';
 
-let hostService: HostService;
-let identityService: IdentityService;
-let scriptService: ScriptService;
+export class HostManagerProvider implements vscode.WebviewViewProvider {
+	constructor(private readonly _extensionUri: vscode.Uri, private readonly _context: vscode.ExtensionContext) { }
 
-export function activate(context: vscode.ExtensionContext) {
-	console.log('[Labonair] Activating extension...');
+	resolveWebviewView(webviewView: vscode.WebviewView) {
+		webviewView.webview.options = { enableScripts: true };
 
-	// Initialize services
-	hostService = new HostService(context);
-	identityService = new IdentityService(context);
-	scriptService = new ScriptService(context);
+		// HTML laden, das deine React App beinhaltet
+		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-	// Register view providers
-	const hostViewProvider = new HostViewProvider(context, hostService);
-	const identityViewProvider = new IdentityViewProvider(context, identityService);
-	const scriptViewProvider = new ScriptViewProvider(context, scriptService);
-
-	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider('labonair.views.hosts', hostViewProvider),
-		vscode.window.registerWebviewViewProvider('labonair.views.identities', identityViewProvider),
-		vscode.window.registerWebviewViewProvider('labonair.views.scripts', scriptViewProvider)
-	);
-
-	// Register commands
-	context.subscriptions.push(
-		vscode.commands.registerCommand('labonair.addHost', async () => {
-			vscode.window.showInformationMessage('Add Host command triggered');
-			// Command will be handled by the view provider
-		}),
-		vscode.commands.registerCommand('labonair.connectSSH', async () => {
-			vscode.window.showInformationMessage('Connect SSH command triggered');
-		}),
-		vscode.commands.registerCommand('labonair.refreshHosts', async () => {
-			hostViewProvider.refresh();
-		}),
-		vscode.commands.registerCommand('labonair.addIdentity', async () => {
-			vscode.window.showInformationMessage('Add Identity command triggered');
-		}),
-		vscode.commands.registerCommand('labonair.refreshIdentities', async () => {
-			identityViewProvider.refresh();
-		}),
-		vscode.commands.registerCommand('labonair.addScript', async () => {
-			vscode.window.showInformationMessage('Add Script command triggered');
-		}),
-		vscode.commands.registerCommand('labonair.refreshScripts', async () => {
-			scriptViewProvider.refresh();
-		})
-	);
-
-	console.log('[Labonair] Extension activated successfully');
-}
-
-export function deactivate() {
-	console.log('[Labonair] Deactivating extension...');
-
-	// Dispose services
-	if (hostService) {
-		hostService.dispose();
+		// Nachrichten vom Frontend (React) empfangen
+		webviewView.webview.onDidReceiveMessage(async (data) => {
+			switch (data.command) {
+				case 'GET_HOSTS':
+					const hosts = this._context.globalState.get('hosts', []);
+					// Passwörter aus Secrets laden und mergen wäre hier nötig
+					webviewView.webview.postMessage({ command: 'SET_HOSTS', payload: hosts });
+					break;
+				case 'SAVE_HOST':
+					const newHost = data.data;
+					// Logik zum Speichern in globalState
+					// Logik zum Speichern von Passwort in this._context.secrets
+					break;
+				case 'DELETE_HOST':
+					// Lösch-Logik
+					break;
+			}
+		});
 	}
-	if (identityService) {
-		identityService.dispose();
-	}
-	if (scriptService) {
-		scriptService.dispose();
-	}
-
-	console.log('[Labonair] Extension deactivated');
+	// ... _getHtmlForWebview implementation
 }

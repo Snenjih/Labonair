@@ -1,0 +1,24 @@
+:root {
+  /* Mapping Terminus Variablen -> VS Code Variablen */
+
+  /* Hintergründe */
+  --color-dark-bg: var(--vscode-sideBar-background);
+  --color-dark-bg-darker: var(--vscode-sideBarSectionHeader-background);
+  --color-dark-bg-input: var(--vscode-input-background);
+
+  /* Text */
+  --foreground: var(--vscode-foreground);
+  --muted-foreground: var(--vscode-descriptionForeground);
+
+  /* Rahmen & Trennlinien */
+  --color-dark-border: var(--vscode-panel-border);
+  --border: var(--vscode-focusBorder); // Für aktive Inputs
+
+  /* Buttons & Aktionen */
+  --primary: var(--vscode-button-background);
+  --primary-foreground: var(--vscode-button-foreground);
+  --color-dark-bg-button: var(--vscode-button-secondaryBackground);
+
+  /* Spezifische Anpassungen */
+  --radius: 0px; /* VS Code ist meist eckiger */
+}
