@@ -45,6 +45,14 @@ const App: React.FC = () => {
 		vscode.postMessage({ command: 'CONNECT_SSH', payload: { id } });
 	};
 
+	const handleImport = (format: 'json' | 'ssh-config') => {
+		vscode.postMessage({ command: 'IMPORT_REQUEST', payload: { format } });
+	};
+
+	const handleExport = () => {
+		vscode.postMessage({ command: 'EXPORT_REQUEST' });
+	};
+
 	// Group hosts by group name
 	const groupedHosts = state.hosts.reduce((acc, host) => {
 		const group = host.group || 'Ungrouped';
@@ -59,7 +67,11 @@ const App: React.FC = () => {
 
 			{state.view === 'list' && (
 				<>
-					<Toolbar onRefresh={() => vscode.postMessage({ command: 'FETCH_DATA' })} />
+					<Toolbar
+						onRefresh={() => vscode.postMessage({ command: 'FETCH_DATA' })}
+						onImport={handleImport}
+						onExport={handleExport}
+					/>
 					<div className="host-list">
 						{Object.entries(groupedHosts).map(([group, hosts]) => (
 							<HostGroup key={group} name={group} count={hosts.length}>

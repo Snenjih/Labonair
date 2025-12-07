@@ -1,3 +1,10 @@
+export interface Tunnel {
+	type: 'local' | 'remote';
+	srcPort: number;
+	dstHost: string;
+	dstPort: number;
+}
+
 export interface Host {
 	id: string;
 	name: string;
@@ -5,8 +12,12 @@ export interface Host {
 	username: string;
 	host: string;
 	port: number;
-	osIcon: 'linux' | 'windows' | 'mac' | 'other';
+	osIcon: 'linux' | 'windows' | 'mac' | 'docker' | 'other';
 	tags: string[];
+	jumpHostId?: string;
+	tunnels?: Tunnel[];
+	notes?: string;
+	keepAlive?: boolean;
 }
 
 export interface Credential {
@@ -27,4 +38,8 @@ export type Message =
 	| { command: 'UPDATE_DATA', payload: { hosts: Host[] } }
 	| { command: 'SAVE_HOST', payload: { host: Host, password?: string, keyPath?: string } }
 	| { command: 'DELETE_HOST', payload: { id: string } }
-	| { command: 'CONNECT_SSH', payload: { id: string } };
+	| { command: 'CONNECT_SSH', payload: { id: string } }
+	| { command: 'PICK_KEY_FILE' }
+	| { command: 'KEY_FILE_PICKED', payload: { path: string } }
+	| { command: 'IMPORT_REQUEST', payload: { format: 'json' | 'ssh-config' } }
+	| { command: 'EXPORT_REQUEST' };
