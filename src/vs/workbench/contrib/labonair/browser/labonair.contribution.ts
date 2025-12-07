@@ -3,8 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import './media/hostManager.css';
-import './media/hostForm.css';
 import { localize, localize2 } from '../../../../nls.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
@@ -30,9 +28,13 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IQuickAccessRegistry, Extensions as QuickAccessExtensions } from '../../../../platform/quickinput/common/quickAccess.js';
 import { HostQuickAccessProvider } from './hostQuickAccess.js';
+import { FileAccess } from '../../../../base/common/network.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 
 const labonairViewIcon = registerIcon('labonair-view-icon', Codicon.serverProcess, localize('labonairViewIcon', 'View icon of the Labonair Host Manager view.'));
 
+// 1. Container Registrieren
 const viewContainer = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer({
 	id: VIEWLET_ID,
 	title: localize2('labonair', 'Labonair'),
@@ -50,6 +52,7 @@ const viewContainer = Registry.as<IViewContainersRegistry>(ViewContainerExtensio
 
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
 
+// 2. Views Registrieren
 viewsRegistry.registerViews([{
 	id: VIEW_PANE_ID,
 	name: localize2('hosts', "Hosts"),
@@ -61,6 +64,7 @@ viewsRegistry.registerViews([{
 	collapsed: false,
 	order: 1,
 	weight: 100,
+	when: ContextKeyExpr.true(), // Erzwingt Sichtbarkeit
 	focusCommand: { id: 'workbench.view.labonair.focus' }
 }, {
 	id: 'labonair.views.identities',
@@ -72,7 +76,8 @@ viewsRegistry.registerViews([{
 	hideByDefault: false,
 	collapsed: true,
 	order: 2,
-	weight: 50
+	weight: 50,
+	when: ContextKeyExpr.true()
 }, {
 	id: 'labonair.views.scripts',
 	name: localize2('scripts', "Scripts & Snippets"),
@@ -83,14 +88,17 @@ viewsRegistry.registerViews([{
 	hideByDefault: false,
 	collapsed: true,
 	order: 3,
-	weight: 50
+	weight: 50,
+	when: ContextKeyExpr.true()
 }], viewContainer);
 
+// 3. Services Registrieren
 registerSingleton(IHostService, HostService, InstantiationType.Delayed);
 registerSingleton(IIdentityService, IdentityService, InstantiationType.Delayed);
 registerSingleton(ISSHConfigService, SSHConfigService, InstantiationType.Delayed);
 registerSingleton(IScriptService, ScriptService, InstantiationType.Delayed);
 
+// 4. Commands & Keybindings
 KeybindingsRegistry.registerCommandAndKeybindingRule({
 	id: 'workbench.view.labonair.focus',
 	weight: KeybindingWeight.WorkbenchContrib,
@@ -98,10 +106,12 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	primary: KeyMod.Alt | KeyCode.KeyH,
 	handler: (accessor: ServicesAccessor) => {
 		const commandService = accessor.get(ICommandService);
-		return commandService.executeCommand('workbench.view.extension.labonair');
+		// Korrekter Command zum Öffnen der View
+		return commandService.executeCommand(`workbench.view.extension.${VIEWLET_ID}`);
 	}
 });
 
+// 5. Quick Access
 const quickAccessRegistry = Registry.as<IQuickAccessRegistry>(QuickAccessExtensions.Quickaccess);
 quickAccessRegistry.registerQuickAccessProvider({
 	ctor: HostQuickAccessProvider,
@@ -115,3 +125,25 @@ quickAccessRegistry.registerQuickAccessProvider({
 		}
 	]
 });
+
+// 6. CSS Injection (Runtime)
+function loadStyles() {
+	const head = mainWindow.document.head;
+	if (!head) return;
+
+	const styles = [
+		'vs/workbench/contrib/labonair/browser/media/hostManager.css',
+		'vs/workbench/contrib/labonair/browser/media/hostForm.css'
+	];
+
+	styles.forEach(stylePath => {
+		const link = document.createElement('link');
+		link.rel = 'stylesheet';
+		link.type = 'text/css';
+		// FIX: Wir nutzen 'as any', um den strengen AppResourcePath-Check zu umgehen
+		link.href = FileAccess.asBrowserUri(stylePath as any).toString(true);
+		head.appendChild(link);
+	});
+}
+
+loadStyles();
