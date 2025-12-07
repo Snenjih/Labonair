@@ -1,0 +1,38 @@
+:root {
+    --bg-primary: var(--vscode-sideBar-background);
+    --bg-hover: var(--vscode-list-hoverBackground);
+    --text-primary: var(--vscode-foreground);
+    --text-secondary: var(--vscode-descriptionForeground);
+    --border-color: var(--vscode-panel-border);
+    --input-bg: var(--vscode-input-background);
+    --button-bg: var(--vscode-button-background);
+    --button-fg: var(--vscode-button-foreground);
+}
+
+body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--vscode-font-family);
+    padding: 0;
+    margin: 0;
+}
+
+h1 {
+    font-size: 1.2rem;
+    font-weight: 500;
+    margin-bottom: 1rem;
+}
+
+ul {
+    list-style: none;
+    padding: 0;
+}
+
+li {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+li:hover {
+    background: var(--bg-hover);
+}
