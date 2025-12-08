@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 // @ts-ignore
-import * as ssh2 from 'ssh2';
+// import * as ssh2 from 'ssh2';
 
 export class HostKeyService {
 	private readonly knownHostsPath: string;
@@ -12,10 +12,32 @@ export class HostKeyService {
 		this.knownHostsPath = path.join(os.homedir(), '.ssh', 'known_hosts');
 	}
 
+
+
+	private getSsh2() {
+		return null;
+		/*
+		try {
+			// @ts-ignore
+			return require('ssh2');
+		} catch (e) {
+			console.error('Failed to load ssh2:', e);
+			return null;
+		}
+		*/
+	}
+
 	public async verifyHostKey(host: string, port: number, keyAlgo: string, key: Buffer): Promise<'valid' | 'invalid' | 'unknown'> {
 		// Basic implementation: read known_hosts manually for now or use ssh2's utils if available.
 		// Note: ssh2 doesn't export a high-level known_hosts parser easily in this version.
 		// For simplicity/robustness in this context, we'll check if we can parse it line by line.
+
+		// Example usage if we needed ssh2:
+		const ssh2 = this.getSsh2();
+		if (!ssh2) {
+			// Fallback or verify we don't strictly need it for *parsing* text files.
+			// But if we used it for hashing/etc, we'd need it.
+		}
 
 		if (!fs.existsSync(this.knownHostsPath)) {
 			return 'unknown';

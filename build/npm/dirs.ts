@@ -30,6 +30,7 @@ export const dirs = [
 	'extensions/html-language-features/server',
 	'extensions/ipynb',
 	'extensions/jake',
+	'extensions/labonair-connectivity',
 	'extensions/json-language-features',
 	'extensions/json-language-features/server',
 	'extensions/markdown-language-features',

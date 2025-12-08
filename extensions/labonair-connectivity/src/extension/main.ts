@@ -29,10 +29,17 @@ export function activate(context: vscode.ExtensionContext) {
 	registerCommands(context, hostService);
 
 	// Register the Webview View Provider
-	const provider = new ConnectivityViewProvider(context.extensionUri, hostService, credentialService, scriptService, sessionTracker, sshAgentService, importerService, hostKeyService, shellService);
-	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider('labonair.connectivityView', provider)
-	);
+	try {
+		console.log('Activating Connectivity Extension...');
+		const provider = new ConnectivityViewProvider(context.extensionUri, hostService, credentialService, scriptService, sessionTracker, sshAgentService, importerService, hostKeyService, shellService);
+		context.subscriptions.push(
+			vscode.window.registerWebviewViewProvider('labonair.views.hosts', provider)
+		);
+		console.log('Connectivity Extension Activated Successfully.');
+	} catch (e) {
+		console.error('Failed to activate Connectivity Extension:', e);
+		vscode.window.showErrorMessage('Failed to activate Connectivity Extension: ' + e);
+	}
 }
 
 class ConnectivityViewProvider implements vscode.WebviewViewProvider {
@@ -55,12 +62,14 @@ class ConnectivityViewProvider implements vscode.WebviewViewProvider {
 		context: vscode.WebviewViewResolveContext,
 		_token: vscode.CancellationToken,
 	) {
+		console.log('ConnectivityViewProvider.resolveWebviewView called');
 		webviewView.webview.options = {
 			enableScripts: true,
 			localResourceRoots: [this._extensionUri]
 		};
 
 		webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+		console.log('Webview HTML set');
 
 		// Listen for credential updates
 		this._credentialService.onDidChangeCredentials(credentials => {
@@ -261,24 +270,25 @@ class ConnectivityViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private _getHtmlForWebview(webview: vscode.Webview) {
-		const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js'));
+		console.log('_getHtmlForWebview called');
 		const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'webview', 'styles', 'main.css'));
-
-
 		const nonce = getNonce();
 
 		return `<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
+				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-                <link href="${styleUri}" rel="stylesheet">
-                <title>Labonair Connectivity</title>
+                <title>Debug Mode</title>
             </head>
-            <body>
-                <div id="root"></div>
-                <script nonce="${nonce}" src="${scriptUri}"></script>
+            <body style="background: red; color: white; padding: 20px;">
+                <h1>CONNECTION TEST</h1>
+				<p>If you see this, the Extension is working and Webview is rendering.</p>
+				<p>Time: ${new Date().toISOString()}</p>
+				<script nonce="${nonce}">
+					console.log('Debug webview loaded');
+				</script>
             </body>
             </html>`;
 	}

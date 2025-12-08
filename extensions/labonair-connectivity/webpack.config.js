@@ -2,6 +2,7 @@ const path = require('path');
 
 const extensionConfig = {
 	name: 'extension',
+	mode: 'development',
 	target: 'node',
 	entry: './src/extension/main.ts',
 	output: {
@@ -11,6 +12,7 @@ const extensionConfig = {
 	},
 	externals: {
 		'vscode': 'commonjs vscode',
+		'ssh2': 'commonjs ssh2'
 	},
 	resolve: {
 		extensions: ['.ts', '.js'],
@@ -33,6 +35,7 @@ const extensionConfig = {
 
 const webviewConfig = {
 	name: 'webview',
+	mode: 'development',
 	target: 'web',
 	entry: './src/webview/index.tsx',
 	output: {
