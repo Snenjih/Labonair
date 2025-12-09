@@ -57,7 +57,7 @@ export class ThemeStudioEditor extends EditorPane {
 			return;
 		}
 
-		this.container.replaceChildren();
+		this.container.innerHTML = '';
 
 		// Create main structure
 		const wrapper = document.createElement('div');
@@ -149,20 +149,11 @@ export class ThemeStudioEditor extends EditorPane {
 		if (themes.length === 0) {
 			const emptyState = document.createElement('div');
 			emptyState.className = 'empty-state';
-
-			const icon = document.createElement('div');
-			icon.className = 'empty-state-icon';
-			icon.textContent = '🎨';
-
-			const title = document.createElement('h2');
-			title.textContent = 'No Custom Themes Yet';
-
-			const description = document.createElement('p');
-			description.textContent = 'Create your first custom theme to get started';
-
-			emptyState.appendChild(icon);
-			emptyState.appendChild(title);
-			emptyState.appendChild(description);
+			emptyState.innerHTML = `
+				<div class="empty-state-icon">🎨</div>
+				<h2>No Custom Themes Yet</h2>
+				<p>Create your first custom theme to get started</p>
+			`;
 			container.appendChild(emptyState);
 			return;
 		}
@@ -278,7 +269,7 @@ export class ThemeStudioEditor extends EditorPane {
 			return;
 		}
 
-		editorPanel.replaceChildren();
+		editorPanel.innerHTML = '';
 		editorPanel.classList.remove('hidden');
 
 		// Header
