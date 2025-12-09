@@ -9,8 +9,10 @@ import { IThemeService } from '../../../../platform/theme/common/themeService.js
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { ThemeStudioInput } from './themeStudioInput.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { EditorModel } from '../../../common/editor/editorModel.js';
 import { Dimension } from '../../../../base/browser/dom.js';
 import { IUserThemeService, IUserTheme } from '../../../services/themes/common/userThemeService.js';
+import { IWorkbenchThemeService } from '../../../services/themes/common/workbenchThemeService.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 
 export class ThemeStudioEditor extends EditorPane {
@@ -24,7 +26,8 @@ export class ThemeStudioEditor extends EditorPane {
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IThemeService themeService: IThemeService,
 		@IStorageService storageService: IStorageService,
-		@IUserThemeService private readonly userThemeService: IUserThemeService
+		@IUserThemeService private readonly userThemeService: IUserThemeService,
+		@IWorkbenchThemeService private readonly workbenchThemeService: IWorkbenchThemeService
 	) {
 		super(ThemeStudioEditor.ID, group, telemetryService, themeService, storageService);
 	}

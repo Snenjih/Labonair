@@ -6,6 +6,7 @@
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IUserThemeService, IUserTheme } from '../common/userThemeService.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
+import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -13,8 +14,8 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { IWorkbenchThemeService } from '../common/workbenchThemeService.js';
 import { joinPath } from '../../../../base/common/resources.js';
+import { FileOperationError, FileOperationResult } from '../../../../platform/files/common/fileService.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
-import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 
 export class UserThemeService extends Disposable implements IUserThemeService {
 	declare readonly _serviceBrand: undefined;
@@ -26,12 +27,12 @@ export class UserThemeService extends Disposable implements IUserThemeService {
 
 	constructor(
 		@IFileService private readonly fileService: IFileService,
-		@IBrowserWorkbenchEnvironmentService private readonly environmentService: IBrowserWorkbenchEnvironmentService,
+		@IEnvironmentService private readonly environmentService: IEnvironmentService,
 		@ILogService private readonly logService: ILogService,
 		@IWorkbenchThemeService private readonly themeService: IWorkbenchThemeService
 	) {
 		super();
-		this.userThemesPath = joinPath(this.environmentService.userRoamingDataHome, '.labonair', 'user-themes');
+		this.userThemesPath = joinPath(URI.file(this.environmentService.userDataPath), '.labonair', 'user-themes');
 		this._ensureUserThemesDirectory();
 	}
 
@@ -39,8 +40,11 @@ export class UserThemeService extends Disposable implements IUserThemeService {
 		try {
 			await this.fileService.createFolder(this.userThemesPath);
 		} catch (error) {
-			// Directory might already exist, which is fine
-			this.logService.info('User themes directory setup', error);
+			if (error instanceof FileOperationError && error.fileOperationResult === FileOperationResult.FILE_MODIFIED_SINCE) {
+				// Directory already exists, ignore
+			} else {
+				this.logService.error('Failed to create user themes directory', error);
+			}
 		}
 	}
 

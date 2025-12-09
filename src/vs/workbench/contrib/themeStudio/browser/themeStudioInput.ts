@@ -7,6 +7,7 @@ import { EditorInput } from '../../../common/editor/editorInput.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { IEditorInput } from '../../../common/editor.js';
 
 export class ThemeStudioInput extends EditorInput {
 	static readonly ID = 'workbench.input.themeStudio';
@@ -21,7 +22,7 @@ export class ThemeStudioInput extends EditorInput {
 		return ThemeStudioInput._instance;
 	}
 
-	constructor() {
+	private constructor() {
 		super();
 	}
 
@@ -41,7 +42,7 @@ export class ThemeStudioInput extends EditorInput {
 		return Codicon.paintcan;
 	}
 
-	override matches(other: EditorInput | unknown): boolean {
+	override matches(other: IEditorInput | unknown): boolean {
 		return other instanceof ThemeStudioInput;
 	}
 }
