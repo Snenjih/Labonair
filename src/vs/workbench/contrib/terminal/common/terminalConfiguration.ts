@@ -173,7 +173,6 @@ const terminalConfiguration: IStringDictionary<IConfigurationPropertySchema> = {
 	[TerminalSettingId.FontFamily]: {
 		markdownDescription: localize('terminal.integrated.fontFamily', "Controls the font family of the terminal. Defaults to {0}'s value.", '`#editor.fontFamily#`'),
 		type: 'string',
-		tags: ['common']
 	},
 	[TerminalSettingId.FontLigaturesEnabled]: {
 		markdownDescription: localize('terminal.integrated.fontLigatures.enabled', "Controls whether font ligatures are enabled in the terminal. Ligatures will only work if the configured {0} supports them.", `\`#${TerminalSettingId.FontFamily}#\``),
@@ -207,8 +206,7 @@ const terminalConfiguration: IStringDictionary<IConfigurationPropertySchema> = {
 		type: 'number',
 		default: defaultTerminalFontSize,
 		minimum: 6,
-		maximum: 100,
-		tags: ['common']
+		maximum: 100
 	},
 	[TerminalSettingId.LetterSpacing]: {
 		description: localize('terminal.integrated.letterSpacing', "Controls the letter spacing of the terminal. This is an integer value which represents the number of additional pixels to add between characters."),

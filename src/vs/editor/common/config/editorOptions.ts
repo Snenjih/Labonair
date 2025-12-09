@@ -2078,8 +2078,7 @@ class EditorFontSize extends SimpleEditorOption<EditorOption.fontSize, number> {
 				minimum: 6,
 				maximum: 100,
 				default: EDITOR_FONT_DEFAULTS.fontSize,
-				description: nls.localize('fontSize', "Controls the font size in pixels."),
-				tags: ['common']
+				description: nls.localize('fontSize', "Controls the font size in pixels.")
 			}
 		);
 	}
@@ -3848,8 +3847,7 @@ class EditorRenderLineNumbersOption extends BaseEditorOption<EditorOption.lineNu
 					nls.localize('lineNumbers.interval', "Line numbers are rendered every 10 lines.")
 				],
 				default: 'on',
-				description: nls.localize('lineNumbers', "Controls the display of line numbers."),
-				tags: ['common']
+				description: nls.localize('lineNumbers', "Controls the display of line numbers.")
 			}
 		);
 	}
@@ -6284,7 +6282,7 @@ export const EditorOptions = {
 	)),
 	fontFamily: register(new EditorStringOption(
 		EditorOption.fontFamily, 'fontFamily', EDITOR_FONT_DEFAULTS.fontFamily,
-		{ description: nls.localize('fontFamily', "Controls the font family."), tags: ['common'] }
+		{ description: nls.localize('fontFamily', "Controls the font family.") }
 	)),
 	fontInfo: register(new EditorFontInfo()),
 	fontLigatures2: register(new EditorFontLigatures()),
@@ -6741,8 +6739,7 @@ export const EditorOptions = {
 					'- \'off\', \'on\', \'wordWrapColumn\' and \'bounded\' refer to values the setting can take and should not be localized.',
 					'- `editor.wordWrapColumn` refers to a different setting and should not be localized.'
 				]
-			}, "Controls how lines should wrap."),
-			tags: ['common']
+			}, "Controls how lines should wrap.")
 		}
 	)),
 	wordWrapBreakAfterCharacters: register(new EditorStringOption(

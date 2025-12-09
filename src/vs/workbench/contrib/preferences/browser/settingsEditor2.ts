@@ -242,12 +242,6 @@ export class SettingsEditor2 extends EditorPane {
 	private readonly inputChangeListener: MutableDisposable<IDisposable>;
 
 	private searchInputActionBar: ActionBar | null = null;
-	private expertModeToggle: Action | null = null;
-	private expertModeLabel: HTMLElement | null = null;
-	private expertModeButton: Button | null = null;
-	private isExpertMode = false;
-
-	private readonly EXPERT_MODE_STORAGE_KEY = 'settings.expertMode';
 
 	constructor(
 		group: IEditorGroup,
@@ -299,9 +293,6 @@ export class SettingsEditor2 extends EditorPane {
 		this.dismissedExtensionSettings = this.storageService
 			.get(this.DISMISSED_EXTENSION_SETTINGS_STORAGE_KEY, StorageScope.PROFILE, '')
 			.split(this.DISMISSED_EXTENSION_SETTINGS_DELIMITER);
-
-		// Restore expert mode state from storage (default is false = Essential Mode)
-		this.isExpertMode = this.storageService.getBoolean(this.EXPERT_MODE_STORAGE_KEY, StorageScope.PROFILE, false);
 
 		this._register(configurationService.onDidChangeConfiguration(e => {
 			if (e.affectedKeys.has(WorkbenchSettingsEditorSettings.ShowAISearchToggle)
@@ -789,27 +780,6 @@ export class SettingsEditor2 extends EditorPane {
 			}
 		}));
 
-		// Essential vs. Expert Mode Toggle
-		const expertModeContainer = DOM.append(headerControlsContainer, $('.settings-mode-toggle-container'));
-		this.expertModeLabel = DOM.append(expertModeContainer, $('.settings-mode-label'));
-		this.expertModeLabel.textContent = this.isExpertMode ? localize('expertMode', "Expert Mode") : localize('essentialMode', "Essential Mode");
-
-		this.expertModeToggle = this._register(new Action(
-			'settings.toggleExpertMode',
-			localize('toggleExpertMode', "Toggle Expert Mode"),
-			'',
-			true
-		));
-		this._register(this.expertModeToggle.onDidChange(async () => {
-			await this.onDidToggleExpertMode();
-		}));
-
-		this.expertModeButton = this._register(new Button(expertModeContainer, { ...defaultButtonStyles, secondary: true }));
-		this.expertModeButton.label = this.isExpertMode ? localize('switchToEssential', "Switch to Essential") : localize('switchToExpert', "Switch to Expert");
-		this._register(this.expertModeButton.onDidClick(() => {
-			this.toggleExpertMode();
-		}));
-
 		if (this.userDataSyncWorkbenchService.enabled && this.userDataSyncEnablementService.canToggleEnablement()) {
 			const syncControls = this._register(this.instantiationService.createInstance(SyncControls, this.window, headerControlsContainer));
 			this._register(syncControls.onDidChangeLastSyncedLabel(lastSyncedLabel => {
@@ -860,32 +830,6 @@ export class SettingsEditor2 extends EditorPane {
 			this.renderResultCountMessages(false);
 			this.onDidFinishSearch(true, undefined);
 		}
-	}
-
-	toggleExpertMode(): void {
-		this.isExpertMode = !this.isExpertMode;
-		// Save state to storage
-		this.storageService.store(this.EXPERT_MODE_STORAGE_KEY, this.isExpertMode, StorageScope.PROFILE, StorageTarget.USER);
-		// Update UI elements
-		if (this.expertModeLabel) {
-			this.expertModeLabel.textContent = this.isExpertMode ? localize('expertMode', "Expert Mode") : localize('essentialMode', "Essential Mode");
-		}
-		if (this.expertModeButton) {
-			this.expertModeButton.label = this.isExpertMode ? localize('switchToEssential', "Switch to Essential") : localize('switchToExpert', "Switch to Expert");
-		}
-		// Trigger update
-		if (this.expertModeToggle) {
-			this.expertModeToggle.checked = this.isExpertMode;
-		}
-	}
-
-	private async onDidToggleExpertMode(): Promise<void> {
-		// Rebuild the settings tree with filtered settings
-		await this.onConfigUpdate(undefined, true);
-		aria.status(this.isExpertMode
-			? localize('expertModeEnabled', "Expert Mode enabled - showing all settings")
-			: localize('essentialModeEnabled', "Essential Mode enabled - showing common settings only")
-		);
 	}
 
 	private onDidSettingsTargetChange(target: SettingsTarget): void {
@@ -1494,19 +1438,7 @@ export class SettingsEditor2 extends EditorPane {
 				coreSettingsGroups.push(group);
 			}
 		}
-		// Filter settings based on mode and advanced settings preference
-		let filter: { exclude?: { tags: string[] }; include?: { tags: string[] } } | undefined;
-		if (!this.canShowAdvancedSettings()) {
-			filter = { exclude: { tags: [ADVANCED_SETTING_TAG] } };
-		}
-		// In Essential Mode, only show settings tagged with 'common'
-		if (!this.isExpertMode) {
-			if (filter) {
-				filter.include = { tags: ['common'] };
-			} else {
-				filter = { include: { tags: ['common'] } };
-			}
-		}
+		const filter = this.canShowAdvancedSettings() ? undefined : { exclude: { tags: [ADVANCED_SETTING_TAG] } };
 
 		const settingsResult = resolveSettingsTree(tocData, coreSettingsGroups, filter, this.logService);
 		const resolvedSettingsRoot = settingsResult.tree;

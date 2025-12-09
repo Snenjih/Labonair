@@ -158,7 +158,6 @@ configurationRegistry.registerConfiguration({
 				...(isWeb ? { '**/*.crswap': true /* filter out swap files used for local file access */ } : undefined)
 			},
 			'scope': ConfigurationScope.RESOURCE,
-			'tags': ['common'],
 			'additionalProperties': {
 				'anyOf': [
 					{
@@ -270,8 +269,7 @@ configurationRegistry.registerConfiguration({
 			],
 			'default': isWeb ? AutoSaveConfiguration.AFTER_DELAY : AutoSaveConfiguration.OFF,
 			'markdownDescription': nls.localize({ comment: ['This is the description for a setting. Values surrounded by single quotes are not to be translated.'], key: 'autoSave' }, "Controls [auto save](https://code.visualstudio.com/docs/editor/codebasics#_save-auto-save) of editors that have unsaved changes.", AutoSaveConfiguration.OFF, AutoSaveConfiguration.AFTER_DELAY, AutoSaveConfiguration.ON_FOCUS_CHANGE, AutoSaveConfiguration.ON_WINDOW_CHANGE, AutoSaveConfiguration.AFTER_DELAY),
-			scope: ConfigurationScope.LANGUAGE_OVERRIDABLE,
-			tags: ['common']
+			scope: ConfigurationScope.LANGUAGE_OVERRIDABLE
 		},
 		'files.autoSaveDelay': {
 			'type': 'number',
