@@ -12,11 +12,6 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Dimension } from '../../../../base/browser/dom.js';
 import { IUserThemeService, IUserTheme } from '../../../services/themes/common/userThemeService.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
-import { IFileDialogService } from '../../../../platform/dialogs/common/dialogs.js';
-import { IFileService } from '../../../../platform/files/common/files.js';
-import { VSBuffer } from '../../../../base/common/buffer.js';
-import { IWorkbenchThemeService } from '../../../services/themes/common/workbenchThemeService.js';
-import { INotificationService } from '../../../../platform/notification/common/notification.js';
 
 export class ThemeStudioEditor extends EditorPane {
 	static readonly ID = 'workbench.editor.themeStudio';
@@ -29,11 +24,7 @@ export class ThemeStudioEditor extends EditorPane {
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IThemeService themeService: IThemeService,
 		@IStorageService storageService: IStorageService,
-		@IUserThemeService private readonly userThemeService: IUserThemeService,
-		@IFileDialogService private readonly fileDialogService: IFileDialogService,
-		@IFileService private readonly fileService: IFileService,
-		@IWorkbenchThemeService private readonly workbenchThemeService: IWorkbenchThemeService,
-		@INotificationService private readonly notificationService: INotificationService
+		@IUserThemeService private readonly userThemeService: IUserThemeService
 	) {
 		super(ThemeStudioEditor.ID, group, telemetryService, themeService, storageService);
 	}
@@ -325,38 +316,6 @@ export class ThemeStudioEditor extends EditorPane {
 		typeSection.appendChild(typeSelect);
 		editorPanel.appendChild(typeSection);
 
-		// Base theme selection
-		const baseThemeSection = document.createElement('div');
-		baseThemeSection.className = 'editor-section';
-
-		const baseThemeLabel = document.createElement('label');
-		baseThemeLabel.textContent = 'Base Theme (Inherit From)';
-
-		const baseThemeSelect = document.createElement('select');
-		baseThemeSelect.className = 'base-theme-select';
-
-		// Add "None" option
-		const noneOption = document.createElement('option');
-		noneOption.value = '';
-		noneOption.textContent = 'None (Start from scratch)';
-		noneOption.selected = !theme.baseTheme;
-		baseThemeSelect.appendChild(noneOption);
-
-		// Load and add available themes
-		this.workbenchThemeService.getColorThemes().then(themes => {
-			themes.forEach(availableTheme => {
-				const option = document.createElement('option');
-				option.value = availableTheme.id;
-				option.textContent = availableTheme.label;
-				option.selected = theme.baseTheme === availableTheme.id;
-				baseThemeSelect.appendChild(option);
-			});
-		});
-
-		baseThemeSection.appendChild(baseThemeLabel);
-		baseThemeSection.appendChild(baseThemeSelect);
-		editorPanel.appendChild(baseThemeSection);
-
 		// Color groups
 		const colorGroups = this.getColorGroups();
 		for (const [groupName, colorKeys] of Object.entries(colorGroups)) {
@@ -374,8 +333,7 @@ export class ThemeStudioEditor extends EditorPane {
 		saveBtn.onclick = async () => {
 			await this.saveTheme(themeId, {
 				name: nameInput.value,
-				type: typeSelect.value as any,
-				baseTheme: baseThemeSelect.value || undefined
+				type: typeSelect.value as any
 			});
 			editorPanel.classList.add('hidden');
 			this.render();
@@ -495,27 +453,11 @@ export class ThemeStudioEditor extends EditorPane {
 
 	private async exportTheme(themeId: string): Promise<void> {
 		try {
-			const theme = await this.userThemeService.getUserTheme(themeId);
-			if (!theme) {
-				return;
-			}
-
 			const json = await this.userThemeService.exportTheme(themeId);
-
-			// Show save dialog
-			const defaultUri = await this.fileDialogService.defaultFilePath();
-			const result = await this.fileDialogService.showSaveDialog({
-				title: 'Export Theme',
-				defaultUri,
-				filters: [{ name: 'JSON', extensions: ['json'] }]
-			});
-
-			if (result) {
-				await this.fileService.writeFile(result, VSBuffer.fromString(json));
-				this.notificationService.info(`Theme "${theme.name}" exported successfully to ${result.fsPath}`);
-			}
+			// TODO: Show file save dialog and save JSON
+			console.log('Export theme:', json);
 		} catch (error) {
-			this.notificationService.error(`Failed to export theme: ${error}`);
+			console.error('Failed to export theme:', error);
 		}
 	}
 
@@ -523,34 +465,16 @@ export class ThemeStudioEditor extends EditorPane {
 		if (confirm('Are you sure you want to delete this theme?')) {
 			try {
 				await this.userThemeService.deleteUserTheme(themeId);
-				this.notificationService.info('Theme deleted successfully');
 				this.render(); // Refresh the view
 			} catch (error) {
-				this.notificationService.error(`Failed to delete theme: ${error}`);
+				console.error('Failed to delete theme:', error);
 			}
 		}
 	}
 
 	private async importTheme(): Promise<void> {
-		try {
-			// Show open dialog
-			const result = await this.fileDialogService.showOpenDialog({
-				title: 'Import Theme',
-				canSelectFiles: true,
-				canSelectMany: false,
-				filters: [{ name: 'JSON', extensions: ['json'] }]
-			});
-
-			if (result && result.length > 0) {
-				const fileContent = await this.fileService.readFile(result[0]);
-				const json = fileContent.value.toString();
-				const importedTheme = await this.userThemeService.importTheme(json);
-				this.notificationService.info(`Theme "${importedTheme.name}" imported successfully`);
-				this.render(); // Refresh the view
-			}
-		} catch (error) {
-			this.notificationService.error('Failed to import theme. Please check the file format and try again.');
-		}
+		// TODO: Show file open dialog and import JSON
+		console.log('Import theme');
 	}
 
 	private filterThemes(query: string): void {
