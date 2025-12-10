@@ -138,6 +138,10 @@ export class QuickInputController extends Disposable {
 			return this.ui;
 		}
 
+		// Create backdrop for centered modal
+		const backdrop = dom.append(this._container, $('.quick-input-backdrop'));
+		backdrop.style.display = 'none';
+
 		const container = dom.append(this._container, $('.quick-input-widget.show-file-icons'));
 		container.tabIndex = -1;
 		container.style.display = 'none';
@@ -377,6 +381,7 @@ export class QuickInputController extends Disposable {
 
 		this.ui = {
 			container,
+			backdrop,
 			styleSheet,
 			leftActionBar,
 			titleBar,
@@ -683,6 +688,7 @@ export class QuickInputController extends Disposable {
 		const backKeybindingLabel = this.options.backKeybindingLabel();
 		backButton.tooltip = backKeybindingLabel ? localize('quickInput.backWithKeybinding', "Back ({0})", backKeybindingLabel) : localize('quickInput.back', "Back");
 
+		ui.backdrop.style.display = '';
 		ui.container.style.display = '';
 		this.updateLayout();
 		this.dndController?.layoutContainer();
@@ -749,6 +755,9 @@ export class QuickInputController extends Disposable {
 		this.onHideEmitter.fire();
 		if (container) {
 			container.style.display = 'none';
+		}
+		if (this.ui?.backdrop) {
+			this.ui.backdrop.style.display = 'none';
 		}
 		if (!focusChanged) {
 			let currentElement = this.previousFocusElement;

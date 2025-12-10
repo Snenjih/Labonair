@@ -41,7 +41,7 @@ export const InQuickInputContextKey = new RawContextKey<boolean>(inQuickInputCon
 export const inQuickInputContext = ContextKeyExpr.has(inQuickInputContextKeyValue);
 
 export const quickInputAlignmentContextKeyValue = 'quickInputAlignment';
-export const QuickInputAlignmentContextKey = new RawContextKey<'top' | 'center' | undefined>(quickInputAlignmentContextKeyValue, 'top', localize('quickInputAlignment', "The alignment of the quick input"));
+export const QuickInputAlignmentContextKey = new RawContextKey<'top' | 'center' | undefined>(quickInputAlignmentContextKeyValue, 'center', localize('quickInputAlignment', "The alignment of the quick input"));
 
 export const quickInputTypeContextKeyValue = 'quickInputType';
 export const QuickInputTypeContextKey = new RawContextKey<QuickInputType>(quickInputTypeContextKeyValue, undefined, localize('quickInputType', "The type of the currently visible quick input"));
@@ -96,6 +96,7 @@ export const backButton = {
 
 export interface QuickInputUI {
 	container: HTMLElement;
+	backdrop: HTMLElement;
 	styleSheet: HTMLStyleElement;
 	leftActionBar: ActionBar;
 	titleBar: HTMLElement;
