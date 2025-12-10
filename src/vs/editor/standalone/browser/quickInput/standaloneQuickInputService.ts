@@ -168,10 +168,6 @@ export class StandaloneQuickInputService implements IQuickInputService {
 	toggleHover(): void {
 		return this.activeService.toggleHover();
 	}
-
-	togglePreview(): void {
-		return this.activeService.togglePreview();
-	}
 }
 
 export class QuickInputEditorContribution implements IEditorContribution {

@@ -209,12 +209,6 @@ export class QuickInputService extends Themable implements IQuickInputService {
 		}
 	}
 
-	togglePreview(): void {
-		if (this.hasController) {
-			this.controller.togglePreview();
-		}
-	}
-
 	override updateStyles() {
 		if (this.hasController) {
 			this.controller.applyStyles(this.computeStyles());

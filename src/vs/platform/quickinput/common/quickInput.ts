@@ -1015,11 +1015,6 @@ export interface IQuickInputService {
 	toggleHover(): void;
 
 	/**
-	 * Toggles the preview panel for the current quick input item
-	 */
-	togglePreview(): void;
-
-	/**
 	 * The current quick pick that is visible. Undefined if none is open.
 	 */
 	currentQuickInput: IQuickInput | undefined;

@@ -269,21 +269,3 @@ registerQuickPickCommandAndKeybindingRule(
 );
 
 //#endregion
-
-//#region Toggle Preview
-
-registerQuickPickCommandAndKeybindingRule(
-	{
-		id: 'quickInput.togglePreview',
-		primary: KeyMod.Alt | KeyCode.KeyP,
-		handler: accessor => {
-			const quickInputService = accessor.get(IQuickInputService);
-			quickInputService.togglePreview();
-		},
-		metadata: {
-			description: localize('togglePreview', "Toggle the preview panel for the currently selected item in the quick input")
-		}
-	}
-);
-
-//#endregion
