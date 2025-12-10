@@ -149,12 +149,12 @@ export class QuickInputPreviewProvider extends Disposable {
 		const keybindings = this.keybindingService.lookupKeybindings(command.id);
 		if (keybindings.length > 0) {
 			const firstKeybinding = keybindings[0];
-			if (firstKeybinding && 'resolvedKeybinding' in firstKeybinding && firstKeybinding.resolvedKeybinding) {
+			if (firstKeybinding) {
 				const kbSection = dom.append(container, dom.$('.quick-input-preview-section'));
 				const kbLabel = dom.append(kbSection, dom.$('.quick-input-preview-label'));
 				kbLabel.textContent = 'Keybinding';
 				const kbValue = dom.append(kbSection, dom.$('.quick-input-preview-value'));
-				kbValue.textContent = firstKeybinding.resolvedKeybinding.getLabel() || '';
+				kbValue.textContent = firstKeybinding.getLabel() || '';
 				kbValue.style.fontWeight = '600';
 			}
 		}
