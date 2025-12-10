@@ -508,6 +508,23 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 				'description': localize('enableNaturalLanguageSearch', "Controls whether the command palette should include similar commands. You must have an extension installed that provides Natural Language support."),
 				'default': true
 			},
+			'workbench.commandPalette.preview.trigger': {
+				'type': 'string',
+				'enum': ['manual', 'auto'],
+				'enumDescriptions': [
+					localize('previewTrigger.manual', "Show preview only when triggered manually with a keybinding."),
+					localize('previewTrigger.auto', "Show preview automatically after hovering on an item for a short delay.")
+				],
+				'description': localize('previewTrigger', "Controls how the command palette preview panel is triggered."),
+				'default': 'auto'
+			},
+			'workbench.commandPalette.preview.delay': {
+				'type': 'number',
+				'description': localize('previewDelay', "Controls the delay in milliseconds before the preview panel appears when trigger is set to 'auto'."),
+				'default': 500,
+				'minimum': 0,
+				'maximum': 5000
+			},
 			'workbench.quickOpen.closeOnFocusLost': {
 				'type': 'boolean',
 				'description': localize('closeOnFocusLost', "Controls whether Quick Open should close automatically once it loses focus."),

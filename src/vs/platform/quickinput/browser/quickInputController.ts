@@ -83,12 +83,16 @@ export class QuickInputController extends Disposable {
 	private readonly quickInputTypeContext: IContextKey<QuickInputType>;
 	private readonly endOfQuickInputBoxContext: IContextKey<boolean>;
 
+	private previewTimer: any = undefined;
+	private isPreviewExpanded = false;
+
 	constructor(
 		private options: IQuickInputOptions,
 		@ILayoutService private readonly layoutService: ILayoutService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@IStorageService private readonly storageService: IStorageService
+		@IStorageService private readonly storageService: IStorageService,
+		@IConfigurationService private readonly configurationService: IConfigurationService
 	) {
 		super();
 
@@ -215,11 +219,23 @@ export class QuickInputController extends Disposable {
 
 		const description1 = dom.append(container, $('.quick-input-description'));
 
+		// Content container that holds main and preview sections
+		const contentContainer = dom.append(container, $('.quick-input-content-container'));
+
+		// Main container for list and tree
+		const mainContainer = dom.append(contentContainer, $('.quick-input-main'));
+
+		// Preview container (initially hidden)
+		const previewContainer = dom.append(contentContainer, $('.quick-input-preview'));
+		previewContainer.style.display = 'none';
+
+		const previewContent = dom.append(previewContainer, $('.quick-input-preview-content'));
+
 		// List
 		const listId = this.idPrefix + 'list';
-		const list = this._register(this.instantiationService.createInstance(QuickInputList, container, this.options.hoverDelegate, this.options.linkOpenerDelegate, listId));
+		const list = this._register(this.instantiationService.createInstance(QuickInputList, mainContainer, this.options.hoverDelegate, this.options.linkOpenerDelegate, listId));
 		inputBox.setAttribute('aria-controls', listId);
-		this._register(list.onDidChangeFocus(() => {
+		this._register(list.onDidChangeFocus((items) => {
 			if (inputBox.hasFocus()) {
 				const activeDescendant = list.getActiveDescendant();
 				if (activeDescendant) {
@@ -227,6 +243,13 @@ export class QuickInputController extends Disposable {
 				} else {
 					inputBox.removeAttribute('aria-activedescendant');
 				}
+			}
+
+			// Trigger preview on focus change
+			if (items && items.length > 0) {
+				this.startPreviewTimer(items[0]);
+			} else {
+				this.cancelPreviewTimer();
 			}
 		}));
 		this._register(list.onChangedAllVisibleChecked(checked => {
@@ -259,7 +282,7 @@ export class QuickInputController extends Disposable {
 		// Tree
 		const tree = this._register(this.instantiationService.createInstance(
 			QuickInputTreeController,
-			container,
+			mainContainer,
 			this.options.hoverDelegate
 		));
 		this._register(tree.tree.onDidChangeFocus(() => {
@@ -404,9 +427,13 @@ export class QuickInputController extends Disposable {
 			message,
 			customButtonContainer,
 			customButton,
+			progressBar,
+			contentContainer,
+			mainContainer,
+			previewContainer,
+			previewContent,
 			list,
 			tree,
-			progressBar,
 			onDidAccept: this.onDidAcceptEmitter.event,
 			onDidCustom: this.onDidCustomEmitter.event,
 			onDidTriggerButton: this.onDidTriggerButtonEmitter.event,
@@ -429,6 +456,117 @@ export class QuickInputController extends Disposable {
 			dom.append(this._container, this.ui.container);
 			this.dndController?.reparentUI(this._container);
 		}
+	}
+
+	private startPreviewTimer(item: any): void {
+		// Clear any existing timer
+		this.cancelPreviewTimer();
+
+		// Check trigger mode from configuration
+		const triggerMode = this.configurationService.getValue<string>('workbench.commandPalette.preview.trigger') || 'auto';
+
+		if (triggerMode !== 'auto') {
+			return; // Preview is manual only
+		}
+
+		// Get delay from configuration
+		const delay = this.configurationService.getValue<number>('workbench.commandPalette.preview.delay') || 500;
+
+		// Start timer
+		this.previewTimer = setTimeout(() => {
+			this.showPreview(item);
+		}, delay);
+	}
+
+	private cancelPreviewTimer(): void {
+		if (this.previewTimer !== undefined) {
+			clearTimeout(this.previewTimer);
+			this.previewTimer = undefined;
+		}
+	}
+
+	private showPreview(item?: any): void {
+		if (!this.ui || this.isPreviewExpanded) {
+			return;
+		}
+
+		this.isPreviewExpanded = true;
+		this.ui.container.classList.add('quick-input-expanded');
+		this.ui.previewContainer.style.display = '';
+
+		// Load preview content if item is provided
+		if (item) {
+			this.loadPreviewContent(item);
+		}
+	}
+
+	private hidePreview(): void {
+		if (!this.ui || !this.isPreviewExpanded) {
+			return;
+		}
+
+		this.isPreviewExpanded = false;
+		this.ui.container.classList.remove('quick-input-expanded');
+
+		// Use setTimeout to allow animation to complete before hiding
+		setTimeout(() => {
+			if (this.ui && !this.isPreviewExpanded) {
+				this.ui.previewContainer.style.display = 'none';
+				dom.clearNode(this.ui.previewContent);
+			}
+		}, 200); // Match CSS transition duration
+	}
+
+	togglePreview(): void {
+		if (this.isPreviewExpanded) {
+			this.hidePreview();
+		} else {
+			// Get active item from list
+			const activeItems = this.ui?.list?.getActiveDescendant();
+			this.showPreview(activeItems);
+		}
+	}
+
+	private loadPreviewContent(item: any): void {
+		if (!this.ui) {
+			return;
+		}
+
+		// Show loading state
+		dom.clearNode(this.ui.previewContent);
+		const loadingDiv = dom.append(this.ui.previewContent, dom.$('.quick-input-preview-loading'));
+		loadingDiv.textContent = 'Loading preview...';
+
+		// TODO: Integrate with QuickInputPreviewProvider from workbench
+		// For now, show basic info
+		setTimeout(() => {
+			if (!this.ui || !this.isPreviewExpanded) {
+				return;
+			}
+
+			dom.clearNode(this.ui.previewContent);
+
+			if (item && typeof item === 'object') {
+				const header = dom.append(this.ui.previewContent, dom.$('.quick-input-preview-header'));
+				header.textContent = item.label || 'Preview';
+
+				if (item.description) {
+					const descSection = dom.append(this.ui.previewContent, dom.$('.quick-input-preview-section'));
+					const descLabel = dom.append(descSection, dom.$('.quick-input-preview-label'));
+					descLabel.textContent = 'Description';
+					const descValue = dom.append(descSection, dom.$('.quick-input-preview-value'));
+					descValue.textContent = item.description;
+				}
+
+				if (item.detail) {
+					const detailSection = dom.append(this.ui.previewContent, dom.$('.quick-input-preview-section'));
+					const detailLabel = dom.append(detailSection, dom.$('.quick-input-preview-label'));
+					detailLabel.textContent = 'Details';
+					const detailValue = dom.append(detailSection, dom.$('.quick-input-preview-value'));
+					detailValue.textContent = item.detail;
+				}
+			}
+		}, 50);
 	}
 
 	pick<T extends IQuickPickItem, O extends IPickOptions<T>>(picks: Promise<QuickPickInput<T>[]> | QuickPickInput<T>[], options: IPickOptions<T> = {}, token: CancellationToken = CancellationToken.None): Promise<(O extends { canPickMany: true } ? T[] : T) | undefined> {
@@ -748,6 +886,10 @@ export class QuickInputController extends Disposable {
 			return;
 		}
 		controller.willHide(reason);
+
+		// Cancel preview timer and hide preview
+		this.cancelPreviewTimer();
+		this.hidePreview();
 
 		const container = this.ui?.container;
 		const focusChanged = container && !dom.isAncestorOfActiveElement(container);

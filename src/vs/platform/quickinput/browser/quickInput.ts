@@ -120,6 +120,10 @@ export interface QuickInputUI {
 	customButtonContainer: HTMLElement;
 	customButton: Button;
 	progressBar: ProgressBar;
+	contentContainer: HTMLElement;
+	mainContainer: HTMLElement;
+	previewContainer: HTMLElement;
+	previewContent: HTMLElement;
 	list: QuickInputList;
 	tree: QuickInputTreeController;
 	readonly onDidAccept: Event<void>;
