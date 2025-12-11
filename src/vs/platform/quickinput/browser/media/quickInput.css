@@ -223,7 +223,7 @@
 
 .quick-input-list .monaco-list {
 	overflow: hidden;
-	max-height: calc(20 * 22px);
+	max-height: calc(20 * 36px);
 	padding-bottom: 5px;
 }
 
@@ -235,7 +235,8 @@
 	box-sizing: border-box;
 	overflow: hidden;
 	display: flex;
-	padding: 0 6px;
+	padding: 2px 8px;
+	/* Increased padding for better spacing */
 }
 
 .quick-input-list .quick-input-list-entry.quick-input-list-separator-border {
@@ -268,15 +269,16 @@
 }
 
 .quick-input-list .quick-input-list-icon {
-	background-size: 16px;
-	background-position: left center;
+	background-size: 24px;
+	background-position: center center;
 	background-repeat: no-repeat;
-	padding-right: 6px;
-	width: 16px;
-	height: 22px;
+	padding-right: 8px;
+	width: 24px;
+	height: 24px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	flex-shrink: 0;
 }
 
 .quick-input-list .quick-input-list-rows {
@@ -300,6 +302,16 @@
 	/* make sure the icon label grows within the row */
 }
 
+.quick-input-list .quick-input-list-rows > .quick-input-list-row .monaco-icon-label .monaco-icon-label-container > .monaco-icon-name-container > .label-name {
+	font-weight: 600;
+	/* Semi-bold for better visual hierarchy */
+}
+
+.quick-input-list .quick-input-list-rows > .quick-input-list-row .monaco-icon-label .monaco-icon-label-container > .monaco-icon-description-container {
+	opacity: 0.8;
+	/* Lighter appearance for descriptions */
+}
+
 .quick-input-list .quick-input-list-rows > .quick-input-list-row .codicon[class*='codicon-'] {
 	vertical-align: text-bottom;
 }
@@ -314,22 +326,26 @@
 }
 
 .quick-input-list .quick-input-list-label-meta {
-	opacity: 0.7;
+	opacity: 0.75;
 	line-height: normal;
 	text-overflow: ellipsis;
 	overflow: hidden;
+	font-weight: 400;
+	/* Normal weight for detail text */
 }
 
 /* preserve list-like styling instead of tree-like styling */
 .quick-input-list .monaco-list .monaco-list-row .monaco-highlighted-label .highlight {
-	font-weight: bold;
+	font-weight: 700;
 	background-color: unset;
 	color: var(--vscode-list-highlightForeground) !important;
+	/* Enhanced match highlighting with distinct accent color */
 }
 
 /* preserve list-like styling instead of tree-like styling */
 .quick-input-list .monaco-list .monaco-list-row.focused .monaco-highlighted-label .highlight {
 	color: var(--vscode-list-focusHighlightForeground) !important;
+	font-weight: 700;
 }
 
 .quick-input-list .quick-input-list-entry .quick-input-list-separator {

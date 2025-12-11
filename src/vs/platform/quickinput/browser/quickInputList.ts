@@ -36,6 +36,7 @@ import { escape, ltrim } from '../../../base/common/strings.js';
 import { URI } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { IAccessibilityService } from '../../accessibility/common/accessibility.js';
+import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { IInstantiationService } from '../../instantiation/common/instantiation.js';
 import { WorkbenchObjectTree } from '../../list/browser/listService.js';
 import { defaultCheckboxStyles } from '../../theme/browser/defaultStyles.js';
@@ -271,12 +272,20 @@ class QuickPickSeparatorElement extends BaseQuickPickItemElement {
 }
 
 class QuickInputItemDelegate implements IListVirtualDelegate<IQuickPickElement> {
-	getHeight(element: IQuickPickElement): number {
+	constructor(
+		@IConfigurationService private readonly configurationService: IConfigurationService
+	) { }
 
+	getHeight(element: IQuickPickElement): number {
 		if (element instanceof QuickPickSeparatorElement) {
 			return 30;
 		}
-		return element.saneDetail ? 44 : 22;
+
+		// Get configurable row height
+		const configuredHeight = this.configurationService.getValue<number>('workbench.commandPalette.list.rowHeight') ?? 36;
+
+		// If element has detail, use a taller height (1.5x the base height)
+		return element.saneDetail ? Math.round(configuredHeight * 1.5) : configuredHeight;
 	}
 
 	getTemplateId(element: IQuickPickElement): string {
@@ -401,6 +410,7 @@ class QuickPickItemElementRenderer extends BaseQuickInputListRenderer<QuickPickI
 	constructor(
 		hoverDelegate: IHoverDelegate | undefined,
 		@IThemeService private readonly themeService: IThemeService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super(hoverDelegate);
 	}
@@ -451,16 +461,30 @@ class QuickPickItemElementRenderer extends BaseQuickInputListRenderer<QuickPickI
 
 		const { labelHighlights, descriptionHighlights, detailHighlights } = element;
 
+		// Get configuration values
+		const iconSize = this.configurationService.getValue<number>('workbench.commandPalette.list.iconSize') ?? 24;
+		const fontSize = this.configurationService.getValue<number>('workbench.commandPalette.list.fontSize') ?? 14;
+
 		// Icon
 		if (mainItem.iconPath) {
 			const icon = isDark(this.themeService.getColorTheme().type) ? mainItem.iconPath.dark : (mainItem.iconPath.light ?? mainItem.iconPath.dark);
 			const iconUrl = URI.revive(icon);
 			data.icon.className = 'quick-input-list-icon';
 			data.icon.style.backgroundImage = cssJs.asCSSUrl(iconUrl);
+			data.icon.style.backgroundSize = `${iconSize}px`;
+			data.icon.style.width = `${iconSize}px`;
+			data.icon.style.height = `${iconSize}px`;
 		} else {
 			data.icon.style.backgroundImage = '';
+			data.icon.style.backgroundSize = '';
 			data.icon.className = mainItem.iconClass ? `quick-input-list-icon ${mainItem.iconClass}` : '';
+			data.icon.style.width = mainItem.iconClass ? `${iconSize}px` : '';
+			data.icon.style.height = mainItem.iconClass ? `${iconSize}px` : '';
 		}
+
+		// Apply font size to label and detail
+		data.label.element.style.fontSize = `${fontSize}px`;
+		data.detail.element.style.fontSize = `${Math.round(fontSize * 0.9)}px`;
 
 		// Label
 		let descriptionTitle: IManagedHoverTooltipMarkdownString | undefined;
@@ -719,17 +743,19 @@ export class QuickInputList extends Disposable {
 		private linkOpenerDelegate: (content: string) => void,
 		id: string,
 		@IInstantiationService instantiationService: IInstantiationService,
-		@IAccessibilityService private readonly accessibilityService: IAccessibilityService
+		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
+		@IConfigurationService private readonly configurationService: IConfigurationService
 	) {
 		super();
 		this._container = dom.append(this.parent, $('.quick-input-list'));
 		this._separatorRenderer = new QuickPickSeparatorElementRenderer(hoverDelegate);
 		this._itemRenderer = instantiationService.createInstance(QuickPickItemElementRenderer, hoverDelegate);
+		const delegate = instantiationService.createInstance(QuickInputItemDelegate);
 		this._tree = this._register(instantiationService.createInstance(
 			WorkbenchObjectTree<IQuickPickElement, void>,
 			'QuickInput',
 			this._container,
-			new QuickInputItemDelegate(),
+			delegate,
 			[this._itemRenderer, this._separatorRenderer],
 			{
 				filter: {
@@ -1379,9 +1405,10 @@ export class QuickInputList extends Disposable {
 	}
 
 	layout(maxHeight?: number): void {
+		const configuredHeight = this.configurationService.getValue<number>('workbench.commandPalette.list.rowHeight') ?? 36;
 		this._tree.getHTMLElement().style.maxHeight = maxHeight ? `${
 			// Make sure height aligns with list item heights
-			Math.floor(maxHeight / 44) * 44
+			Math.floor(maxHeight / configuredHeight) * configuredHeight
 			// Add some extra height so that it's clear there's more to scroll
 			+ 6
 			}px` : '';
