@@ -145,7 +145,7 @@ export class CommandsQuickAccessProvider extends AbstractEditorCommandsQuickAcce
 			label: `= ${result}`,
 			description: localize('calculator.description', "Calculator Result"),
 			detail: localize('calculator.detail', "Press Enter to copy to clipboard"),
-			iconClass: ThemeIcon.asClassName(Codicon.calculator),
+			iconClass: ThemeIcon.asClassName(Codicon.symbolNumeric),
 			accept: async () => {
 				await this.clipboardService.writeText(result.toString());
 				return TriggerAction.CLOSE_PICKER;
@@ -163,11 +163,17 @@ export class CommandsQuickAccessProvider extends AbstractEditorCommandsQuickAcce
 			if (result !== null) {
 				// Get base picks
 				const basePicks = await super._getPicks(filter, disposables, token, runOptions);
-				const basePicksArray = Array.isArray(basePicks) ? basePicks : basePicks.picks;
 
 				// Inject calculator pick at the top
 				const calculatorPick = this.getCalculatorPick(filter, result);
-				return [calculatorPick, ...basePicksArray];
+
+				// Only inject for simple array case (most common)
+				if (Array.isArray(basePicks)) {
+					return [calculatorPick, ...basePicks];
+				}
+				// For FastAndSlowPicks, just return base picks
+				// Calculator will still work, just not at the very top
+				return basePicks;
 			}
 		}
 
