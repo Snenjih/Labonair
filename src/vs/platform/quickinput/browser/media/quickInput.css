@@ -27,6 +27,30 @@
 	}
 }
 
+/* Entry animation for the widget with pop effect */
+@keyframes quick-input-widget-entry {
+	from {
+		opacity: 0;
+		transform: translate(-50%, -50%) scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: translate(-50%, -50%) scale(1);
+	}
+}
+
+/* Exit animation for the widget */
+@keyframes quick-input-widget-exit {
+	from {
+		opacity: 1;
+		transform: translate(-50%, -50%) scale(1);
+	}
+	to {
+		opacity: 0;
+		transform: translate(-50%, -50%) scale(0.95);
+	}
+}
+
 .quick-input-widget {
 	position: absolute;
 	width: 600px;
@@ -37,6 +61,20 @@
 	/* Enhanced shadow for floating layer effect with theme awareness */
 	box-shadow: 0 8px 32px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.4)),
 	            0 0 0 1px var(--vscode-widget-border, transparent);
+	/* Apply entry animation */
+	animation: quick-input-widget-entry var(--quick-input-animation-duration, 150ms) ease-out;
+	will-change: opacity, transform;
+}
+
+/* Exit animation class applied when closing */
+.quick-input-widget.quick-input-widget-exiting {
+	animation: quick-input-widget-exit var(--quick-input-animation-duration, 150ms) ease-in;
+}
+
+/* Disable animations when configured */
+.quick-input-widget.no-animations,
+.quick-input-widget.no-animations.quick-input-widget-exiting {
+	animation: none !important;
 }
 
 .quick-input-titlebar {
@@ -235,6 +273,8 @@
 	box-sizing: border-box;
 	overflow: hidden;
 	display: flex;
+	align-items: center;
+	/* Vertically center all content */
 	padding: 2px 8px;
 	/* Increased padding for better spacing */
 }
@@ -255,6 +295,8 @@
 .quick-input-list .quick-input-list-label {
 	overflow: hidden;
 	display: flex;
+	align-items: center;
+	/* Vertically center label content */
 	height: 100%;
 	flex: 1;
 }
@@ -269,12 +311,12 @@
 }
 
 .quick-input-list .quick-input-list-icon {
-	background-size: 24px;
+	background-size: 28px;
 	background-position: center center;
 	background-repeat: no-repeat;
-	padding-right: 8px;
-	width: 24px;
-	height: 24px;
+	padding-right: 10px;
+	width: 28px;
+	height: 28px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -286,6 +328,8 @@
 	text-overflow: ellipsis;
 	display: flex;
 	flex-direction: column;
+	justify-content: center;
+	/* Vertically center rows within the container */
 	height: 100%;
 	flex: 1;
 	margin-left: 5px;
@@ -334,17 +378,17 @@
 	/* Normal weight for detail text */
 }
 
-/* preserve list-like styling instead of tree-like styling */
+/* Enhanced match highlighting with bold accent color for better visibility */
 .quick-input-list .monaco-list .monaco-list-row .monaco-highlighted-label .highlight {
 	font-weight: 700;
 	background-color: unset;
-	color: var(--vscode-list-highlightForeground) !important;
-	/* Enhanced match highlighting with distinct accent color */
+	/* Use focus border or brand color for high visibility */
+	color: var(--vscode-focusBorder, var(--vscode-list-highlightForeground)) !important;
 }
 
-/* preserve list-like styling instead of tree-like styling */
+/* Even more distinct highlighting when focused for easy scanning */
 .quick-input-list .monaco-list .monaco-list-row.focused .monaco-highlighted-label .highlight {
-	color: var(--vscode-list-focusHighlightForeground) !important;
+	color: var(--vscode-focusBorder, var(--vscode-list-focusHighlightForeground)) !important;
 	font-weight: 700;
 }
 
@@ -438,6 +482,61 @@
 /* Hide the twistie containers so that there isn't blank indent */
 .quick-input-list .monaco-tl-twistie {
 	display: none !important;
+}
+
+/* Spotlight-style Footer */
+.quick-input-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 12px;
+	min-height: 24px;
+	max-height: 30px;
+	border-top: 1px solid var(--vscode-panel-border, transparent);
+	background-color: var(--vscode-quickInput-background);
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	border-bottom-left-radius: var(--quick-input-corner-radius, 12px);
+	border-bottom-right-radius: var(--quick-input-corner-radius, 12px);
+}
+
+.quick-input-footer-left {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.quick-input-footer-right {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.quick-input-footer-action {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* Keycap styling for shortcut hints */
+.quick-input-footer-keycap {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 16px;
+	padding: 2px 4px;
+	font-size: 10px;
+	font-family: monospace;
+	border: 1px solid var(--vscode-keybindingLabel-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.35)));
+	border-radius: 3px;
+	background-color: var(--vscode-keybindingLabel-background, rgba(128, 128, 128, 0.17));
+	color: var(--vscode-keybindingLabel-foreground, var(--vscode-foreground));
+	box-shadow: 0 1px 0 var(--vscode-widget-shadow, rgba(0, 0, 0, 0.16));
+}
+
+/* Hide footer when not needed */
+.quick-input-footer.hidden {
+	display: none;
 }
 
 /* Tree */

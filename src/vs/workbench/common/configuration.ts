@@ -48,18 +48,37 @@ export const commandPaletteConfigurationNodeBase = Object.freeze<IConfigurationN
 		},
 		'workbench.commandPalette.list.iconSize': {
 			'type': 'number',
-			'default': 24,
+			'default': 28,
 			'minimum': 16,
-			'maximum': 32,
+			'maximum': 36,
 			'description': localize('commandPalette.list.iconSize', "Controls the size of icons in the Command Palette list."),
 			'scope': ConfigurationScope.APPLICATION
 		},
 		'workbench.commandPalette.list.fontSize': {
 			'type': 'number',
-			'default': 14,
+			'default': 15,
 			'minimum': 10,
-			'maximum': 20,
+			'maximum': 22,
 			'description': localize('commandPalette.list.fontSize', "Controls the font size of text in the Command Palette list."),
+			'scope': ConfigurationScope.APPLICATION
+		},
+		'workbench.commandPalette.experimental.calculator': {
+			'type': 'boolean',
+			'default': true,
+			'description': localize('commandPalette.experimental.calculator', "Controls whether the Command Palette calculator mode is enabled. When enabled, you can perform calculations by starting input with '=' or entering math expressions."),
+			'scope': ConfigurationScope.APPLICATION
+		},
+		'workbench.commandPalette.animations.enabled': {
+			'type': 'boolean',
+			'default': true,
+			'description': localize('commandPalette.animations.enabled', "Controls whether entry and exit animations are enabled for the Command Palette."),
+			'scope': ConfigurationScope.APPLICATION
+		},
+		'workbench.commandPalette.animations.speed': {
+			'type': 'string',
+			'enum': ['fast', 'normal', 'slow'],
+			'default': 'fast',
+			'description': localize('commandPalette.animations.speed', "Controls the animation speed for the Command Palette. 'fast' is approximately 100-150ms, 'normal' is 200-250ms, and 'slow' is 300-400ms."),
 			'scope': ConfigurationScope.APPLICATION
 		}
 	}

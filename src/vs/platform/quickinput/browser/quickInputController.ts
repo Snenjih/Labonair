@@ -290,6 +290,16 @@ export class QuickInputController extends Disposable {
 		}));
 		this._register(tree.tree.onDidChangeContentHeight(() => this.updateLayout()));
 
+		// Footer for Spotlight-style action hints
+		const footer = dom.append(container, $('.quick-input-footer.hidden'));
+		const footerLeft = dom.append(footer, $('.quick-input-footer-left'));
+		const footerRight = dom.append(footer, $('.quick-input-footer-right'));
+
+		// Update footer when list selection changes
+		this._register(list.onDidChangeFocus(items => {
+			this.updateFooter(footer, footerLeft, footerRight, items);
+		}));
+
 		const focusTracker = dom.trackFocus(container);
 		this._register(focusTracker);
 		this._register(dom.addDisposableListener(container, dom.EventType.FOCUS, e => {
@@ -408,6 +418,9 @@ export class QuickInputController extends Disposable {
 			list,
 			tree,
 			progressBar,
+			footer,
+			footerLeft,
+			footerRight,
 			onDidAccept: this.onDidAcceptEmitter.event,
 			onDidCustom: this.onDidCustomEmitter.event,
 			onDidTriggerButton: this.onDidTriggerButtonEmitter.event,
@@ -662,6 +675,61 @@ export class QuickInputController extends Disposable {
 		ui.container.style.setProperty('--quick-input-corner-radius', `${cornerRadius}px`);
 	}
 
+	private applyAnimationConfiguration(ui: QuickInputUI): void {
+		// Read animation configuration
+		const animationsEnabled = this.configurationService.getValue<boolean>('workbench.commandPalette.animations.enabled') ?? true;
+		const animationSpeed = this.configurationService.getValue<'fast' | 'normal' | 'slow'>('workbench.commandPalette.animations.speed') ?? 'fast';
+
+		// Map animation speed to duration
+		const durationMap = {
+			'fast': '150ms',
+			'normal': '250ms',
+			'slow': '400ms'
+		};
+
+		// Apply animation settings
+		if (!animationsEnabled) {
+			ui.container.classList.add('no-animations');
+		} else {
+			ui.container.classList.remove('no-animations');
+			ui.container.style.setProperty('--quick-input-animation-duration', durationMap[animationSpeed]);
+		}
+	}
+
+	private updateFooter(footer: HTMLElement, footerLeft: HTMLElement, footerRight: HTMLElement, items: unknown[]): void {
+		// Clear footer content
+		dom.clearNode(footerLeft);
+		dom.clearNode(footerRight);
+
+		// Only show footer if there's a selected item
+		if (!items || items.length === 0) {
+			footer.classList.add('hidden');
+			return;
+		}
+
+		// Show footer
+		footer.classList.remove('hidden');
+
+		// Create primary action (Enter key)
+		const primaryAction = dom.append(footerLeft, $('.quick-input-footer-action'));
+		const enterKeycap = dom.append(primaryAction, $('.quick-input-footer-keycap'));
+		enterKeycap.textContent = '↵';
+		const actionLabel = dom.append(primaryAction, $('span'));
+		actionLabel.textContent = ' Open';
+
+		// Create secondary actions
+		// Alt+Enter for split editor
+		const splitAction = dom.append(footerRight, $('.quick-input-footer-action'));
+		const altKeycap = dom.append(splitAction, $('.quick-input-footer-keycap'));
+		altKeycap.textContent = 'Alt';
+		const plusSpan1 = dom.append(splitAction, $('span'));
+		plusSpan1.textContent = '+';
+		const enterKeycap2 = dom.append(splitAction, $('.quick-input-footer-keycap'));
+		enterKeycap2.textContent = '↵';
+		const splitLabel = dom.append(splitAction, $('span'));
+		splitLabel.textContent = ' Split';
+	}
+
 	private show(controller: IQuickInput) {
 		const ui = this.getUI(true);
 		this.onShowEmitter.fire();
@@ -705,6 +773,9 @@ export class QuickInputController extends Disposable {
 
 		// Apply backdrop configuration settings
 		this.applyBackdropConfiguration(ui);
+
+		// Apply animation configuration settings
+		this.applyAnimationConfiguration(ui);
 
 		ui.backdrop.style.display = '';
 		ui.container.style.display = '';

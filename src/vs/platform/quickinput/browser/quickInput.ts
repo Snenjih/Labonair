@@ -122,6 +122,9 @@ export interface QuickInputUI {
 	progressBar: ProgressBar;
 	list: QuickInputList;
 	tree: QuickInputTreeController;
+	footer: HTMLElement;
+	footerLeft: HTMLElement;
+	footerRight: HTMLElement;
 	readonly onDidAccept: Event<void>;
 	readonly onDidCustom: Event<void>;
 	readonly onDidTriggerButton: Event<IQuickInputButton>;

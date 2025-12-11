@@ -101,3 +101,197 @@ export function renderQuickInputDescription(description: string, container: HTML
 		}
 	}
 }
+
+/**
+ * Safe mathematical expression evaluator for calculator mode
+ * Supports basic operators: +, -, *, /, ^, %
+ * Does not use eval() for security
+ */
+export function evaluateMathExpression(expression: string): number | null {
+	try {
+		// Remove whitespace
+		let expr = expression.trim();
+
+		// Check if expression starts with '=' and remove it
+		if (expr.startsWith('=')) {
+			expr = expr.substring(1).trim();
+		}
+
+		// Check for valid characters (numbers, operators, parentheses, decimal points)
+		if (!/^[\d+\-*/%^().\s]+$/.test(expr)) {
+			return null;
+		}
+
+		// Replace ^ with ** for exponentiation
+		expr = expr.replace(/\^/g, '**');
+
+		// Parse and evaluate the expression using a safe parser
+		const result = parseExpression(expr);
+
+		if (result === null || !isFinite(result) || isNaN(result)) {
+			return null;
+		}
+
+		return result;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Check if input looks like a mathematical expression
+ */
+export function isMathExpression(input: string): boolean {
+	const trimmed = input.trim();
+
+	// Starts with '='
+	if (trimmed.startsWith('=')) {
+		return true;
+	}
+
+	// Contains math operators and numbers (but not just a filename pattern)
+	// Must have at least one operator and one number
+	const hasMathOperator = /[+\-*/%^]/.test(trimmed);
+	const hasNumber = /\d/.test(trimmed);
+	const hasValidPattern = /^\d+\s*[+\-*/%^]\s*\d+/.test(trimmed);
+
+	return hasMathOperator && hasNumber && hasValidPattern;
+}
+
+/**
+ * Safe expression parser using recursive descent
+ */
+function parseExpression(expr: string): number | null {
+	try {
+		let pos = 0;
+
+		function parseNumber(): number | null {
+			const match = expr.substring(pos).match(/^-?\d+(\.\d+)?/);
+			if (!match) {
+				return null;
+			}
+			pos += match[0].length;
+			return parseFloat(match[0]);
+		}
+
+		function skipWhitespace(): void {
+			while (pos < expr.length && /\s/.test(expr[pos])) {
+				pos++;
+			}
+		}
+
+		function parseFactor(): number | null {
+			skipWhitespace();
+
+			// Handle parentheses
+			if (expr[pos] === '(') {
+				pos++;
+				const result = parseAddSub();
+				if (result === null) {
+					return null;
+				}
+				skipWhitespace();
+				if (expr[pos] !== ')') {
+					return null;
+				}
+				pos++;
+				return result;
+			}
+
+			// Handle numbers
+			return parseNumber();
+		}
+
+		function parsePower(): number | null {
+			let left = parseFactor();
+			if (left === null) {
+				return null;
+			}
+
+			skipWhitespace();
+			while (pos < expr.length && expr.substring(pos, pos + 2) === '**') {
+				pos += 2;
+				const right = parseFactor();
+				if (right === null) {
+					return null;
+				}
+				left = Math.pow(left, right);
+				skipWhitespace();
+			}
+
+			return left;
+		}
+
+		function parseMulDiv(): number | null {
+			let left = parsePower();
+			if (left === null) {
+				return null;
+			}
+
+			skipWhitespace();
+			while (pos < expr.length && (expr[pos] === '*' || expr[pos] === '/' || expr[pos] === '%')) {
+				const op = expr[pos];
+				pos++;
+				const right = parsePower();
+				if (right === null) {
+					return null;
+				}
+
+				if (op === '*') {
+					left = left * right;
+				} else if (op === '/') {
+					if (right === 0) {
+						return null; // Division by zero
+					}
+					left = left / right;
+				} else if (op === '%') {
+					if (right === 0) {
+						return null; // Modulo by zero
+					}
+					left = left % right;
+				}
+				skipWhitespace();
+			}
+
+			return left;
+		}
+
+		function parseAddSub(): number | null {
+			let left = parseMulDiv();
+			if (left === null) {
+				return null;
+			}
+
+			skipWhitespace();
+			while (pos < expr.length && (expr[pos] === '+' || expr[pos] === '-')) {
+				const op = expr[pos];
+				pos++;
+				const right = parseMulDiv();
+				if (right === null) {
+					return null;
+				}
+
+				if (op === '+') {
+					left = left + right;
+				} else if (op === '-') {
+					left = left - right;
+				}
+				skipWhitespace();
+			}
+
+			return left;
+		}
+
+		const result = parseAddSub();
+		skipWhitespace();
+
+		// Check if we consumed the entire expression
+		if (pos !== expr.length) {
+			return null;
+		}
+
+		return result;
+	} catch {
+		return null;
+	}
+}

@@ -462,8 +462,8 @@ class QuickPickItemElementRenderer extends BaseQuickInputListRenderer<QuickPickI
 		const { labelHighlights, descriptionHighlights, detailHighlights } = element;
 
 		// Get configuration values
-		const iconSize = this.configurationService.getValue<number>('workbench.commandPalette.list.iconSize') ?? 24;
-		const fontSize = this.configurationService.getValue<number>('workbench.commandPalette.list.fontSize') ?? 14;
+		const iconSize = this.configurationService.getValue<number>('workbench.commandPalette.list.iconSize') ?? 28;
+		const fontSize = this.configurationService.getValue<number>('workbench.commandPalette.list.fontSize') ?? 15;
 
 		// Icon
 		if (mainItem.iconPath) {

@@ -36,6 +36,8 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
 import { createKeybindingCommandQuery } from '../../../services/preferences/browser/keybindingsEditorModel.js';
 import { IPreferencesService } from '../../../services/preferences/common/preferences.js';
+import { evaluateMathExpression, isMathExpression } from '../../../../platform/quickinput/browser/quickInputUtils.js';
+import { IClipboardService } from '../../../../platform/clipboard/common/clipboardService.js';
 
 export class CommandsQuickAccessProvider extends AbstractEditorCommandsQuickAccessProvider {
 
@@ -73,7 +75,8 @@ export class CommandsQuickAccessProvider extends AbstractEditorCommandsQuickAcce
 		@IEditorGroupsService private readonly editorGroupService: IEditorGroupsService,
 		@IPreferencesService private readonly preferencesService: IPreferencesService,
 		@IProductService private readonly productService: IProductService,
-		@IAiRelatedInformationService private readonly aiRelatedInformationService: IAiRelatedInformationService
+		@IAiRelatedInformationService private readonly aiRelatedInformationService: IAiRelatedInformationService,
+		@IClipboardService private readonly clipboardService: IClipboardService
 	) {
 		super({
 			showAlias: !Language.isDefaultVariant(),
@@ -134,6 +137,42 @@ export class CommandsQuickAccessProvider extends AbstractEditorCommandsQuickAcce
 				return TriggerAction.CLOSE_PICKER;
 			},
 		}));
+	}
+
+	private getCalculatorPick(filter: string, result: number): ICommandQuickPick {
+		return {
+			commandId: 'calculator.result',
+			label: `= ${result}`,
+			description: localize('calculator.description', "Calculator Result"),
+			detail: localize('calculator.detail', "Press Enter to copy to clipboard"),
+			iconClass: ThemeIcon.asClassName(Codicon.calculator),
+			accept: async () => {
+				await this.clipboardService.writeText(result.toString());
+				return TriggerAction.CLOSE_PICKER;
+			}
+		};
+	}
+
+	protected override async _getPicks(filter: string, disposables: import("../../../../base/common/lifecycle.js").DisposableStore, token: CancellationToken, runOptions?: import("../../../../platform/quickinput/common/quickAccess.js").IQuickAccessProviderRunOptions): Promise<import("../../../../platform/quickinput/browser/pickerQuickAccess.js").Picks<ICommandQuickPick> | import("../../../../platform/quickinput/browser/pickerQuickAccess.js").FastAndSlowPicks<ICommandQuickPick>> {
+		// Check if calculator mode is enabled
+		const calculatorEnabled = this.configurationService.getValue<boolean>('workbench.commandPalette.experimental.calculator');
+
+		// Check if input is a math expression and calculator is enabled
+		if (calculatorEnabled && isMathExpression(filter)) {
+			const result = evaluateMathExpression(filter);
+			if (result !== null) {
+				// Get base picks
+				const basePicks = await super._getPicks(filter, disposables, token, runOptions);
+				const basePicksArray = Array.isArray(basePicks) ? basePicks : basePicks.picks;
+
+				// Inject calculator pick at the top
+				const calculatorPick = this.getCalculatorPick(filter, result);
+				return [calculatorPick, ...basePicksArray];
+			}
+		}
+
+		// Default behavior
+		return super._getPicks(filter, disposables, token, runOptions);
 	}
 
 	protected hasAdditionalCommandPicks(filter: string, token: CancellationToken): boolean {
