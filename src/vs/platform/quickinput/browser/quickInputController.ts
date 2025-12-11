@@ -777,10 +777,21 @@ export class QuickInputController extends Disposable {
 		// Apply animation configuration settings
 		this.applyAnimationConfiguration(ui);
 
-		ui.backdrop.style.display = '';
+		// Set display but keep invisible initially to prevent flash
+		ui.container.style.opacity = '0';
 		ui.container.style.display = '';
+
+		// Position the element BEFORE making it visible
 		this.updateLayout();
 		this.dndController?.layoutContainer();
+
+		// Now make it visible (animation will start from opacity 0)
+		ui.backdrop.style.display = '';
+		// Force reflow to ensure layout is applied before animation
+		ui.container.offsetHeight;
+		// Remove opacity override to let animation control it
+		ui.container.style.opacity = '';
+
 		ui.inputBox.setFocus();
 		this.quickInputTypeContext.set(controller.type);
 	}
