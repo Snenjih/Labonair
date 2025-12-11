@@ -88,7 +88,8 @@ export class QuickInputController extends Disposable {
 		@ILayoutService private readonly layoutService: ILayoutService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@IStorageService private readonly storageService: IStorageService
+		@IStorageService private readonly storageService: IStorageService,
+		@IConfigurationService private readonly configurationService: IConfigurationService
 	) {
 		super();
 
@@ -647,6 +648,20 @@ export class QuickInputController extends Disposable {
 		return new QuickTree<T>(ui);
 	}
 
+	private applyBackdropConfiguration(ui: QuickInputUI): void {
+		// Read configuration values for backdrop blur, opacity, and modal corner radius
+		const blurRadius = this.configurationService.getValue<number>('workbench.commandPalette.backdrop.blur') ?? 10;
+		const backdropOpacity = this.configurationService.getValue<number>('workbench.commandPalette.backdrop.opacity') ?? 0.2;
+		const cornerRadius = this.configurationService.getValue<number>('workbench.commandPalette.modal.cornerRadius') ?? 12;
+
+		// Apply CSS variables to the backdrop element
+		ui.backdrop.style.setProperty('--quick-input-blur-radius', `${blurRadius}px`);
+		ui.backdrop.style.setProperty('--quick-input-backdrop-opacity', `${backdropOpacity}`);
+
+		// Apply corner radius to the container (modal widget)
+		ui.container.style.setProperty('--quick-input-corner-radius', `${cornerRadius}px`);
+	}
+
 	private show(controller: IQuickInput) {
 		const ui = this.getUI(true);
 		this.onShowEmitter.fire();
@@ -687,6 +702,9 @@ export class QuickInputController extends Disposable {
 
 		const backKeybindingLabel = this.options.backKeybindingLabel();
 		backButton.tooltip = backKeybindingLabel ? localize('quickInput.backWithKeybinding', "Back ({0})", backKeybindingLabel) : localize('quickInput.back', "Back");
+
+		// Apply backdrop configuration settings
+		this.applyBackdropConfiguration(ui);
 
 		ui.backdrop.style.display = '';
 		ui.container.style.display = '';

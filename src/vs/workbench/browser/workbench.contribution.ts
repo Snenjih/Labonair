@@ -8,7 +8,7 @@ import { isLinux, isMacintosh, isNative, isWeb, isWindows } from '../../base/com
 import { localize } from '../../nls.js';
 import { Extensions as ConfigurationExtensions, ConfigurationScope, IConfigurationRegistry } from '../../platform/configuration/common/configurationRegistry.js';
 import { Registry } from '../../platform/registry/common/platform.js';
-import { ConfigurationKeyValuePairs, ConfigurationMigrationWorkbenchContribution, DynamicWindowConfiguration, DynamicWorkbenchSecurityConfiguration, Extensions, IConfigurationMigrationRegistry, problemsConfigurationNodeBase, windowConfigurationNodeBase, workbenchConfigurationNodeBase } from '../common/configuration.js';
+import { commandPaletteConfigurationNodeBase, ConfigurationKeyValuePairs, ConfigurationMigrationWorkbenchContribution, DynamicWindowConfiguration, DynamicWorkbenchSecurityConfiguration, Extensions, IConfigurationMigrationRegistry, problemsConfigurationNodeBase, windowConfigurationNodeBase, workbenchConfigurationNodeBase } from '../common/configuration.js';
 import { WorkbenchPhase, registerWorkbenchContribution2 } from '../common/contributions.js';
 import { CustomEditorLabelService } from '../services/editor/common/customEditorLabelService.js';
 import { ActivityBarPosition, EditorActionsLocation, EditorTabsMode, LayoutSettings } from '../services/layout/browser/layoutService.js';
@@ -508,6 +508,25 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 				'description': localize('enableNaturalLanguageSearch', "Controls whether the command palette should include similar commands. You must have an extension installed that provides Natural Language support."),
 				'default': true
 			},
+			'workbench.commandPalette.backdrop.blur': {
+				'type': 'number',
+				'default': 10,
+				'minimum': 0,
+				'description': localize('commandPaletteBackdropBlur', "Controls the strength of the blur effect applied to the background when the command palette is open. Set to 0 to disable the blur effect."),
+			},
+			'workbench.commandPalette.backdrop.opacity': {
+				'type': 'number',
+				'default': 0.2,
+				'minimum': 0,
+				'maximum': 1,
+				'description': localize('commandPaletteBackdropOpacity', "Controls the darkness of the background overlay when the command palette is open. Values range from 0 (transparent) to 1 (opaque)."),
+			},
+			'workbench.commandPalette.modal.cornerRadius': {
+				'type': 'number',
+				'default': 12,
+				'minimum': 0,
+				'description': localize('commandPaletteModalCornerRadius', "Controls the roundness of the command palette modal corners in pixels."),
+			},
 			'workbench.quickOpen.closeOnFocusLost': {
 				'type': 'boolean',
 				'description': localize('closeOnFocusLost', "Controls whether Quick Open should close automatically once it loses focus."),
@@ -862,6 +881,9 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 			},
 		}
 	});
+
+	// Command Palette
+	registry.registerConfiguration(commandPaletteConfigurationNodeBase);
 
 	// Zen Mode
 	registry.registerConfiguration({

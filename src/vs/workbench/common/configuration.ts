@@ -32,6 +32,39 @@ export const workbenchConfigurationNodeBase = Object.freeze<IConfigurationNode>(
 	'type': 'object',
 });
 
+export const commandPaletteConfigurationNodeBase = Object.freeze<IConfigurationNode>({
+	'id': 'workbench',
+	'order': 7.1,
+	'title': localize('commandPaletteConfigurationTitle', "Command Palette"),
+	'type': 'object',
+	'properties': {
+		'workbench.commandPalette.list.rowHeight': {
+			'type': 'number',
+			'default': 36,
+			'minimum': 22,
+			'maximum': 60,
+			'description': localize('commandPalette.list.rowHeight', "Controls the height of rows in the Command Palette list. Use lower values for a compact view, higher values for a spacious view."),
+			'scope': ConfigurationScope.APPLICATION
+		},
+		'workbench.commandPalette.list.iconSize': {
+			'type': 'number',
+			'default': 24,
+			'minimum': 16,
+			'maximum': 32,
+			'description': localize('commandPalette.list.iconSize', "Controls the size of icons in the Command Palette list."),
+			'scope': ConfigurationScope.APPLICATION
+		},
+		'workbench.commandPalette.list.fontSize': {
+			'type': 'number',
+			'default': 14,
+			'minimum': 10,
+			'maximum': 20,
+			'description': localize('commandPalette.list.fontSize', "Controls the font size of text in the Command Palette list."),
+			'scope': ConfigurationScope.APPLICATION
+		}
+	}
+});
+
 export const securityConfigurationNodeBase = Object.freeze<IConfigurationNode>({
 	'id': 'security',
 	'scope': ConfigurationScope.APPLICATION,
