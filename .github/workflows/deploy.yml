@@ -3,7 +3,20 @@ name: Build & Release Labonair
 on:
   push:
     tags:
-      - 'v*' # Startet bei Tags wie v1.0.0, v2.3.4 etc.
+      - 'v*'
+  
+  workflow_dispatch:
+    inputs:
+      manual_tag:
+        description: 'Tag Name (optional)'
+        required: false
+
+  # NEU: Zeitgesteuert
+  schedule:
+    # Syntax: Minute Stunde Tag Monat Wochentag
+    # Hier: Jeden Montag um 03:00 Uhr morgens (UTC)
+    - cron: '0 3 * * 1'
+
 
 permissions:
   contents: write # Wichtig, um Releases zu erstellen
@@ -201,9 +214,20 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true # Generiert automatisch Changelog aus PRs/Commits
+          # Logik: 
+          # Wenn Zeitplan (schedule): Setze Tag auf 'weekly' und Name auf 'Weekly Build'
+          # Wenn manuell/tag: Nutze den echten Tag (GitHub macht das automatisch, wenn wir 'tag_name' leer lassen)
+          tag_name: ${{ github.event_name == 'schedule' && 'weekly' || '' }}
+          name: ${{ github.event_name == 'schedule' && 'Weekly Build (Automated)' || '' }}
+          
+          # Weekly Builds sollten als "Prerelease" markiert sein
+          prerelease: ${{ github.event_name == 'schedule' }}
+          
+          # Erlaubt das Überschreiben des alten 'weekly' Releases, damit du nicht 1000 Releases hast
+          make_latest: ${{ github.event_name != 'schedule' }} 
+          
+          generate_release_notes: true
           draft: false
-          prerelease: false
           files: |
             assets/windows/**/*.exe
             assets/windows/**/*.zip
