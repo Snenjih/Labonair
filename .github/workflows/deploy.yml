@@ -4,99 +4,100 @@ on:
   push:
     tags:
       - 'v*'
-  
   workflow_dispatch:
     inputs:
       manual_tag:
         description: 'Tag Name (optional)'
         required: false
-
-  # NEU: Zeitgesteuert
   schedule:
-    # Syntax: Minute Stunde Tag Monat Wochentag
-    # Hier: Jeden Montag um 03:00 Uhr morgens (UTC)
-    - cron: '0 3 * * 1'
-
+    - cron: '0 3 * * 1' # Montags 03:00 UTC
 
 permissions:
-  contents: write # Wichtig, um Releases zu erstellen
+  contents: write
 
 env:
-  # 'oss' ist der Standard für Open Source Builds. 
-  # Wenn du 'product.json' angepasst hast, werden diese Namen verwendet.
-  VSCODE_QUALITY: oss 
+  VSCODE_QUALITY: oss
   NODE_OPTIONS: "--max-old-space-size=8192"
+  # Metadaten für den About-Dialog
+  VSCODE_DISTRO_COMMIT: ${{ github.sha }}
+  # Kleiner Hack für das Datum im ISO Format
+  VSCODE_DISTRO_DATE: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
 jobs:
   # =========================================================
-  # 1. WINDOWS BUILD (x64, arm64, ia32)
+  # WINDOWS
   # =========================================================
   build-windows:
     name: Build Windows
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
 
-      # Inno Setup wird für den .exe Installer benötigt
+      # IMPROVEMENT 1: Caching
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .build/electron
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-build-
+
       - name: Install Inno Setup
-        run: |
-          choco install innosetup
+        run: choco install innosetup
 
       - name: Install Dependencies
-        run: |
-          npm ci
+        run: npm ci
         env:
-          # Wir laden Electron später spezifisch, das spart Zeit/Fehler bei 'npm ci'
-          ELECTRON_SKIP_BINARY_DOWNLOAD: 1 
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-      # Windows x64 (Intel/AMD 64-bit)
       - name: Build Windows x64
         run: npx gulp vscode-win32-x64-min
-      - name: Create Windows x64 Installer (Inno)
+      - name: Create Installer x64
         run: npx gulp vscode-win32-x64-inno-updater
-      - name: Archive Windows x64
+      - name: Archive x64
         run: npx gulp vscode-win32-x64-archive
 
-      # Windows ARM64 (Snapdragon etc.)
-      - name: Build Windows arm64
-        run: npx gulp vscode-win32-arm64-min
-      - name: Create Windows arm64 Installer (Inno)
-        run: npx gulp vscode-win32-arm64-inno-updater
-      - name: Archive Windows arm64
-        run: npx gulp vscode-win32-arm64-archive
-
-      # Upload Artefakte
+      # IMPROVEMENT 3: Retention Days
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-builds
+          retention-days: 1
           path: |
             .build/win32-x64/system-setup/*.exe
             .build/win32-x64/user-setup/*.exe
             .build/win32-x64/archive/*.zip
-            .build/win32-arm64/system-setup/*.exe
-            .build/win32-arm64/user-setup/*.exe
-            .build/win32-arm64/archive/*.zip
 
   # =========================================================
-  # 2. LINUX BUILD (deb, rpm, tar.gz)
+  # LINUX
   # =========================================================
   build-linux:
     name: Build Linux
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+
+      # IMPROVEMENT 1: Caching
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .build/electron
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-build-
 
       - name: Install System Dependencies
         run: |
@@ -109,90 +110,78 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-      # Linux x64
       - name: Build Linux x64
         run: npx gulp vscode-linux-x64-min
-      
-      # Pakete erstellen
-      - name: Build Linux x64 DEB
+      - name: Build DEB
         run: npx gulp vscode-linux-x64-build-deb
-      - name: Build Linux x64 RPM
+      - name: Build RPM
         run: npx gulp vscode-linux-x64-build-rpm
-      - name: Archive Linux x64 (tar.gz)
+      - name: Archive tar.gz
         run: npx gulp vscode-linux-x64-archive
-
-      # Linux ARM64 (für Raspberry Pi etc.)
-      - name: Build Linux arm64
-        run: npx gulp vscode-linux-arm64-min
-      - name: Build Linux arm64 DEB
-        run: npx gulp vscode-linux-arm64-build-deb
-      - name: Build Linux arm64 RPM
-        run: npx gulp vscode-linux-arm64-build-rpm
-      - name: Archive Linux arm64 (tar.gz)
-        run: npx gulp vscode-linux-arm64-archive
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-builds
+          retention-days: 1
           path: |
             .build/linux/deb/**/*.deb
             .build/linux/rpm/**/*.rpm
             .build/linux/archive/*.tar.gz
 
   # =========================================================
-  # 3. MACOS BUILD (Universal, Intel, Silicon)
+  # MACOS
   # =========================================================
   build-macos:
     name: Build macOS
-    runs-on: macos-14-xlarge # M1 Runner für Speed
+    runs-on: macos-14-xlarge
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
 
+      # IMPROVEMENT 1: Caching
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            .build/electron
+          key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-build-
+
       - name: Install Dependencies
         run: npm ci
         env:
-          # macOS braucht C++ Compiler flags für Kerberos
           GYP_DEFINES: "kerberos_use_rtld=false"
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-      # macOS Universal (enthält x64 und arm64 in einem)
-      # Dies ist die bevorzugte Variante für moderne Macs
       - name: Build macOS Universal
         run: npx gulp vscode-darwin-universal-min
-      
-      - name: Archive macOS Universal
+      - name: Archive macOS
         run: npx gulp vscode-darwin-universal-archive
-
-      # Alternativ: Getrennte Builds (falls gewünscht, hier auskommentiert um Zeit zu sparen)
-      # - name: Build macOS Intel
-      #   run: npx gulp vscode-darwin-x64-min
-      # - name: Build macOS Silicon
-      #   run: npx gulp vscode-darwin-arm64-min
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-builds
-          path: |
-            .build/darwin/archive/*.zip
-            # DMG Erstellung ist ohne Zertifikate oft fehleranfällig, 
-            # daher fokussieren wir uns auf das ZIP Archive.
+          retention-days: 1
+          path: .build/darwin/archive/*.zip
 
   # =========================================================
-  # 4. RELEASE CREATION
+  # RELEASE
   # =========================================================
   release:
     name: Create Release
     needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4 # Nötig für Git Befehle
+
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -211,23 +200,23 @@ jobs:
           name: macos-builds
           path: assets/macos
 
-      - name: Create Release and Upload Assets
+      # IMPROVEMENT 4: Update Tag for Weekly Builds
+      - name: Update Weekly Tag
+        if: github.event_name == 'schedule'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -f weekly
+          git push -f origin weekly
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          # Logik: 
-          # Wenn Zeitplan (schedule): Setze Tag auf 'weekly' und Name auf 'Weekly Build'
-          # Wenn manuell/tag: Nutze den echten Tag (GitHub macht das automatisch, wenn wir 'tag_name' leer lassen)
           tag_name: ${{ github.event_name == 'schedule' && 'weekly' || '' }}
-          name: ${{ github.event_name == 'schedule' && 'Weekly Build (Automated)' || '' }}
-          
-          # Weekly Builds sollten als "Prerelease" markiert sein
+          name: ${{ github.event_name == 'schedule' && 'Weekly Build' || '' }}
           prerelease: ${{ github.event_name == 'schedule' }}
-          
-          # Erlaubt das Überschreiben des alten 'weekly' Releases, damit du nicht 1000 Releases hast
-          make_latest: ${{ github.event_name != 'schedule' }} 
-          
+          make_latest: ${{ github.event_name != 'schedule' }}
           generate_release_notes: true
-          draft: false
           files: |
             assets/windows/**/*.exe
             assets/windows/**/*.zip
