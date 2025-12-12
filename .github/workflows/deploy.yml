@@ -1,0 +1,213 @@
+name: Build & Release Labonair
+
+on:
+  push:
+    tags:
+      - 'v*' # Startet bei Tags wie v1.0.0, v2.3.4 etc.
+
+permissions:
+  contents: write # Wichtig, um Releases zu erstellen
+
+env:
+  # 'oss' ist der Standard für Open Source Builds. 
+  # Wenn du 'product.json' angepasst hast, werden diese Namen verwendet.
+  VSCODE_QUALITY: oss 
+  NODE_OPTIONS: "--max-old-space-size=8192"
+
+jobs:
+  # =========================================================
+  # 1. WINDOWS BUILD (x64, arm64, ia32)
+  # =========================================================
+  build-windows:
+    name: Build Windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Inno Setup wird für den .exe Installer benötigt
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+        env:
+          # Wir laden Electron später spezifisch, das spart Zeit/Fehler bei 'npm ci'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1 
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      # Windows x64 (Intel/AMD 64-bit)
+      - name: Build Windows x64
+        run: npx gulp vscode-win32-x64-min
+      - name: Create Windows x64 Installer (Inno)
+        run: npx gulp vscode-win32-x64-inno-updater
+      - name: Archive Windows x64
+        run: npx gulp vscode-win32-x64-archive
+
+      # Windows ARM64 (Snapdragon etc.)
+      - name: Build Windows arm64
+        run: npx gulp vscode-win32-arm64-min
+      - name: Create Windows arm64 Installer (Inno)
+        run: npx gulp vscode-win32-arm64-inno-updater
+      - name: Archive Windows arm64
+        run: npx gulp vscode-win32-arm64-archive
+
+      # Upload Artefakte
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: |
+            .build/win32-x64/system-setup/*.exe
+            .build/win32-x64/user-setup/*.exe
+            .build/win32-x64/archive/*.zip
+            .build/win32-arm64/system-setup/*.exe
+            .build/win32-arm64/user-setup/*.exe
+            .build/win32-arm64/archive/*.zip
+
+  # =========================================================
+  # 2. LINUX BUILD (deb, rpm, tar.gz)
+  # =========================================================
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libx11-dev libx11-xcb-dev libxkbfile-dev libnotify-bin libkrb5-dev libsecret-1-dev fakeroot rpm
+
+      - name: Install Dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      # Linux x64
+      - name: Build Linux x64
+        run: npx gulp vscode-linux-x64-min
+      
+      # Pakete erstellen
+      - name: Build Linux x64 DEB
+        run: npx gulp vscode-linux-x64-build-deb
+      - name: Build Linux x64 RPM
+        run: npx gulp vscode-linux-x64-build-rpm
+      - name: Archive Linux x64 (tar.gz)
+        run: npx gulp vscode-linux-x64-archive
+
+      # Linux ARM64 (für Raspberry Pi etc.)
+      - name: Build Linux arm64
+        run: npx gulp vscode-linux-arm64-min
+      - name: Build Linux arm64 DEB
+        run: npx gulp vscode-linux-arm64-build-deb
+      - name: Build Linux arm64 RPM
+        run: npx gulp vscode-linux-arm64-build-rpm
+      - name: Archive Linux arm64 (tar.gz)
+        run: npx gulp vscode-linux-arm64-archive
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-builds
+          path: |
+            .build/linux/deb/**/*.deb
+            .build/linux/rpm/**/*.rpm
+            .build/linux/archive/*.tar.gz
+
+  # =========================================================
+  # 3. MACOS BUILD (Universal, Intel, Silicon)
+  # =========================================================
+  build-macos:
+    name: Build macOS
+    runs-on: macos-14-xlarge # M1 Runner für Speed
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install Dependencies
+        run: npm ci
+        env:
+          # macOS braucht C++ Compiler flags für Kerberos
+          GYP_DEFINES: "kerberos_use_rtld=false"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      # macOS Universal (enthält x64 und arm64 in einem)
+      # Dies ist die bevorzugte Variante für moderne Macs
+      - name: Build macOS Universal
+        run: npx gulp vscode-darwin-universal-min
+      
+      - name: Archive macOS Universal
+        run: npx gulp vscode-darwin-universal-archive
+
+      # Alternativ: Getrennte Builds (falls gewünscht, hier auskommentiert um Zeit zu sparen)
+      # - name: Build macOS Intel
+      #   run: npx gulp vscode-darwin-x64-min
+      # - name: Build macOS Silicon
+      #   run: npx gulp vscode-darwin-arm64-min
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-builds
+          path: |
+            .build/darwin/archive/*.zip
+            # DMG Erstellung ist ohne Zertifikate oft fehleranfällig, 
+            # daher fokussieren wir uns auf das ZIP Archive.
+
+  # =========================================================
+  # 4. RELEASE CREATION
+  # =========================================================
+  release:
+    name: Create Release
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-builds
+          path: assets/windows
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-builds
+          path: assets/linux
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-builds
+          path: assets/macos
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true # Generiert automatisch Changelog aus PRs/Commits
+          draft: false
+          prerelease: false
+          files: |
+            assets/windows/**/*.exe
+            assets/windows/**/*.zip
+            assets/linux/**/*.deb
+            assets/linux/**/*.rpm
+            assets/linux/**/*.tar.gz
+            assets/macos/**/*.zip
