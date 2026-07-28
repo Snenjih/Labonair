@@ -3,20 +3,15 @@ import {
   FolderTreeIcon,
   GitBranchIcon,
   Globe02Icon,
+  LayoutBottomIcon,
   LayoutTopIcon,
+  Message01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ReactNode } from "react";
-import {
-  ContextMenu,
-  ContextMenuLabel,
-  ContextMenuRadioGroup,
-  ContextMenuRadioItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { AgentStatusPill } from "@/modules/ai/components/AgentStatusPill";
-import { AiOpenButton, AiStatusBarControls } from "@/modules/ai/components/AiStatusBarControls";
 import { BookmarksDropdown } from "@/modules/bookmarks";
 import { AgentAccessBadge } from "@/modules/header/components/AgentAccessBadge";
 import { JumpHostDropdown } from "@/modules/header/components/JumpHostDropdown";
@@ -34,7 +29,6 @@ import {
   PANEL_ITEM_TO_PANEL,
   visibleItemsFor,
 } from "@/modules/settings/lib/barItems";
-import { setBarItemPlacement } from "@/modules/settings/store";
 import type { BreadcrumbRemoteTarget } from "../CwdBreadcrumb";
 import { CwdBreadcrumb } from "../CwdBreadcrumb";
 import type { SidebarPanel } from "../StatusBar";
@@ -68,10 +62,12 @@ export interface RenderBarItemCtx {
   onOpenPreview?: () => void;
   // ai
   aiEnabled: boolean;
-  panelOpen: boolean;
   hasComposer: boolean;
+  panelOpen: boolean;
   onOpenMini: () => void;
-  openAiPanel: () => void;
+  miniOpen: boolean;
+  onToggleMini: () => void;
+  onTogglePanel: () => void;
 }
 
 const PANEL_ICONS: Record<keyof typeof PANEL_ITEM_TO_PANEL, typeof FolderTreeIcon> = {
@@ -96,22 +92,37 @@ function hostFromUrl(url: string): string {
   }
 }
 
-/** AI's context-menu extension point — a Panel/Mini surface-mode radio group. */
-function renderAiExtra(placement: BarItemPlacement): ReactNode {
-  const surfaceMode = (placement.extra?.surfaceMode as "panel" | "mini" | undefined) ?? "panel";
+/** Shared small icon-only toggle button — used by the 4 sidebar panel
+ *  toggles and the 2 AI toggles (mini window / docked panel), so every
+ *  "open/close this surface" bar item looks and behaves identically. */
+function BarIconToggle({
+  title,
+  icon,
+  isActive,
+  compact,
+  onClick,
+}: {
+  title: string;
+  icon: typeof FolderTreeIcon;
+  isActive: boolean;
+  compact: boolean;
+  onClick: () => void;
+}): ReactNode {
   return (
-    <>
-      <ContextMenuLabel className="text-[11px]">Opens as</ContextMenuLabel>
-      <ContextMenuRadioGroup
-        value={surfaceMode}
-        onValueChange={(v) =>
-          void setBarItemPlacement("ai", { extra: { ...placement.extra, surfaceMode: v } })
-        }
-      >
-        <ContextMenuRadioItem value="panel">Docked panel</ContextMenuRadioItem>
-        <ContextMenuRadioItem value="mini">Mini window</ContextMenuRadioItem>
-      </ContextMenuRadioGroup>
-    </>
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "flex items-center justify-center rounded transition-colors",
+        compact ? "h-5 w-5" : "size-7",
+        isActive
+          ? "bg-primary/20 text-foreground dark:text-primary"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      <HugeiconsIcon icon={icon} size={compact ? 12 : 16} strokeWidth={1.75} />
+    </button>
   );
 }
 
@@ -148,20 +159,13 @@ function renderBarItem(id: BarItemId, ctx: RenderBarItemCtx): ReactNode {
       const panel = PANEL_ITEM_TO_PANEL[id];
       const isActive = ctx.leftActivePanel === panel || ctx.rightActivePanel === panel;
       return (
-        <button
-          type="button"
+        <BarIconToggle
           title={PANEL_TITLES[id]}
+          icon={PANEL_ICONS[id]}
+          isActive={isActive}
+          compact={compact}
           onClick={() => ctx.onPanelToggle?.(panel, placement?.side)}
-          className={cn(
-            "flex items-center justify-center rounded transition-colors",
-            compact ? "h-5 w-5" : "size-7",
-            isActive
-              ? "bg-primary/20 text-foreground dark:text-primary"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          <HugeiconsIcon icon={PANEL_ICONS[id]} size={compact ? 12 : 16} strokeWidth={1.75} />
-        </button>
+        />
       );
     }
 
@@ -206,18 +210,33 @@ function renderBarItem(id: BarItemId, ctx: RenderBarItemCtx): ReactNode {
         </button>
       ) : null;
 
-    case "ai": {
+    case "aiMini": {
       if (!ctx.aiEnabled) return null;
-      const surfaceMode = (placement?.extra?.surfaceMode as "panel" | "mini" | undefined) ?? "panel";
       return (
         <>
           <AgentStatusPill onClick={ctx.onOpenMini} />
-          {ctx.panelOpen && ctx.hasComposer ? (
-            <AiStatusBarControls />
-          ) : (
-            <AiOpenButton onOpen={surfaceMode === "mini" ? ctx.onOpenMini : ctx.openAiPanel} />
-          )}
+          {ctx.hasComposer ? (
+            <BarIconToggle
+              title={ctx.miniOpen ? "Close conversation" : "Open conversation"}
+              icon={Message01Icon}
+              isActive={ctx.miniOpen}
+              compact={compact}
+              onClick={ctx.onToggleMini}
+            />
+          ) : null}
         </>
+      );
+    }
+    case "aiPanel": {
+      if (!ctx.aiEnabled) return null;
+      return (
+        <BarIconToggle
+          title={ctx.panelOpen ? "Close AI panel" : "Open AI panel"}
+          icon={LayoutBottomIcon}
+          isActive={ctx.panelOpen}
+          compact={compact}
+          onClick={ctx.onTogglePanel}
+        />
       );
     }
     default:
@@ -253,11 +272,11 @@ export function buildBarBucket(
         node: (
           <ContextMenu key={id}>
             <ContextMenuTrigger asChild>
-              <div className={cn("flex shrink-0 items-center", id === "ai" ? "gap-1.5" : "gap-0.5")}>
+              <div className={cn("flex shrink-0 items-center", id === "aiMini" ? "gap-1.5" : "gap-0.5")}>
                 {content}
               </div>
             </ContextMenuTrigger>
-            <BarItemContextMenu itemId={id} extra={id === "ai" ? renderAiExtra : undefined} />
+            <BarItemContextMenu itemId={id} />
           </ContextMenu>
         ),
         category,

@@ -28,12 +28,13 @@ export interface AppBootstrapReturn {
 
 export function useAppBootstrap(): AppBootstrapReturn {
   // Stable store actions — fetched once, never cause re-renders
-  const { setApiKeys, setSelectedModelId, hydrateSessions } = useChatStore.getState();
+  const { setApiKeys, setSelectedModelId, hydrateSessions, openPanel } = useChatStore.getState();
 
   // Reactive selectors
   const apiKeys = useChatStore((s) => s.apiKeys);
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
+  const terminalComposerEnabled = usePreferencesStore((s) => s.terminalComposerEnabled);
 
   const initPrefs = usePreferencesStore((s) => s.init);
   const initKeybinds = useKeybindsStore((s) => s.init);
@@ -90,6 +91,17 @@ export function useAppBootstrap(): AppBootstrapReturn {
     if (!prefsHydrated) return;
     setSelectedModelId(prefDefaultModel);
   }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
+
+  // Seed the docked composer bar open whenever the Shell/Command composer is
+  // enabled — it works without any AI provider, so it needs to be visible
+  // out of the box. This used to be a permanent visibility bypass in
+  // WorkspaceArea (bar could never be closed while the setting was on); now
+  // it's just panelOpen's default, so the AI panel bar-item toggle can still
+  // close it afterwards like any other closeable surface.
+  useEffect(() => {
+    if (!prefsHydrated || !terminalComposerEnabled) return;
+    openPanel();
+  }, [prefsHydrated, terminalComposerEnabled, openPanel]);
 
   // Run store migration (nexum → labonair) before hydrating sessions
   useEffect(() => {

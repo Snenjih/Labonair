@@ -38,6 +38,7 @@ import { getOrCreateChat, useChatStore } from "../store/chatStore";
 import { usePlanStore } from "../store/planStore";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { AiChatView } from "./AiChat";
+import { ModelPicker } from "./ModelPicker";
 import { PlanDiffReview } from "./PlanDiffReview";
 import { QueueStrip } from "./QueueStrip";
 import { TodoStrip } from "./TodoStrip";
@@ -97,10 +98,10 @@ export function AiMiniWindow() {
   const closeMini = useChatStore((s) => s.closeMini);
   const sessionId = useChatStore((s) => s.activeSessionId);
   const openPanel = useChatStore((s) => s.openPanel);
-  const aiPlacement = usePreferencesStore((s) => s.barItemPlacements.ai);
-  // Self-positions near wherever the "ai" bar item currently lives: bottom
-  // of the workspace input bar when it's in the statusbar (today's default),
-  // or near the top of the window when moved to the titlebar.
+  const aiPlacement = usePreferencesStore((s) => s.barItemPlacements.aiMini);
+  // Self-positions near wherever the "aiMini" bar item currently lives:
+  // bottom of the workspace input bar when it's in the statusbar (today's
+  // default), or near the top of the window when moved to the titlebar.
   const anchoredToTop = aiPlacement.bar === "titlebar";
   const bottomOffset = useInputBarBottom();
   const horizontalClass = aiPlacement.side === "left" ? "left-4" : "right-4";
@@ -253,6 +254,7 @@ function Header({
     <div className="relative flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
       <div className="flex min-w-0 items-center gap-1.5">
         <AgentSwitcher isMiniWindow />
+        <ModelPicker />
         {messages !== undefined ? <ContextIndicator messages={messages} /> : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">

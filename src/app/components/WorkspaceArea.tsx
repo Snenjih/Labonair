@@ -71,9 +71,11 @@ export const WorkspaceArea = React.memo(function WorkspaceArea({
   onOpenGitGraphFile,
 }: WorkspaceAreaProps) {
   const activeTabKind = useTabsStore(selectActiveTabKind);
-  // The command composer works without any AI provider configured — it must
-  // not be gated behind `aiEnabled`/`hasComposer`/`panelOpen` (all AI-specific
-  // concerns), only behind its own setting and having a terminal to target.
+  // The command composer works without any AI provider configured — its
+  // *content* below isn't gated behind `aiEnabled`/`hasComposer` (AI-specific
+  // concerns), only its own setting and having a terminal to target. Overall
+  // bar *visibility* is `panelOpen` alone (seeded true by useAppBootstrap
+  // when this setting is on, but closeable afterwards like any other panel).
   const terminalComposerEnabled = usePreferencesStore((s) => s.terminalComposerEnabled);
   const showComposerBar = terminalComposerEnabled && activeTabKind === "workspace";
   const isEditorTab = activeTabKind === "editor";
@@ -166,12 +168,12 @@ export const WorkspaceArea = React.memo(function WorkspaceArea({
           data-ai-input-bar
           initial={false}
           animate={{
-            height: panelOpen || showComposerBar ? "auto" : 0,
-            opacity: panelOpen || showComposerBar ? 1 : 0,
+            height: panelOpen ? "auto" : 0,
+            opacity: panelOpen ? 1 : 0,
           }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           className="overflow-hidden"
-          aria-hidden={!(panelOpen || showComposerBar)}
+          aria-hidden={!panelOpen}
         >
           {(aiEnabled && panelOpen && hasComposer) || showComposerBar ? (
             <AiInputBar aiEnabled={aiEnabled} hasComposer={hasComposer} />

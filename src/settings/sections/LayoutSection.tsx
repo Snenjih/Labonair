@@ -1,5 +1,4 @@
 import {
-  AiScanIcon,
   ArrowUpDownIcon,
   Bookmark02Icon,
   Download01Icon,
@@ -8,7 +7,9 @@ import {
   FolderTreeIcon,
   GitBranchIcon,
   Globe02Icon,
+  LayoutBottomIcon,
   LayoutTopIcon,
+  Message01Icon,
   Notification03Icon,
   RefreshIcon,
   Route01Icon,
@@ -110,10 +111,16 @@ const INFO_ITEMS: ItemConfig[] = [
 
 const AI_ITEMS: ItemConfig[] = [
   {
-    id: "ai",
-    label: "AI Controls",
-    description: "Agent status pill and chat open/close controls.",
-    icon: AiScanIcon,
+    id: "aiMini",
+    label: "AI Status & Mini Window",
+    description: "Agent status pill and the floating conversation window toggle.",
+    icon: Message01Icon,
+  },
+  {
+    id: "aiPanel",
+    label: "AI Docked Panel",
+    description: "Toggle for the docked composer panel at the bottom of the workspace.",
+    icon: LayoutBottomIcon,
   },
 ];
 
@@ -183,7 +190,6 @@ function BarItemRow({ id, label, description, icon }: ItemConfig) {
   const placement = usePreferencesStore((s) => s.barItemPlacements[id]);
   if (!placement) return null;
   const shown = !placement.hidden;
-  const surfaceMode = (placement.extra?.surfaceMode as "panel" | "mini" | undefined) ?? "panel";
 
   return (
     <SettingRow title={label} description={description} className={cn(!shown && "opacity-60")}>
@@ -213,18 +219,6 @@ function BarItemRow({ id, label, description, icon }: ItemConfig) {
             leftLabel="Left"
             rightLabel="Right"
             onChange={(side) => void setBarItemPlacement(id, { side })}
-          />
-        )}
-        {shown && id === "ai" && (
-          <SideToggle
-            value={surfaceMode === "mini" ? "right" : "left"}
-            leftLabel="Panel"
-            rightLabel="Mini"
-            onChange={(v) =>
-              void setBarItemPlacement("ai", {
-                extra: { ...placement.extra, surfaceMode: v === "right" ? "mini" : "panel" },
-              })
-            }
           />
         )}
         <Switch checked={shown} onCheckedChange={(v) => void setBarItemPlacement(id, { hidden: !v })} />
