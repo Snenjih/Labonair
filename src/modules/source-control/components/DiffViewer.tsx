@@ -129,7 +129,7 @@ function HunkHeaderDiffLine({ line, staged, busy, onAction }: HunkHeaderDiffLine
             <button
               type="button"
               disabled={busy}
-              className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground group-hover/hunk:opacity-100 disabled:opacity-40"
+              className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-foreground/10 hover:text-foreground group-hover/hunk:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:opacity-40"
               onClick={onAction}
             >
               <HugeiconsIcon icon={staged ? MinusSignIcon : PlusSignIcon} size={10} strokeWidth={2} />
@@ -379,7 +379,7 @@ export function DiffViewer() {
               <button
                 type="button"
                 className={cn(
-                  "flex h-5 w-5 items-center justify-center rounded transition-colors",
+                  "flex h-5 w-5 items-center justify-center rounded outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring/50",
                   ignoreWhitespace
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground/60 hover:bg-muted hover:text-foreground",
@@ -400,7 +400,7 @@ export function DiffViewer() {
               <button
                 type="button"
                 className={cn(
-                  "flex h-5 w-5 items-center justify-center rounded transition-colors",
+                  "flex h-5 w-5 items-center justify-center rounded outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring/50",
                   diffViewMode === "split"
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground/60 hover:bg-muted hover:text-foreground",
@@ -417,7 +417,7 @@ export function DiffViewer() {
         {/* Close */}
         <button
           type="button"
-          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
           onClick={clearSelectedFile}
           title="Close diff"
         >
@@ -432,7 +432,7 @@ export function DiffViewer() {
             <button
               key={fp}
               type="button"
-              className="shrink-0 rounded px-2 py-0.5 text-[10px] text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground whitespace-nowrap"
+              className="shrink-0 rounded px-2 py-0.5 text-[10px] text-muted-foreground/70 outline-none hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50 whitespace-nowrap"
               onClick={() => scrollToFile(fp)}
             >
               {basename(fp)}

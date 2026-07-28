@@ -194,7 +194,7 @@ export function CommitForm({ repoRoot, onRefresh, onOpenGitGraph }: CommitFormPr
           <button
             type="button"
             onClick={() => setIsExpanded((v) => !v)}
-            className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-foreground/6 hover:text-foreground"
+            className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 outline-none transition-colors hover:bg-foreground/6 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
             title={isExpanded ? "Collapse" : "Expand"}
           >
             <HugeiconsIcon icon={isExpanded ? Minimize01Icon : Maximize01Icon} size={11} strokeWidth={2} />
@@ -219,7 +219,7 @@ export function CommitForm({ repoRoot, onRefresh, onOpenGitGraph }: CommitFormPr
                 });
               }
             }}
-            className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40"
             title="Generate commit message with AI"
           >
             {isGenerating ? (
@@ -240,7 +240,7 @@ export function CommitForm({ repoRoot, onRefresh, onOpenGitGraph }: CommitFormPr
               type="button"
               onClick={() => void handleCommit()}
               disabled={!canCommit}
-              className="flex items-center gap-1.5 border-r border-muted-foreground/20 px-2.5 font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 border-r border-muted-foreground/20 px-2.5 font-medium text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
               title="Commit staged changes (⌘↵)"
             >
               {operationInProgress === "commit" ? (
@@ -256,7 +256,7 @@ export function CommitForm({ repoRoot, onRefresh, onOpenGitGraph }: CommitFormPr
                 <button
                   type="button"
                   disabled={operationInProgress !== null}
-                  className="flex w-6 items-center justify-center text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6 disabled:cursor-not-allowed"
+                  className="flex w-6 items-center justify-center text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
                 >
                   <HugeiconsIcon icon={ArrowDown01Icon} size={9} strokeWidth={2.5} />
                 </button>
@@ -315,7 +315,7 @@ export function CommitForm({ repoRoot, onRefresh, onOpenGitGraph }: CommitFormPr
         <button
           type="button"
           onClick={onRefresh}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
           title="Refresh"
         >
           <HugeiconsIcon icon={Refresh01Icon} size={14} strokeWidth={2} />
@@ -324,7 +324,7 @@ export function CommitForm({ repoRoot, onRefresh, onOpenGitGraph }: CommitFormPr
           type="button"
           onClick={handleOpenGraph}
           disabled={!currentBranch}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6 disabled:cursor-not-allowed disabled:opacity-30"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-30"
           title="Open Git Graph"
         >
           <HugeiconsIcon icon={GitForkIcon} size={14} strokeWidth={2} />

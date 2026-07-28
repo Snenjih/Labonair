@@ -143,7 +143,7 @@ function TagSection({ repoRoot, sessionId, tags, onRefresh }: TagSectionProps) {
           </span>
           <button
             type="button"
-            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-foreground/6"
+            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground outline-none hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
             onClick={(e) => {
               e.stopPropagation();
               setShowNewTagForm(true);
@@ -164,7 +164,7 @@ function TagSection({ repoRoot, sessionId, tags, onRefresh }: TagSectionProps) {
                 <button
                   type="button"
                   onClick={() => setTagError(null)}
-                  className="text-error/60 hover:text-error"
+                  className="text-error/60 outline-none hover:text-error focus-visible:ring-1 focus-visible:ring-error/50 rounded"
                 >
                   <HugeiconsIcon icon={Cancel01Icon} size={9} strokeWidth={2} />
                 </button>
@@ -239,7 +239,7 @@ function TagSection({ repoRoot, sessionId, tags, onRefresh }: TagSectionProps) {
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/tag:opacity-100">
                     <button
                       type="button"
-                      className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6"
+                      className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
                       onClick={() => void handlePushTag(tag)}
                       title="Push tag"
                       disabled={isPushing || isDeleting}
@@ -252,7 +252,7 @@ function TagSection({ repoRoot, sessionId, tags, onRefresh }: TagSectionProps) {
                     </button>
                     <button
                       type="button"
-                      className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-error/20 hover:text-error"
+                      className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground outline-none hover:bg-error/20 hover:text-error focus-visible:ring-1 focus-visible:ring-error/50"
                       onClick={() => setDeleteTagName(tag)}
                       title="Delete tag"
                       disabled={isPushing || isDeleting}
@@ -352,7 +352,7 @@ function BranchRow({ branch, isCurrent, onCheckout, onDelete, isCheckingOut }: B
         <button
           type="button"
           className={cn(
-            "flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 transition-opacity group-hover/branch:opacity-100",
+            "flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 outline-none transition-opacity group-hover/branch:opacity-100 focus-visible:ring-1 focus-visible:ring-error/50",
             isCurrent
               ? "cursor-not-allowed text-muted-foreground/30"
               : "text-muted-foreground hover:bg-error/20 hover:text-error",
@@ -489,7 +489,7 @@ export function BranchDropdown({
               <button
                 type="button"
                 onClick={() => setCheckoutError(null)}
-                className="mt-0.5 text-error/60 hover:text-error"
+                className="mt-0.5 text-error/60 outline-none hover:text-error focus-visible:ring-1 focus-visible:ring-error/50 rounded"
               >
                 <HugeiconsIcon icon={Cancel01Icon} size={9} strokeWidth={2} />
               </button>
@@ -500,7 +500,7 @@ export function BranchDropdown({
           <button
             type="button"
             onClick={handleOpenNewBranch}
-            className="flex h-7 w-full items-center gap-1.5 border-b border-border/40 px-2.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6"
+            className="flex h-7 w-full items-center gap-1.5 border-b border-border/40 px-2.5 text-[11px] text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
           >
             <HugeiconsIcon icon={PlusSignIcon} size={10} strokeWidth={2} />
             New Branch…

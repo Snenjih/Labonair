@@ -24,7 +24,7 @@ function FileTreeFolderRow({ name, depth, children }: FileTreeFolderRowProps) {
     <div>
       <button
         type="button"
-        className="group/folder flex h-6 w-full items-center gap-1 rounded text-left transition-colors hover:bg-foreground/6"
+        className="group/folder flex h-6 w-full items-center gap-1 rounded text-left outline-none transition-colors hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
         style={{ paddingLeft: 8 + depth * 14 }}
         onClick={() => setCollapsed((c) => !c)}
       >

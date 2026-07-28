@@ -173,7 +173,7 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
   const branchTrigger = (
     <button
       type="button"
-      className="flex max-w-[200px] items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-foreground/90 transition-colors hover:bg-foreground/6"
+      className="flex max-w-[200px] items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-foreground/90 outline-none transition-colors hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
     >
       <span className="truncate">{currentBranch || "—"}</span>
       <HugeiconsIcon
@@ -227,7 +227,7 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
               type="button"
               onClick={() => void handlePush()}
               disabled={operationInProgress !== null}
-              className="flex items-center gap-1.5 px-2.5 font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-1.5 px-2.5 font-medium text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {operationInProgress === "push" ? (
                 <Spinner className="size-2.5" />
@@ -245,7 +245,7 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
                 <button
                   type="button"
                   disabled={operationInProgress !== null}
-                  className="flex w-6 items-center justify-center text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-6 items-center justify-center text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <HugeiconsIcon icon={ArrowDown01Icon} size={9} strokeWidth={2.5} />
                 </button>
@@ -310,14 +310,14 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
           <button
             type="button"
             onClick={() => void handleSetUpstream()}
-            className="h-5 shrink-0 rounded border border-info/40 px-2 text-[10px] text-info hover:bg-info/20"
+            className="h-5 shrink-0 rounded border border-info/40 px-2 text-[10px] text-info outline-none hover:bg-info/20 focus-visible:ring-1 focus-visible:ring-info/50"
           >
             Set upstream & push
           </button>
           <button
             type="button"
             onClick={() => setShowSetUpstreamPrompt(false)}
-            className="text-info/60 hover:text-info"
+            className="text-info/60 outline-none hover:text-info focus-visible:ring-1 focus-visible:ring-info/50 rounded"
           >
             <HugeiconsIcon icon={Cancel01Icon} size={9} strokeWidth={2} />
           </button>
