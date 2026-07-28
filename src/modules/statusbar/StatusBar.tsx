@@ -42,7 +42,9 @@ export const StatusBar = React.memo(function StatusBar({
   onPanelToggle,
 }: Props) {
   const panelOpen = useChatStore((s) => s.panelOpen);
-  const openAiPanel = useChatStore((s) => s.openPanel);
+  const togglePanel = useChatStore((s) => s.togglePanel);
+  const miniOpen = useChatStore((s) => s.mini.open);
+  const toggleMini = useChatStore((s) => s.toggleMini);
   const aiEnabled = usePreferencesStore((s) => s.aiEnabled);
   const tabsLocation = usePreferencesStore((s) => s.tabsLocation);
   const bookmarksEnabled = usePreferencesStore((s) => s.bookmarksEnabled);
@@ -119,7 +121,9 @@ export const StatusBar = React.memo(function StatusBar({
     panelOpen,
     hasComposer,
     onOpenMini,
-    openAiPanel,
+    miniOpen,
+    onToggleMini: toggleMini,
+    onTogglePanel: togglePanel,
   };
 
   return (

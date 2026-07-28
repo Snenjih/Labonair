@@ -101,7 +101,9 @@ export const Header = React.memo(function Header({
   const badgesAlwaysVisible = usePreferencesStore((s) => s.badgesAlwaysVisible);
   const placements = usePreferencesStore((s) => s.barItemPlacements);
   const panelOpen = useChatStore((s) => s.panelOpen);
-  const openAiPanel = useChatStore((s) => s.openPanel);
+  const togglePanel = useChatStore((s) => s.togglePanel);
+  const miniOpen = useChatStore((s) => s.mini.open);
+  const toggleMini = useChatStore((s) => s.toggleMini);
   const aiEnabled = usePreferencesStore((s) => s.aiEnabled);
 
   // These four badges each self-hide (return null) when empty and "Always
@@ -186,7 +188,9 @@ export const Header = React.memo(function Header({
     panelOpen,
     hasComposer,
     onOpenMini,
-    openAiPanel,
+    miniOpen,
+    onToggleMini: toggleMini,
+    onTogglePanel: togglePanel,
   };
 
   const titlebarLeft = buildBarBucket("titlebar", "left", ctx, "mx-0.5 h-5 w-px shrink-0 bg-border/60");

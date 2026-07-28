@@ -534,14 +534,14 @@ export function ModelPicker() {
           )}
           title={hasKey ? `Model: ${triggerLabel}` : `${triggerLabel} — no key configured`}
         >
-          {triggerLabel}
+          <span className="max-w-[6rem] truncate">{triggerLabel}</span>
           <HugeiconsIcon icon={ArrowDown01Icon} size={11} strokeWidth={2} className="opacity-70" />
         </Button>
       </PopoverTrigger>
 
       <PopoverContent
-        side="top"
-        align="end"
+        side="bottom"
+        align="start"
         sideOffset={8}
         className="w-[460px] p-0 overflow-hidden flex flex-col"
         style={{ maxHeight: "min(540px, calc(100vh - 80px))" }}

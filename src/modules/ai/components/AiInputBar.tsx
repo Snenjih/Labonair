@@ -1,4 +1,5 @@
 import {
+  Add01Icon,
   ArrowUpIcon,
   Cancel01Icon,
   CodeIcon,
@@ -7,6 +8,7 @@ import {
   GitBranchIcon,
   HashtagIcon,
   Key01Icon,
+  Mic01Icon,
   SparklesIcon,
   StopCircleIcon,
   TerminalIcon,
@@ -31,7 +33,7 @@ import {
   type WorkspaceTab,
 } from "@/modules/tabs";
 import { ShellComposerInput } from "@/modules/terminal/block";
-import { type FileAttachment, useComposer } from "../lib/composerContext";
+import { ACCEPTED_FILES, type FileAttachment, useComposer } from "../lib/composerContext";
 import type { Directive } from "../lib/directives";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import { useChatStore } from "../store/chatStore";
@@ -92,6 +94,7 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
   const c = useComposer();
   const directives = useDirectivesStore((s) => s.directives);
   const explorerRoot = useLocalExplorerStore((s) => s.rootPath);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── AI / Command mode switch ──────────────────────────────────────────────
   // Command mode is a per-terminal-session concern (draft, mode selection),
@@ -362,6 +365,58 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
             <Popover open={pickerOpen}>
               <PopoverAnchor asChild>
                 <div className="flex items-start gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept={ACCEPTED_FILES}
+                    className="hidden"
+                    onChange={(e) => {
+                      void c.addFiles(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={c.isBusy}
+                    title="Attach file or image"
+                    className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                  >
+                    <HugeiconsIcon icon={Add01Icon} size={14} strokeWidth={2} />
+                  </Button>
+                  {c.voice.supported && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => (c.voice.recording ? c.voice.stop() : void c.voice.start())}
+                      disabled={c.isBusy || c.voice.transcribing || !c.voice.hasKey}
+                      title={
+                        !c.voice.hasKey
+                          ? "Voice needs an OpenAI key"
+                          : c.voice.recording
+                            ? "Stop & transcribe"
+                            : c.voice.transcribing
+                              ? "Transcribing…"
+                              : "Voice input"
+                      }
+                      className={cn(
+                        "size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground",
+                        c.voice.recording && "bg-destructive/10 text-destructive hover:bg-destructive/15",
+                      )}
+                    >
+                      {c.voice.recording ? (
+                        <span className="size-2 animate-pulse rounded-full bg-destructive" />
+                      ) : c.voice.transcribing ? (
+                        <Spinner className="size-3" />
+                      ) : (
+                        <HugeiconsIcon icon={Mic01Icon} size={14} strokeWidth={1.75} />
+                      )}
+                    </Button>
+                  )}
                   <textarea
                     ref={c.textareaRef}
                     value={c.value}

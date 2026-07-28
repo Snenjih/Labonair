@@ -31,8 +31,8 @@ describe("migrateBarItemPlacements", () => {
     expect(result.updater.side).toBe("left");
     expect(result.explorerPanel.side).toBe("right");
     expect(result.snippetsPanel.hidden).toBe(true);
-    expect(result.ai.hidden).toBe(true);
-    expect(result.ai.extra).toEqual({ surfaceMode: "panel" });
+    expect(result.aiMini.hidden).toBe(true);
+    expect(result.aiPanel.hidden).toBe(true);
     // Unrelated items stay at their defaults
     expect(result.explorerPanel.hidden).toBe(false);
     expect(result.cwdBreadcrumb.side).toBe("left");

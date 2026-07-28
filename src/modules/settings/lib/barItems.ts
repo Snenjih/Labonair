@@ -18,7 +18,7 @@ export interface BarItemPlacement {
   /** Hides the trigger button. Never disables the underlying feature,
    *  keyboard shortcut, or command-palette command. */
   hidden: boolean;
-  /** Per-item extension point — e.g. `{ surfaceMode: "panel" | "mini" }` for "ai". */
+  /** Per-item extension point for future per-item settings. */
   extra?: Record<string, unknown>;
 }
 
@@ -39,8 +39,10 @@ export type BarItemId =
   | "cwdBreadcrumb"
   | "cursorPosition"
   | "previewUrl"
-  // AI cluster (one entry, renders both the status pill and open/controls together)
-  | "ai";
+  // AI cluster — two independently placeable entries: the status pill +
+  // mini-window toggle, and the docked composer panel toggle.
+  | "aiMini"
+  | "aiPanel";
 
 /** Groups items for divider placement: a divider only ever appears between
  *  two *different* categories, never between two items of the same one
@@ -61,7 +63,8 @@ export const BAR_ITEM_CATEGORY: Record<BarItemId, BarItemCategory> = {
   cwdBreadcrumb: "info",
   cursorPosition: "info",
   previewUrl: "info",
-  ai: "ai",
+  aiMini: "ai",
+  aiPanel: "ai",
 };
 
 /** Stable registration order — bucket iteration uses this, not object-key order. */
@@ -79,7 +82,8 @@ const BAR_ITEM_ORDER: BarItemId[] = [
   "cwdBreadcrumb",
   "cursorPosition",
   "previewUrl",
-  "ai",
+  "aiMini",
+  "aiPanel",
 ];
 
 export const PANEL_ITEM_TO_PANEL: Record<
@@ -126,7 +130,8 @@ export const DEFAULT_BAR_ITEM_PLACEMENTS: Record<BarItemId, BarItemPlacement> = 
   cwdBreadcrumb: make("cwdBreadcrumb", "statusbar", "left", false),
   cursorPosition: make("cursorPosition", "statusbar", "right", false),
   previewUrl: make("previewUrl", "statusbar", "right", false),
-  ai: make("ai", "statusbar", "right", false, { surfaceMode: "panel" }),
+  aiMini: make("aiMini", "statusbar", "right", false),
+  aiPanel: make("aiPanel", "statusbar", "right", false),
 };
 
 /**
@@ -173,7 +178,8 @@ export function migrateBarItemPlacements(
     cwdBreadcrumb: make("cwdBreadcrumb", "statusbar", "left", !old.statusBarShowCwdBreadcrumb),
     cursorPosition: make("cursorPosition", "statusbar", "right", !old.editorShowCursorPosition),
     previewUrl: make("previewUrl", "statusbar", "right", !old.statusBarShowPreviewUrl),
-    ai: make("ai", "statusbar", "right", !old.statusBarShowAiControls, { surfaceMode: "panel" }),
+    aiMini: make("aiMini", "statusbar", "right", !old.statusBarShowAiControls),
+    aiPanel: make("aiPanel", "statusbar", "right", !old.statusBarShowAiControls),
   };
 }
 

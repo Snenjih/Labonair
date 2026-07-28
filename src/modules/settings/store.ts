@@ -637,6 +637,31 @@ export async function loadPreferences(): Promise<Preferences> {
   const entries = await (await getStore()).entries();
   const map = new Map<string, unknown>(entries);
   const get = <T>(k: string): T | undefined => map.get(k) as T | undefined;
+
+  // Per-key backfill against defaults, not a whole-object `??` — otherwise
+  // a BarItemId added in a later release (e.g. splitting one item into two)
+  // stays `undefined` forever for any user whose blob predates it, since
+  // `barLayoutMigrated` is already `true` for existing users and the
+  // migration below never re-runs. A missing key also isn't just invisible:
+  // the *first* reposition of a newly-added item goes through
+  // `settings_set_bar_item_placement` (src-tauri/.../settings/mod.rs), which
+  // does its own independent read-merge-write straight against the on-disk
+  // file and starts from `{}` when the key is absent — so a partial patch
+  // (e.g. just `{ side: "left" }`) gets written back missing `bar`/`hidden`,
+  // permanently breaking `visibleItemsFor`'s filter for that item. Persist
+  // the backfilled blob immediately so Rust's next read already has it.
+  const rawBarItemPlacements = get<Partial<Record<BarItemId, BarItemPlacement>>>(KEY_BAR_ITEM_PLACEMENTS);
+  const barItemPlacements: Record<BarItemId, BarItemPlacement> = {
+    ...DEFAULT_BAR_ITEM_PLACEMENTS,
+    ...(rawBarItemPlacements ?? {}),
+  };
+  if (
+    rawBarItemPlacements &&
+    Object.keys(DEFAULT_BAR_ITEM_PLACEMENTS).some((id) => !(id in rawBarItemPlacements))
+  ) {
+    void setBarItemPlacements(barItemPlacements);
+  }
+
   return {
     theme: get<ThemePref>(KEY_THEME) ?? DEFAULT_PREFERENCES.theme,
     defaultModelId: get<ModelId>(KEY_DEFAULT_MODEL) ?? DEFAULT_PREFERENCES.defaultModelId,
@@ -862,8 +887,7 @@ export async function loadPreferences(): Promise<Preferences> {
       450,
       Math.max(130, get<number>(KEY_SIDEBAR_RIGHT_WIDTH) ?? DEFAULT_PREFERENCES.sidebarRightWidth),
     ),
-    barItemPlacements:
-      get<Preferences["barItemPlacements"]>(KEY_BAR_ITEM_PLACEMENTS) ?? DEFAULT_PREFERENCES.barItemPlacements,
+    barItemPlacements,
     barLayoutMigrated: get<boolean>(KEY_BAR_LAYOUT_MIGRATED) ?? DEFAULT_PREFERENCES.barLayoutMigrated,
     badgesAlwaysVisible: get<boolean>(KEY_BADGES_ALWAYS_VISIBLE) ?? DEFAULT_PREFERENCES.badgesAlwaysVisible,
     credentialEncryption: get<boolean>(KEY_CREDENTIAL_ENCRYPTION) ?? DEFAULT_PREFERENCES.credentialEncryption,
