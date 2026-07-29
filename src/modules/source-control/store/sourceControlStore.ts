@@ -31,6 +31,10 @@ export interface SourceControlState {
   isDiffLoading: boolean;
   isStatusLoading: boolean;
   operationInProgress: "commit" | "push" | "pull" | "fetch" | "abort" | "continue" | "stash" | null;
+  /** Drives `ForcePushConfirmDialog`, mounted at the app-shell level so a
+   *  Force Push can be confirmed regardless of which sidebar panel is
+   *  currently active (e.g. triggered from the Command Palette). */
+  forcePushConfirmOpen: boolean;
   /** Set only by `useGitStatus`'s background poll on failure — action
    *  handlers (commit, push, ...) surface their own failures via the
    *  notification store instead, so this exclusively reflects "the most
@@ -78,13 +82,15 @@ export interface SourceControlState {
   setStatus: (status: GitStatus | null) => void;
   setIsStatusLoading: (loading: boolean) => void;
   selectFile: (path: string, staged: boolean) => void;
-  selectSection: (section: "staged" | "unstaged" | "untracked") => void;
+  selectSection: (section: "staged" | "unstaged" | "untracked" | "conflicts") => void;
   selectAll: () => void;
   selectCommitDiff: (hash: string, repositoryPath: string, sessionId?: string) => void;
   clearSelectedFile: () => void;
   setDiffContent: (content: string | null) => void;
   setIsDiffLoading: (loading: boolean) => void;
   setOperationInProgress: (op: SourceControlState["operationInProgress"]) => void;
+  requestForcePushConfirm: () => void;
+  closeForcePushConfirm: () => void;
   setPollError: (error: string | null) => void;
   setDiffError: (error: string | null) => void;
   setCommitMessage: (msg: string) => void;
@@ -121,6 +127,7 @@ export const useSourceControlStore = create<SourceControlState>()((set) => ({
   isDiffLoading: false,
   isStatusLoading: false,
   operationInProgress: null,
+  forcePushConfirmOpen: false,
   pollError: null,
   diffError: null,
   commitMessage: "",
@@ -158,6 +165,8 @@ export const useSourceControlStore = create<SourceControlState>()((set) => ({
   setDiffContent: (diffContent) => set({ diffContent }),
   setIsDiffLoading: (isDiffLoading) => set({ isDiffLoading }),
   setOperationInProgress: (operationInProgress) => set({ operationInProgress }),
+  requestForcePushConfirm: () => set({ forcePushConfirmOpen: true }),
+  closeForcePushConfirm: () => set({ forcePushConfirmOpen: false }),
   setPollError: (pollError) => set({ pollError }),
   setDiffError: (diffError) => set({ diffError }),
   setCommitMessage: (commitMessage) => set({ commitMessage }),

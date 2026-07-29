@@ -1,12 +1,5 @@
-import { Button } from "@/components/ui/button";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import {
+  ArrowDown01Icon,
   ComputerIcon,
   Copy01Icon,
   Delete02Icon,
@@ -17,7 +10,32 @@ import {
   SlidersHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { CommandSnippet, SnippetExecMode } from "../types";
+
+function modeLabel(mode: SnippetExecMode): string {
+  switch (mode) {
+    case "terminal":
+      return "Terminal";
+    case "silent":
+      return "Silent";
+    case "inject":
+      return "Inject";
+  }
+}
 
 interface Props {
   snippet: CommandSnippet;
@@ -94,18 +112,52 @@ export function SnippetItem({ snippet, hostName, groupColor, onRun, onEdit, onDu
 
             {/* Footer: run + actions */}
             <div className="flex items-center gap-1.5">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-[22px] gap-1 rounded px-2 text-[10px] font-semibold tracking-wide"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRun(snippet);
-                }}
-              >
-                <HugeiconsIcon icon={PlayIcon} size={10} strokeWidth={2.5} />
-                RUN
-              </Button>
+              <div className="flex h-[22px] shrink-0 overflow-hidden rounded">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-[22px] gap-1 rounded-r-none px-2 text-[10px] font-semibold tracking-wide"
+                  title={`Runs: ${modeLabel(snippet.defaultExecMode)}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRun(snippet);
+                  }}
+                >
+                  <HugeiconsIcon icon={PlayIcon} size={10} strokeWidth={2.5} />
+                  RUN
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      title="Choose run mode"
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex w-4 items-center justify-center border-l border-border/40 bg-secondary text-secondary-foreground outline-none transition-colors hover:bg-secondary/80 focus-visible:ring-1 focus-visible:ring-ring/50"
+                    >
+                      <HugeiconsIcon icon={ArrowDown01Icon} size={8} strokeWidth={2.5} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-44">
+                    <DropdownMenuItem onClick={() => onRun(snippet, "terminal")}>
+                      <HugeiconsIcon icon={Logout01Icon} size={13} strokeWidth={1.5} className="mr-2" />
+                      Run in Terminal
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onRun(snippet, "silent")}>
+                      <HugeiconsIcon
+                        icon={SlidersHorizontalIcon}
+                        size={13}
+                        strokeWidth={1.5}
+                        className="mr-2"
+                      />
+                      Run Silently (log)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onRun(snippet, "inject")}>
+                      <HugeiconsIcon icon={PlayIcon} size={13} strokeWidth={1.5} className="mr-2" />
+                      Inject into Terminal
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
               <div className="flex-1" />
 

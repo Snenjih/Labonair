@@ -87,7 +87,30 @@ export function TransferDropdown() {
       {conflictJob && (
         <ConflictModal
           job={conflictJob}
-          onResolve={(resolution, newName) => resolveConflict(conflictJob.id, resolution, newName)}
+          onResolve={(resolution, newName) => {
+            if (resolution === "overwrite_all" || resolution === "skip_all") {
+              const base = resolution === "overwrite_all" ? "overwrite" : "skip";
+              useTransferStore.getState().setStickyConflictResolution(conflictJob.session_id, base);
+              // Resolve every conflict already paused-and-visible for this
+              // session with the same choice — future conflicts in this
+              // session are handled by the sticky flag in the
+              // `file_conflict` listener before they ever reach "paused".
+              for (const j of useTransferStore.getState().jobs) {
+                if (
+                  j.id !== conflictJob.id &&
+                  j.session_id === conflictJob.session_id &&
+                  !isFailed(j.status) &&
+                  j.status === "paused" &&
+                  j.conflict
+                ) {
+                  void resolveConflict(j.id, base);
+                }
+              }
+              void resolveConflict(conflictJob.id, base);
+            } else {
+              void resolveConflict(conflictJob.id, resolution, newName);
+            }
+          }}
         />
       )}
 
@@ -288,7 +311,10 @@ function ConflictModal({
   onResolve,
 }: {
   job: TransferJob;
-  onResolve: (resolution: "overwrite" | "skip" | "rename", newName?: string) => void;
+  onResolve: (
+    resolution: "overwrite" | "skip" | "rename" | "overwrite_all" | "skip_all",
+    newName?: string,
+  ) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(job.dest_path.split("/").pop() ?? "item");
@@ -335,6 +361,12 @@ function ConflictModal({
               </Button>
               <Button size="sm" variant="outline" onClick={() => setRenaming(true)}>
                 Rename…
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => onResolve("overwrite_all")}>
+                Overwrite All
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => onResolve("skip_all")}>
+                Skip All
               </Button>
             </div>
           )}

@@ -1,8 +1,9 @@
-import { handleApiError } from "@/lib/errors";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experimental_transcribe as transcribe } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useChatStore } from "../store/chatStore";
+import { handleApiError } from "@/lib/errors";
+import { selectOpenAiInstanceKey } from "../lib/selectOpenAiInstance";
+import { useProvidersStore } from "../store/providersStore";
 
 const MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
 
@@ -27,7 +28,12 @@ async function transcribeBlob(blob: Blob, apiKey: string): Promise<string> {
 type State = "idle" | "recording" | "transcribing";
 
 export function useWhisperRecording({ onResult }: { onResult: (text: string) => void }) {
-  const apiKey = useChatStore((s) => s.apiKeys.openai);
+  // Reactive (not `.getState()`) so the mic button enables/disables live as
+  // keys are added/removed in Settings, matching the old `useChatStore`
+  // selector's reactivity.
+  const instances = useProvidersStore((s) => s.instances);
+  const instanceKeys = useProvidersStore((s) => s.instanceKeys);
+  const apiKey = selectOpenAiInstanceKey(instances, instanceKeys);
   const [state, setState] = useState<State>("idle");
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);

@@ -301,8 +301,7 @@ function PaneHeader({
       <span className="truncate text-[10px] text-muted-foreground">{label}</span>
       <button
         onClick={onClose}
-        className="flex h-4 w-4 items-center justify-center rounded text-[10px] text-muted-foreground transition-colors hover:bg-destructive/20 hover:text-foreground focus:text-foreground"
-        tabIndex={-1}
+        className="flex h-4 w-4 items-center justify-center rounded text-[10px] text-muted-foreground outline-none transition-colors hover:bg-destructive/20 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
         aria-label="Close pane"
       >
         ×

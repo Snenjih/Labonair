@@ -33,6 +33,12 @@ pub struct FileStatus {
     pub index_status: char,            // '.', A, M, D, R, C, U
     pub worktree_status: char,
     pub submodule: Option<SubmoduleState>,
+    /// True only for entries parsed from a porcelain v2 `u` (unmerged) line.
+    /// Conflict XY codes vary (`UU`, `AA`, `DD`, `AU`, `UA`, `DU`, `UD`) — the
+    /// index/worktree status *chars* alone are NOT a reliable "is this
+    /// conflicted" signal (e.g. `AA` has neither char equal to `U`), so this
+    /// flag is the only correct way to identify a conflicted path.
+    pub conflicted: bool,
 }
 
 /// One line of `git submodule status` output — the only way to detect an
@@ -190,6 +196,7 @@ fn push_status_entry(
     sub: &str,
     path: &str,
     original_path: Option<String>,
+    conflicted: bool,
     staged: &mut Vec<FileStatus>,
     unstaged: &mut Vec<FileStatus>,
 ) {
@@ -203,6 +210,7 @@ fn push_status_entry(
         index_status: x,
         worktree_status: y,
         submodule: parse_submodule_field(sub),
+        conflicted,
     };
 
     if x != '.' {
@@ -257,7 +265,7 @@ fn parse_porcelain_status(raw: &[u8]) -> (Vec<FileStatus>, Vec<FileStatus>, Vec<
                 // splitn keeps a path containing spaces intact in the tail.
                 let fields: Vec<&str> = token.splitn(9, ' ').collect();
                 if fields.len() == 9 {
-                    push_status_entry(fields[1], fields[2], fields[8], None, &mut staged, &mut unstaged);
+                    push_status_entry(fields[1], fields[2], fields[8], None, false, &mut staged, &mut unstaged);
                 }
             }
             b'2' => {
@@ -267,7 +275,9 @@ fn parse_porcelain_status(raw: &[u8]) -> (Vec<FileStatus>, Vec<FileStatus>, Vec<
                 if fields.len() == 10 {
                     let orig_path = tokens.get(i + 1).map(|s| s.to_string()).filter(|s| !s.is_empty());
                     i += 1;
-                    push_status_entry(fields[1], fields[2], fields[9], orig_path, &mut staged, &mut unstaged);
+                    push_status_entry(
+                        fields[1], fields[2], fields[9], orig_path, false, &mut staged, &mut unstaged,
+                    );
                 }
             }
             b'u' => {
@@ -275,7 +285,7 @@ fn parse_porcelain_status(raw: &[u8]) -> (Vec<FileStatus>, Vec<FileStatus>, Vec<
                 let fields: Vec<&str> = token.splitn(11, ' ').collect();
                 if fields.len() == 11 {
                     has_conflicts = true;
-                    push_status_entry(fields[1], fields[2], fields[10], None, &mut staged, &mut unstaged);
+                    push_status_entry(fields[1], fields[2], fields[10], None, true, &mut staged, &mut unstaged);
                 }
             }
             b'?' => {
@@ -286,6 +296,7 @@ fn parse_porcelain_status(raw: &[u8]) -> (Vec<FileStatus>, Vec<FileStatus>, Vec<
                         index_status: '?',
                         worktree_status: '?',
                         submodule: None,
+                        conflicted: false,
                     });
                 }
             }
@@ -1691,6 +1702,22 @@ rename_src.txt\0\
         // conflicted files (visible regardless of which pane is open).
         assert_eq!(staged.len(), 1);
         assert_eq!(unstaged.len(), 1);
+        assert!(staged[0].conflicted);
+        assert!(unstaged[0].conflicted);
+    }
+
+    #[test]
+    fn porcelain_status_v2_conflict_aa_has_no_u_char_but_is_flagged_conflicted() {
+        // "AA" (both added) is a real, common conflict XY code where NEITHER
+        // char is 'U' — confirms callers must use the `conflicted` flag, not
+        // an index/worktree-status-char check, to detect a conflict.
+        let raw = b"u AA N... 100644 100644 100644 100644 0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 0000000000000000000000000000000000000000 both_added.txt\0";
+        let (staged, unstaged, _, conflicts) = parse_porcelain_status(raw);
+        assert!(conflicts);
+        assert_eq!(staged[0].index_status, 'A');
+        assert_eq!(unstaged[0].worktree_status, 'A');
+        assert!(staged[0].conflicted);
+        assert!(unstaged[0].conflicted);
     }
 
     #[test]

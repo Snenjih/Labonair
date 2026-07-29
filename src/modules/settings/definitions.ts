@@ -10,9 +10,7 @@ export type SettingCategory =
   | "Connections"
   | "Source Control"
   | "AI"
-  | "Directives"
-  | "Bookmarks"
-  | "About";
+  | "Bookmarks";
 
 export type ControlType = "Switch" | "Select" | "Input" | "NumberInput" | "Custom";
 
@@ -135,7 +133,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     id: "confirmQuitWithSsh",
     label: "Confirm quit with active SSH connections",
     description: "Show a confirmation dialog before closing the app when SSH sessions are open.",
-    category: "Appearance & Layout",
+    category: "General",
     controlType: "Switch",
   },
   {
@@ -143,14 +141,14 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     label: "New tab inherits current directory",
     description:
       "Open new terminal tabs in the working directory of the active tab instead of the home directory.",
-    category: "Appearance & Layout",
+    category: "Terminal",
     controlType: "Switch",
   },
   {
     id: "confirmCloseTerminalTab",
     label: "Confirm before closing terminal tab",
     description: "Show a confirmation dialog when closing a terminal tab with a running shell.",
-    category: "Appearance & Layout",
+    category: "Terminal",
     controlType: "Switch",
   },
   {
@@ -1051,6 +1049,13 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     controlType: "Switch",
   },
   {
+    id: "aiAutoOpenMiniOnSend",
+    label: "Auto-open Mini window on send",
+    description: "Automatically pop open the AI Mini window whenever you send a message.",
+    category: "AI",
+    controlType: "Switch",
+  },
+  {
     id: "aiMaxAgentSteps",
     label: "Max agent steps",
     description:
@@ -1174,7 +1179,5 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
   "Connections",
   "Source Control",
   "AI",
-  "Directives",
   "Bookmarks",
-  "About",
 ];

@@ -14,6 +14,7 @@ import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { ShortcutsDialog } from "@/modules/shortcuts";
 import { SnippetHostPickerDialog, SnippetLogDrawer, SnippetVariablePromptDialog } from "@/modules/snippets";
+import { ForcePushConfirmDialog } from "@/modules/source-control/components/ForcePushConfirmDialog";
 import { useSourceControlStore } from "@/modules/source-control/store/sourceControlStore";
 import type { SidebarPanel, SidebarReturn } from "@/modules/statusbar";
 import { StatusBar, useBarPanelSync } from "@/modules/statusbar";
@@ -370,13 +371,11 @@ export function AppShell({ actions, prefs, ctrl, tabs, sidebar, ai, palette }: A
 
             <UpdaterDialog />
 
+            <ForcePushConfirmDialog />
+
             <CloseDialogs
-              pendingSaveTab={tabs.pendingSaveTab}
-              setPendingSaveTab={tabs.setPendingSaveTab}
-              pendingDirtyTab={tabs.pendingDirtyTab}
-              setPendingDirtyTab={tabs.setPendingDirtyTab}
-              pendingCloseTabId={tabs.pendingCloseTabId}
-              setPendingCloseTabId={tabs.setPendingCloseTabId}
+              pendingConfirmations={tabs.pendingConfirmations}
+              setPendingConfirmations={tabs.setPendingConfirmations}
               disposeTab={tabs.disposeTab}
               editorRefs={tabs.refs.editorRefs}
             />

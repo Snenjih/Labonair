@@ -198,6 +198,7 @@ export type Preferences = {
   aiTerminalContextLines: number;
   aiTemperature: number;
   aiWarnDestructiveCommands: boolean;
+  aiAutoOpenMiniOnSend: boolean;
   aiShellMaxTimeoutSecs: number;
   aiShellMaxOutputKb: number;
 
@@ -393,6 +394,7 @@ const KEY_AI_MAX_AGENT_STEPS = "aiMaxAgentSteps";
 const KEY_AI_TERMINAL_CONTEXT_LINES = "aiTerminalContextLines";
 const KEY_AI_TEMPERATURE = "aiTemperature";
 const KEY_AI_WARN_DESTRUCTIVE = "aiWarnDestructiveCommands";
+const KEY_AI_AUTO_OPEN_MINI_ON_SEND = "aiAutoOpenMiniOnSend";
 const KEY_AI_SHELL_MAX_TIMEOUT_SECS = "aiShellMaxTimeoutSecs";
 const KEY_AI_SHELL_MAX_OUTPUT_KB = "aiShellMaxOutputKb";
 const KEY_TERMINAL_COPY_ON_SELECT = "terminalCopyOnSelect";
@@ -567,6 +569,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   aiTerminalContextLines: 300,
   aiTemperature: 0.7,
   aiWarnDestructiveCommands: true,
+  aiAutoOpenMiniOnSend: true,
   aiShellMaxTimeoutSecs: 300,
   aiShellMaxOutputKb: 256,
 
@@ -905,6 +908,8 @@ export async function loadPreferences(): Promise<Preferences> {
     aiTemperature: get<number>(KEY_AI_TEMPERATURE) ?? DEFAULT_PREFERENCES.aiTemperature,
     aiWarnDestructiveCommands:
       get<boolean>(KEY_AI_WARN_DESTRUCTIVE) ?? DEFAULT_PREFERENCES.aiWarnDestructiveCommands,
+    aiAutoOpenMiniOnSend:
+      get<boolean>(KEY_AI_AUTO_OPEN_MINI_ON_SEND) ?? DEFAULT_PREFERENCES.aiAutoOpenMiniOnSend,
     aiShellMaxTimeoutSecs: Math.min(
       1800,
       Math.max(30, get<number>(KEY_AI_SHELL_MAX_TIMEOUT_SECS) ?? DEFAULT_PREFERENCES.aiShellMaxTimeoutSecs),
@@ -1679,6 +1684,11 @@ export async function setAiWarnDestructiveCommands(value: boolean): Promise<void
   await (await getStore()).save();
 }
 
+export async function setAiAutoOpenMiniOnSend(value: boolean): Promise<void> {
+  await (await getStore()).set(KEY_AI_AUTO_OPEN_MINI_ON_SEND, value);
+  await (await getStore()).save();
+}
+
 export async function setAiShellMaxTimeoutSecs(value: number): Promise<void> {
   const clamped = Math.min(1800, Math.max(30, Math.round(value)));
   await (await getStore()).set(KEY_AI_SHELL_MAX_TIMEOUT_SECS, clamped);
@@ -2007,6 +2017,7 @@ export async function onPreferencesChange(cb: (key: PrefKey, value: unknown) => 
     [KEY_AI_TERMINAL_CONTEXT_LINES]: "aiTerminalContextLines",
     [KEY_AI_TEMPERATURE]: "aiTemperature",
     [KEY_AI_WARN_DESTRUCTIVE]: "aiWarnDestructiveCommands",
+    [KEY_AI_AUTO_OPEN_MINI_ON_SEND]: "aiAutoOpenMiniOnSend",
     [KEY_AI_SHELL_MAX_TIMEOUT_SECS]: "aiShellMaxTimeoutSecs",
     [KEY_AI_SHELL_MAX_OUTPUT_KB]: "aiShellMaxOutputKb",
     [KEY_TERMINAL_COPY_ON_SELECT]: "terminalCopyOnSelect",

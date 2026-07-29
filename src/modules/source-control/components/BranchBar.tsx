@@ -2,16 +2,6 @@ import { ArrowDown01Icon, ArrowUp01Icon, Cancel01Icon, GitBranchIcon } from "@hu
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -38,8 +28,9 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
   const currentBranch = useSourceControlStore((s) => s.currentBranch);
   const branchList = useSourceControlStore((s) => s.branchList);
 
+  const requestForcePushConfirm = useSourceControlStore((s) => s.requestForcePushConfirm);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [showForcePushConfirm, setShowForcePushConfirm] = useState(false);
   const [showSetUpstreamPrompt, setShowSetUpstreamPrompt] = useState(false);
 
   const ahead = status?.ahead ?? 0;
@@ -122,27 +113,6 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
       useNotificationStore
         .getState()
         .addActionResultNotification({ type: "error", title: "Fetch Failed", message: String(e) });
-    } finally {
-      setOperationInProgress(null);
-    }
-  }
-
-  async function handleForcePush() {
-    setShowForcePushConfirm(false);
-    if (!repoRoot || operationInProgress) return;
-    setOperationInProgress("push");
-    try {
-      await git.pushForceWithLease(repoRoot, undefined, undefined, sessionId ?? undefined);
-      onRefresh();
-      useNotificationStore.getState().addActionResultNotification({
-        type: "success",
-        title: "Force Pushed",
-        message: currentBranch ? `${currentBranch} force-pushed to remote` : "Force-pushed to remote",
-      });
-    } catch (e) {
-      useNotificationStore
-        .getState()
-        .addActionResultNotification({ type: "error", title: "Force Push Failed", message: String(e) });
     } finally {
       setOperationInProgress(null);
     }
@@ -276,7 +246,7 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
                   Push To
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => setShowForcePushConfirm(true)}
+                  onClick={() => requestForcePushConfirm()}
                   className="text-xs text-warning focus:text-warning"
                 >
                   Force Push
@@ -323,28 +293,6 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
           </button>
         </div>
       )}
-
-      {/* Force push confirm */}
-      <AlertDialog open={showForcePushConfirm} onOpenChange={setShowForcePushConfirm}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Force Push?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will overwrite the remote branch. Force-with-lease protects against overwriting others'
-              work if they pushed after your last fetch — but it is still a destructive operation.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => void handleForcePush()}
-              className="bg-orange-500 text-white hover:bg-orange-600"
-            >
-              Force Push
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

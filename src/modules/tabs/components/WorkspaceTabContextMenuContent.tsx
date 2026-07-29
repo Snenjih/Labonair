@@ -17,6 +17,8 @@ export interface WorkspaceTabContextMenuContentProps {
   tabsLength: number;
   onStartRename: () => void;
   onClose: (id: number) => void;
+  onDuplicate: (id: number) => void;
+  onCloseOthers: (id: number) => void;
   onCloseByKind: (kind: Tab["kind"]) => void;
 }
 
@@ -30,6 +32,8 @@ export function WorkspaceTabContextMenuContent({
   tabsLength,
   onStartRename,
   onClose,
+  onDuplicate,
+  onCloseOthers,
   onCloseByKind,
 }: WorkspaceTabContextMenuContentProps) {
   const agentAccessEntries = useAgentAccessStore((s) => s.entries);
@@ -71,12 +75,18 @@ export function WorkspaceTabContextMenuContent({
           </ContextMenuCheckboxItem>
         </>
       )}
+      <ContextMenuSeparator />
+      <ContextMenuItem onSelect={() => onDuplicate(tab.id)}>
+        <span className="flex-1">Duplicate</span>
+      </ContextMenuItem>
       {tabsLength > 1 && (
         <>
-          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => onClose(tab.id)}>
             <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={1.75} />
             <span className="flex-1">Close</span>
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCloseOthers(tab.id)}>
+            <span className="flex-1">Close Others</span>
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => onCloseByKind(tab.kind)}>
             <span className="flex-1">Close All {pluralLabelFor(tab.kind)}</span>

@@ -4,6 +4,8 @@ import { Switch } from "@/components/ui/switch";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  setConfirmCloseTerminalTab,
+  setNewTabInheritsCwd,
   setTerminalBell,
   setTerminalBlocksAutoCollapseOnAltScreen,
   setTerminalBlocksEnabled,
@@ -62,6 +64,8 @@ export function TerminalSection() {
   const terminalFastScrollModifier = usePreferencesStore((s) => s.terminalFastScrollModifier);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const terminalDefaultPath = usePreferencesStore((s) => s.terminalDefaultPath);
+  const newTabInheritsCwd = usePreferencesStore((s) => s.newTabInheritsCwd);
+  const confirmCloseTerminalTab = usePreferencesStore((s) => s.confirmCloseTerminalTab);
 
   return (
     <div className="flex flex-col gap-6">
@@ -100,6 +104,21 @@ export function TerminalSection() {
             onChange={(e) => void setTerminalDefaultPath(e.target.value)}
             placeholder="/Users/me/Projects"
             className="h-7 w-52 font-mono text-[11.5px]"
+          />
+        </SettingRow>
+        <SettingRow
+          title="New tab inherits current directory"
+          description="Open new terminal tabs in the working directory of the active tab instead of the home directory."
+        >
+          <Switch checked={newTabInheritsCwd} onCheckedChange={(v) => void setNewTabInheritsCwd(v)} />
+        </SettingRow>
+        <SettingRow
+          title="Confirm before closing terminal tab"
+          description="Show a confirmation dialog when closing a terminal tab with a running shell."
+        >
+          <Switch
+            checked={confirmCloseTerminalTab}
+            onCheckedChange={(v) => void setConfirmCloseTerminalTab(v)}
           />
         </SettingRow>
       </div>

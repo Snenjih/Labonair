@@ -41,10 +41,7 @@ import {
   setBackgroundOpacity,
   setBackgroundTintColor,
   setBackgroundTintOpacity,
-  setConfirmCloseTerminalTab,
-  setConfirmQuitWithSsh,
   setHmCardScale,
-  setNewTabInheritsCwd,
   setTabsLocation,
   setZenModeShowHeader,
   setZenModeShowStatusbar,
@@ -78,9 +75,6 @@ export function AppearanceSection() {
   const appFontSize = usePreferencesStore((s) => s.appFontSize);
   const appLineHeight = usePreferencesStore((s) => s.appLineHeight);
   const tabsLocation = usePreferencesStore((s) => s.tabsLocation);
-  const newTabInheritsCwd = usePreferencesStore((s) => s.newTabInheritsCwd);
-  const confirmCloseTerminalTab = usePreferencesStore((s) => s.confirmCloseTerminalTab);
-  const confirmQuitWithSsh = usePreferencesStore((s) => s.confirmQuitWithSsh);
   const zenModeShowHeader = usePreferencesStore((s) => s.zenModeShowHeader);
   const zenModeShowStatusbar = usePreferencesStore((s) => s.zenModeShowStatusbar);
   const backgroundImage = usePreferencesStore((s) => s.backgroundImage);
@@ -510,27 +504,6 @@ export function AppearanceSection() {
               </SelectItem>
             </SelectContent>
           </Select>
-        </SettingRow>
-        <SettingRow
-          title="New tab inherits current directory"
-          description="Open new terminal tabs in the working directory of the active tab instead of the home directory."
-        >
-          <Switch checked={newTabInheritsCwd} onCheckedChange={(v) => void setNewTabInheritsCwd(v)} />
-        </SettingRow>
-        <SettingRow
-          title="Confirm before closing terminal tab"
-          description="Show a confirmation dialog when closing a terminal tab with a running shell."
-        >
-          <Switch
-            checked={confirmCloseTerminalTab}
-            onCheckedChange={(v) => void setConfirmCloseTerminalTab(v)}
-          />
-        </SettingRow>
-        <SettingRow
-          title="Confirm quit with active SSH connections"
-          description="Show a confirmation dialog before closing the app when SSH sessions are open."
-        >
-          <Switch checked={confirmQuitWithSsh} onCheckedChange={(v) => void setConfirmQuitWithSsh(v)} />
         </SettingRow>
         <SettingRow
           title="Show header bar"

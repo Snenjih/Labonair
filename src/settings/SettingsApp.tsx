@@ -37,7 +37,6 @@ import {
   applyMcpPort,
 } from "@/modules/tabs";
 import { SettingRow } from "./components/SettingRow";
-import { AgentsSection } from "./sections/AgentsSection";
 import { AiSection } from "./sections/AiSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
 import { ConnectionsSection } from "./sections/ConnectionsSection";
@@ -45,7 +44,6 @@ import { EditorSection } from "./sections/EditorSection";
 import { FileManagerSection } from "./sections/FileManagerSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { KeyboardShortcutsSection } from "./sections/KeyboardShortcutsSection";
-import { ModelsSection } from "./sections/ModelsSection";
 import { TerminalSection } from "./sections/TerminalSection";
 import { ThemeMarketplace } from "./sections/ThemeMarketplace";
 import { WorkspaceSection } from "./sections/WorkspaceSection";
@@ -223,8 +221,6 @@ export function SettingsApp() {
                 {active === "workspace" && <WorkspaceSection />}
                 {active === "shortcuts" && <KeyboardShortcutsSection />}
                 {active === "ai" && <AiSection />}
-                {active === "models" && <ModelsSection />}
-                {active === "agents" && <AgentsSection />}
               </>
             )}
           </div>

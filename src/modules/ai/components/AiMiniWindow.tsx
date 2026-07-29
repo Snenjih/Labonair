@@ -444,7 +444,8 @@ function SessionRow({
           onDelete();
         }}
         title="Delete session"
-        className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        aria-label="Delete session"
+        className="rounded p-0.5 text-muted-foreground opacity-0 outline-none transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring/50 group-hover:opacity-100"
       >
         <HugeiconsIcon icon={Delete02Icon} size={11} strokeWidth={1.75} />
       </button>

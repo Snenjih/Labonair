@@ -12,6 +12,7 @@ import { SftpContextMenu } from "./components/SftpContextMenu";
 import { SftpToolbar } from "./components/SftpToolbar";
 import { VirtualizedFileList } from "./components/VirtualizedFileList";
 import { useSftpStore } from "./store/sftpStore";
+import { useTransferStore } from "./store/transferStore";
 import type { FileNode } from "./types";
 import {
   blurActiveInput,
@@ -515,6 +516,10 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
       // against the now-dead connection — cancel + re-enqueue those against
       // the fresh session. No-op if nothing was in flight for this tab.
       await invoke("sftp_session_reconnected", { sessionId: tabId }).catch(() => {});
+      // A fresh connection is a reasonable "start fresh" boundary for a
+      // sticky "Overwrite All"/"Skip All" conflict choice — don't let a
+      // reconnect silently keep auto-resolving future transfers.
+      useTransferStore.getState().setStickyConflictResolution(tabId, null);
       clearDisconnected(tabId);
       useConnectionStatusStore.getState().setStatus(tabId, "connected");
       loadLocalDir(tabId, tabState?.localPath ?? "~");

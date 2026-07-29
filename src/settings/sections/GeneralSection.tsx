@@ -15,6 +15,7 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   setAutostart,
   setCheckForUpdates,
+  setConfirmQuitWithSsh,
   setCredentialEncryption,
   setDefaultStartupTab,
   setNotifyOnErrors,
@@ -87,6 +88,7 @@ export function GeneralSection() {
   const credentialEncryption = usePreferencesStore((s) => s.credentialEncryption);
   const reduceMotion = usePreferencesStore((s) => s.reduceMotion);
   const notifyOnErrors = usePreferencesStore((s) => s.notifyOnErrors);
+  const confirmQuitWithSsh = usePreferencesStore((s) => s.confirmQuitWithSsh);
 
   const { status, check, install } = useUpdater({ autoCheck: false });
   const checking = status.kind === "checking";
@@ -310,6 +312,16 @@ export function GeneralSection() {
             </SettingRow>
           )}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Quit</Label>
+        <SettingRow
+          title="Confirm quit with active SSH connections"
+          description="Show a confirmation dialog before closing the app when SSH sessions are open."
+        >
+          <Switch checked={confirmQuitWithSsh} onCheckedChange={(v) => void setConfirmQuitWithSsh(v)} />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">

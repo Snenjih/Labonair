@@ -1,12 +1,12 @@
-import { handleApiError } from "@/lib/errors";
-import { cn } from "@/lib/utils";
-import type { EditorTab } from "@/modules/tabs";
-import { useTabsStore } from "@/modules/tabs/store/tabsStore";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import { useTransferStore } from "@/modules/sftp/store/transferStore";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { handleApiError } from "@/lib/errors";
+import { cn } from "@/lib/utils";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useTransferStore } from "@/modules/sftp/store/transferStore";
+import type { EditorTab } from "@/modules/tabs";
+import { useTabsStore } from "@/modules/tabs/store/tabsStore";
 import { EditorPane, type EditorPaneHandle } from "./EditorPane";
 
 type Props = {
@@ -123,6 +123,10 @@ export function EditorStack({ onDirtyChange, registerHandle, onCloseTab, onSaveA
                 skipped_count: 0,
               });
             }
+            // Unconditional (not gated behind `showTransfers`) — this flag is
+            // a correctness indicator, not an optional transfer-visibility
+            // one. `updateTab` safely no-ops if the tab's since been closed.
+            useTabsStore.getState().updateTab(t.id, { remoteSyncFailed: false });
           })
           .catch((e: unknown) => {
             if (showTransfers) {
@@ -139,6 +143,7 @@ export function EditorStack({ onDirtyChange, registerHandle, onCloseTab, onSaveA
                 skipped_count: 0,
               });
             }
+            useTabsStore.getState().updateTab(t.id, { remoteSyncFailed: true });
             handleApiError(e, "Failed to save to remote", "Editor");
           });
       };

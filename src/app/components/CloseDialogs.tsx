@@ -9,61 +9,74 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { handleApiError } from "@/lib/errors";
 import type { EditorPaneHandle } from "@/modules/editor";
+import type { PendingConfirmation } from "@/modules/tabs/lib/closeConfirmation";
 
 export interface CloseDialogsProps {
-  pendingSaveTab: { id: number; title: string } | null;
-  setPendingSaveTab: (v: { id: number; title: string } | null) => void;
-  pendingDirtyTab: { id: number; title: string } | null;
-  setPendingDirtyTab: (v: { id: number; title: string } | null) => void;
-  pendingCloseTabId: number | null;
-  setPendingCloseTabId: (id: number | null) => void;
+  pendingConfirmations: PendingConfirmation[];
+  setPendingConfirmations: React.Dispatch<React.SetStateAction<PendingConfirmation[]>>;
   disposeTab: (id: number) => void;
   editorRefs: React.MutableRefObject<Map<number, EditorPaneHandle>>;
 }
 
 export function CloseDialogs({
-  pendingSaveTab,
-  setPendingSaveTab,
-  pendingDirtyTab,
-  setPendingDirtyTab,
-  pendingCloseTabId,
-  setPendingCloseTabId,
+  pendingConfirmations,
+  setPendingConfirmations,
   disposeTab,
   editorRefs,
 }: CloseDialogsProps) {
+  const current = pendingConfirmations[0] ?? null;
+  // `AlertDialogAction`/`AlertDialogCancel` are Radix `Dialog.Close`s under
+  // the hood — clicking either one auto-closes the dialog (firing
+  // `onOpenChange(false)`) unless the click handler calls
+  // `preventDefault()`. So `onOpenChange` is the ONE place that shifts the
+  // queue for every synchronous action (Don't Save / Close Anyway / Close /
+  // Cancel) — an onClick handler must never *also* call shift(), or a
+  // single click would drop two queued tabs instead of one. The async Save
+  // action is the sole exception: it preventDefaults so the dialog doesn't
+  // close before the save resolves, and shifts manually only on success.
+  const shift = () => setPendingConfirmations((q) => q.slice(1));
+
   return (
     <>
-      <AlertDialog
-        open={pendingSaveTab !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingSaveTab(null);
-        }}
-      >
+      <AlertDialog open={current?.kind === "save"} onOpenChange={(open) => !open && shift()}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Save before closing?</AlertDialogTitle>
-            <AlertDialogDescription>"{pendingSaveTab?.title}" has not been saved.</AlertDialogDescription>
+            <AlertDialogDescription>
+              "{current?.kind === "save" ? current.title : ""}" has not been saved.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel
               onClick={() => {
-                const tab = pendingSaveTab;
-                if (!tab) return;
-                disposeTab(tab.id);
-                setPendingSaveTab(null);
+                if (current?.kind === "save") disposeTab(current.id);
               }}
             >
               Don't Save
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={async () => {
-                const tab = pendingSaveTab;
-                if (!tab) return;
-                const h = editorRefs.current.get(tab.id);
-                if (h) await h.save();
-                disposeTab(tab.id);
-                setPendingSaveTab(null);
+              onClick={(e) => {
+                if (current?.kind !== "save") return;
+                const tab = current;
+                // Always prevent the default sync-close — the save is
+                // async, and a failure must leave the dialog open instead
+                // of vanishing (Radix would otherwise close it immediately,
+                // before the awaited save() even settles).
+                e.preventDefault();
+                void (async () => {
+                  const h = editorRefs.current.get(tab.id);
+                  try {
+                    if (h) await h.save();
+                    disposeTab(tab.id);
+                    shift();
+                  } catch (err) {
+                    handleApiError(err, "Failed to save file", "Editor");
+                    // Leave the dialog open so the user can retry Save or
+                    // choose Don't Save instead of it silently vanishing.
+                  }
+                })();
               }}
             >
               Save
@@ -72,17 +85,12 @@ export function CloseDialogs({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
-        open={pendingDirtyTab !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDirtyTab(null);
-        }}
-      >
+      <AlertDialog open={current?.kind === "dirty"} onOpenChange={(open) => !open && shift()}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Close with unsaved changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              "{pendingDirtyTab?.title}" has unsaved changes. They will be lost.
+              "{current?.kind === "dirty" ? current.title : ""}" has unsaved changes. They will be lost.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -90,10 +98,7 @@ export function CloseDialogs({
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
-                const tab = pendingDirtyTab;
-                if (!tab) return;
-                disposeTab(tab.id);
-                setPendingDirtyTab(null);
+                if (current?.kind === "dirty") disposeTab(current.id);
               }}
             >
               Close Anyway
@@ -102,12 +107,7 @@ export function CloseDialogs({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
-        open={pendingCloseTabId !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingCloseTabId(null);
-        }}
-      >
+      <AlertDialog open={current?.kind === "terminal"} onOpenChange={(open) => !open && shift()}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Close terminal tab?</AlertDialogTitle>
@@ -117,8 +117,7 @@ export function CloseDialogs({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (pendingCloseTabId !== null) disposeTab(pendingCloseTabId);
-                setPendingCloseTabId(null);
+                if (current?.kind === "terminal") disposeTab(current.id);
               }}
             >
               Close

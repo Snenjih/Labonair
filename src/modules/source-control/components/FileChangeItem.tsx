@@ -42,7 +42,7 @@ const STATUS_COLORS: Record<string, string> = {
   D: "bg-error/20 text-error",
   R: "bg-info/20 text-info",
   C: "bg-info/20 text-info",
-  U: "bg-warning/20 text-warning",
+  U: "bg-error/20 text-error",
   "?": "bg-muted/80 text-muted-foreground",
 };
 

@@ -1,3 +1,15 @@
+import {
+  Add01Icon,
+  ArrowDown01Icon,
+  CheckmarkCircle02Icon,
+  ComputerIcon,
+  Delete02Icon,
+  Edit02Icon,
+  Settings01Icon,
+  SparklesIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -14,49 +26,38 @@ import { cn } from "@/lib/utils";
 import { AGENT_ICONS } from "@/modules/ai/components/AgentSwitcher";
 import {
   AUTOCOMPLETE_PROVIDERS,
+  type AutocompleteProviderId,
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
-  MODELS,
-  PROVIDERS,
   getModel,
   getProvider,
-  providerNeedsKey,
-  type AutocompleteProviderId,
+  MODELS,
   type ModelId,
+  PROVIDERS,
   type ProviderId,
+  providerNeedsKey,
 } from "@/modules/ai/config";
-import { BUILTIN_AGENTS, type Agent, type AgentIconId } from "@/modules/ai/lib/agents";
-import { isValidHandle, normalizeHandle, type Directive } from "@/modules/ai/lib/directives";
+import { type Agent, type AgentIconId, BUILTIN_AGENTS } from "@/modules/ai/lib/agents";
+import { type Directive, isValidHandle, normalizeHandle } from "@/modules/ai/lib/directives";
 import { newAgentId, useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { newDirectiveId, useDirectivesStore } from "@/modules/ai/store/directivesStore";
 import { useProvidersStore } from "@/modules/ai/store/providersStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  setAiAutoOpenMiniOnSend,
+  setAiEnabled,
+  setAiMaxAgentSteps,
+  setAiShellMaxOutputKb,
+  setAiShellMaxTimeoutSecs,
+  setAiTemperature,
+  setAiTerminalContextLines,
+  setAiWarnDestructiveCommands,
   setAutocompleteEnabled,
   setAutocompleteModelId,
   setAutocompleteProvider,
   setCustomInstructions,
   setDefaultModel,
-  setAiEnabled,
-  setAiWarnDestructiveCommands,
-  setAiMaxAgentSteps,
-  setAiTerminalContextLines,
-  setAiTemperature,
-  setAiShellMaxTimeoutSecs,
-  setAiShellMaxOutputKb,
 } from "@/modules/settings/store";
-import {
-  Add01Icon,
-  ArrowDown01Icon,
-  CheckmarkCircle02Icon,
-  ComputerIcon,
-  Delete02Icon,
-  Edit02Icon,
-  Settings01Icon,
-  SparklesIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState } from "react";
 import { AddProviderDropdown } from "../components/AddProviderDropdown";
 import { NumInput } from "../components/NumInput";
 import { ProviderIcon } from "../components/ProviderIcon";
@@ -378,9 +379,16 @@ function BehaviourContent() {
   const aiTemperature = usePreferencesStore((s) => s.aiTemperature);
   const aiShellMaxTimeoutSecs = usePreferencesStore((s) => s.aiShellMaxTimeoutSecs);
   const aiShellMaxOutputKb = usePreferencesStore((s) => s.aiShellMaxOutputKb);
+  const aiAutoOpenMiniOnSend = usePreferencesStore((s) => s.aiAutoOpenMiniOnSend);
 
   return (
     <div className="flex flex-col gap-3">
+      <SettingRow
+        title="Auto-open Mini window on send"
+        description="Automatically pop open the AI Mini window whenever you send a message."
+      >
+        <Switch checked={aiAutoOpenMiniOnSend} onCheckedChange={(v) => void setAiAutoOpenMiniOnSend(v)} />
+      </SettingRow>
       <SettingRow
         title="Max agent steps"
         description="Maximum number of tool-use steps the agent may take before stopping. Lower = faster, more predictable. Higher = can handle complex multi-step tasks."

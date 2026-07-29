@@ -55,6 +55,14 @@ export type EditorTab = {
   path: string;
   dirty: boolean;
   isUntitled?: boolean;
+  /** True when the most recent `save_remote_edit` push failed after the
+   *  local temp-file write already succeeded — the local `dirty` flag has
+   *  already cleared by then, so without this the user has no way to tell
+   *  the remote copy is actually out of sync. Cleared on the next
+   *  successful remote save. Not gated behind `sftpRemoteEditShowTransfers`
+   *  (that preference only controls the optional Transfers-panel job
+   *  entry, not this correctness indicator). */
+  remoteSyncFailed?: boolean;
   remoteHostTabId?: string;
   remotePath?: string;
   /** Host + session-lifecycle-ownership snapshotted at open time — lets the
@@ -174,6 +182,7 @@ export type TabPatch = Partial<{
   cwd: string;
   path: string;
   dirty: boolean;
+  remoteSyncFailed: boolean;
   url: string;
   languageOverride: string | null;
 }>;

@@ -4,8 +4,10 @@ import type { ExplorerTarget } from "@/modules/explorer/lib/useExplorerTarget";
 import { useLazyExplorerSession } from "@/modules/explorer/lib/useLazyExplorerSession";
 import { useGitStatus } from "../lib/useGitStatus";
 import { useSourceControlStore } from "../store/sourceControlStore";
+import type { FileStatus } from "../types";
 import { BranchBar } from "./BranchBar";
 import { CommitForm } from "./CommitForm";
+import { ConflictsSection } from "./ConflictsSection";
 import { DiffViewer } from "./DiffViewer";
 import { NoRepoState } from "./NoRepoState";
 import { SourceControlActionBar } from "./SourceControlActionBar";
@@ -46,6 +48,20 @@ export function SourceControlPanel({ target, onOpenGitGraph }: SourceControlPane
   // somewhere, not just the two that happen to produce a status line.
   const uninitializedSubmodules = submodules.filter((s) => s.state === "uninitialized");
 
+  // Conflicted entries can appear in BOTH `staged`/`unstaged` (a conflict XY
+  // code like "AA" has neither char as '.', so the Rust parser pushes a
+  // clone into each bucket) — dedupe by path so a conflicted file renders
+  // exactly once, in its own section, and never also inside TrackedSection.
+  const stagedAll = status?.staged ?? [];
+  const unstagedAll = status?.unstaged ?? [];
+  const conflictedByPath = new Map<string, FileStatus>();
+  for (const f of [...stagedAll, ...unstagedAll]) {
+    if (f.conflicted) conflictedByPath.set(f.path, f);
+  }
+  const conflicted = Array.from(conflictedByPath.values());
+  const staged = stagedAll.filter((f) => !f.conflicted);
+  const unstaged = unstagedAll.filter((f) => !f.conflicted);
+
   useEffect(() => {
     void useSourceControlStore.getState().hydrateRecentMessages();
   }, []);
@@ -68,12 +84,6 @@ export function SourceControlPanel({ target, onOpenGitGraph }: SourceControlPane
 
       <DiffViewer />
 
-      {status?.hasConflicts && (
-        <div className="mx-3 my-1 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
-          Merge conflicts detected — resolve before committing.
-        </div>
-      )}
-
       {/* Non-fatal: repo is known-good (isRepo=true), but the most recent
        *  poll tick failed (e.g. the SSH session dropped mid-refresh) — shown
        *  inline instead of tearing down to NoRepoState, since the repo
@@ -94,11 +104,8 @@ export function SourceControlPanel({ target, onOpenGitGraph }: SourceControlPane
       {/* Scrollable file list */}
       <ScrollArea className="min-h-0 flex-1">
         <div className="py-1">
-          <TrackedSection
-            staged={status?.staged ?? []}
-            unstaged={status?.unstaged ?? []}
-            onRefresh={refresh}
-          />
+          <ConflictsSection files={conflicted} onRefresh={refresh} />
+          <TrackedSection staged={staged} unstaged={unstaged} onRefresh={refresh} />
           <UntrackedSection files={status?.untracked ?? []} onRefresh={refresh} />
         </div>
       </ScrollArea>
