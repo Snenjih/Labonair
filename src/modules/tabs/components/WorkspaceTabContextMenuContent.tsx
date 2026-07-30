@@ -1,4 +1,10 @@
-import { Cancel01Icon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
+import {
+  Cancel01Icon,
+  Cancel02Icon,
+  Copy01Icon,
+  Layers01Icon,
+  PencilEdit02Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ContextMenuCheckboxItem,
@@ -53,6 +59,10 @@ export function WorkspaceTabContextMenuContent({
         <HugeiconsIcon icon={PencilEdit02Icon} size={14} strokeWidth={1.75} />
         <span className="flex-1">Rename</span>
       </ContextMenuItem>
+      <ContextMenuItem onSelect={() => onDuplicate(tab.id)}>
+        <HugeiconsIcon icon={Copy01Icon} size={14} strokeWidth={1.75} />
+        <span className="flex-1">Duplicate</span>
+      </ContextMenuItem>
       {(isSsh || isLocal) && activeSession && agentBridgeEnabled && (
         <>
           <ContextMenuSeparator />
@@ -75,21 +85,21 @@ export function WorkspaceTabContextMenuContent({
           </ContextMenuCheckboxItem>
         </>
       )}
-      <ContextMenuSeparator />
-      <ContextMenuItem onSelect={() => onDuplicate(tab.id)}>
-        <span className="flex-1">Duplicate</span>
-      </ContextMenuItem>
       {tabsLength > 1 && (
         <>
-          <ContextMenuItem onSelect={() => onClose(tab.id)}>
-            <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={1.75} />
-            <span className="flex-1">Close</span>
-          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => onCloseOthers(tab.id)}>
+            <HugeiconsIcon icon={Cancel02Icon} size={14} strokeWidth={1.75} />
             <span className="flex-1">Close Others</span>
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => onCloseByKind(tab.kind)}>
+            <HugeiconsIcon icon={Layers01Icon} size={14} strokeWidth={1.75} />
             <span className="flex-1">Close All {pluralLabelFor(tab.kind)}</span>
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => onClose(tab.id)}>
+            <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={1.75} />
+            <span className="flex-1">Close</span>
           </ContextMenuItem>
         </>
       )}
