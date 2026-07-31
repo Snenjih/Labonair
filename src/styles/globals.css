@@ -105,15 +105,15 @@
     --muted-foreground: oklch(55.41% 0.0220 262.94);
     --accent: oklch(93.00% 0.000 0);
     --accent-foreground: oklch(25.20% 0.0000 0);
-    --destructive: oklch(69.82% 0.1637 17.27);
+    --destructive: oklch(55.00% 0.1637 17.27);
     --border: oklch(88.00% 0.000 0);
     --input: oklch(88.00% 0.000 0);
     --ring: oklch(79.68% 0.1298 82.18);
     --chart-1: oklch(79.68% 0.1298 82.18);
-    --chart-2: oklch(73.86% 0.1252 225.69);
-    --chart-3: oklch(82.51% 0.1745 125.86);
-    --chart-4: oklch(69.82% 0.1637 17.27);
-    --chart-5: oklch(79.70% 0.1308 306.30);
+    --chart-2: oklch(53.00% 0.1000 225.69);
+    --chart-3: oklch(52.00% 0.1400 125.86);
+    --chart-4: oklch(55.00% 0.1637 17.27);
+    --chart-5: oklch(55.00% 0.1308 306.30);
     --radius: 0.3125rem;
     --sidebar: oklch(97.00% 0.000 0);
     --sidebar-foreground: oklch(20.90% 0.0000 0);
@@ -134,12 +134,12 @@
     --border-transparent: transparent;
     --border-disabled: oklch(88.00% 0.000 0);
     /* Semantic status colors */
-    --modified: oklch(73.86% 0.1252 225.69);
-    --error: oklch(69.82% 0.1637 17.27);
-    --warning: oklch(79.68% 0.1298 82.18);
-    --info: oklch(73.86% 0.1252 225.69);
+    --modified: oklch(53.00% 0.1000 225.69);
+    --error: oklch(55.00% 0.1637 17.27);
+    --warning: oklch(54.00% 0.1400 55.00);
+    --info: oklch(53.00% 0.1000 225.69);
     --hint: oklch(55.41% 0.0220 262.94);
-    --success: oklch(82.51% 0.1745 125.86);
+    --success: oklch(52.00% 0.1400 125.86);
     /* UI interaction */
     --cursor: var(--foreground);
     --selection: oklch(79.68% 0.1298 82.18 / 13%);
@@ -229,7 +229,7 @@
     /* Semantic status colors */
     --modified: oklch(73.86% 0.1252 225.69);
     --error: oklch(69.82% 0.1637 17.27);
-    --warning: oklch(79.68% 0.1298 82.18);
+    --warning: oklch(80.00% 0.1300 55.00);
     --info: oklch(73.86% 0.1252 225.69);
     --hint: oklch(50.00% 0.0120 262.94);
     --success: oklch(82.51% 0.1745 125.86);

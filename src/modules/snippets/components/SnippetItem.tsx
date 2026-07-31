@@ -10,6 +10,7 @@ import {
   SlidersHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -54,6 +55,15 @@ export function SnippetItem({ snippet, hostName, groupColor, onRun, onEdit, onDu
   const accentColor = groupColor ?? (isSSH ? "var(--chart-2)" : "var(--chart-5)");
   const preview = snippet.description?.trim() || snippet.command.split("\n")[0];
 
+  // Carried by the icon chip's tooltip so the distinction survives even when the
+  // badge itself is hidden by the container query at narrow panel widths.
+  const hostWarning =
+    isSSH && !hostName
+      ? snippet.hostId
+        ? "This snippet's target host no longer exists"
+        : "Prompts for a host each time it runs"
+      : undefined;
+
   async function copyCommand() {
     await navigator.clipboard.writeText(snippet.command);
   }
@@ -61,62 +71,49 @@ export function SnippetItem({ snippet, hostName, groupColor, onRun, onEdit, onDu
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="group relative cursor-default overflow-hidden rounded-md border border-border/40 bg-card shadow-sm transition-all duration-150 hover:border-border/80 hover:bg-card/80">
-          {/* Accent stripe with soft glow */}
-          <div
-            className="absolute inset-y-0 left-0 w-[3px]"
-            style={{
-              background: accentColor,
-              opacity: 0.9,
-              boxShadow: `2px 0 10px color-mix(in srgb, ${accentColor} 33%, transparent)`,
-            }}
-          />
-
-          <div className="px-3 pb-2.5 pl-4 pt-2.5">
-            {/* Title + badge row */}
-            <div className="mb-1 flex items-center gap-1.5">
-              <HugeiconsIcon
-                icon={isSSH ? ServerStack01Icon : ComputerIcon}
-                size={11}
-                strokeWidth={1.5}
-                className="shrink-0 text-muted-foreground/50"
-              />
+        <div className="@container relative cursor-default rounded-md border border-border bg-card shadow-sm transition-colors hover:bg-accent/40">
+          <div className="flex flex-col gap-2 px-2.5 py-2.5">
+            {/* Title row */}
+            <div className="flex items-center gap-2">
+              <div
+                className="flex size-6 shrink-0 items-center justify-center rounded-md"
+                style={{ background: `color-mix(in srgb, ${accentColor} 16%, transparent)` }}
+                title={hostWarning}
+              >
+                <HugeiconsIcon
+                  icon={isSSH ? ServerStack01Icon : ComputerIcon}
+                  size={13}
+                  strokeWidth={1.75}
+                  style={{ color: accentColor }}
+                />
+              </div>
               <span className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug tracking-[-0.01em] text-foreground">
                 {snippet.name}
               </span>
               {isSSH && hostName && (
-                <span className="shrink-0 rounded border border-border/60 px-1.5 py-px font-mono text-[9px] leading-none text-muted-foreground">
-                  {hostName}
-                </span>
+                <Badge variant="secondary" className="hidden shrink-0 @[180px]:inline-flex">
+                  <span className="max-w-24 truncate">{hostName}</span>
+                </Badge>
               )}
               {isSSH && !hostName && (
-                <span
-                  className="shrink-0 rounded border border-warning/40 bg-warning/10 px-1.5 py-px font-mono text-[9px] leading-none text-warning"
-                  title={
-                    snippet.hostId
-                      ? "This snippet's target host no longer exists"
-                      : "Prompts for a host each time it runs"
-                  }
-                >
+                <Badge variant="warning" className="hidden shrink-0 @[180px]:inline-flex" title={hostWarning}>
                   {snippet.hostId ? "Host missing" : "Ask at runtime"}
-                </span>
+                </Badge>
               )}
             </div>
 
-            {/* Command preview */}
-            <div className="mb-2.5 overflow-hidden rounded border border-border/30 bg-background/60 px-2 py-1">
-              <p className="truncate font-mono text-[10px] leading-relaxed text-muted-foreground/70">
-                {preview}
-              </p>
+            {/* Command preview — hidden below 220px to keep the action row reachable */}
+            <div className="hidden overflow-hidden rounded border border-border/60 bg-muted/30 px-2 py-1 @[220px]:block">
+              <p className="truncate font-mono text-[10px] leading-relaxed text-muted-foreground">{preview}</p>
             </div>
 
-            {/* Footer: run + actions */}
+            {/* Footer: run + actions — always visible, never hover-gated */}
             <div className="flex items-center gap-1.5">
-              <div className="flex h-[22px] shrink-0 overflow-hidden rounded">
+              <div className="flex h-6 shrink-0">
                 <Button
                   variant="secondary"
-                  size="sm"
-                  className="h-[22px] gap-1 rounded-r-none px-2 text-[10px] font-semibold tracking-wide"
+                  size="xs"
+                  className="h-6 gap-1 rounded-r-none px-2 text-[10px] font-semibold tracking-wide"
                   title={`Runs: ${modeLabel(snippet.defaultExecMode)}`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -124,7 +121,7 @@ export function SnippetItem({ snippet, hostName, groupColor, onRun, onEdit, onDu
                   }}
                 >
                   <HugeiconsIcon icon={PlayIcon} size={10} strokeWidth={2.5} />
-                  RUN
+                  <span className="hidden @[190px]:inline">RUN</span>
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -132,7 +129,7 @@ export function SnippetItem({ snippet, hostName, groupColor, onRun, onEdit, onDu
                       type="button"
                       title="Choose run mode"
                       onClick={(e) => e.stopPropagation()}
-                      className="flex w-4 items-center justify-center border-l border-border/40 bg-secondary text-secondary-foreground outline-none transition-colors hover:bg-secondary/80 focus-visible:ring-1 focus-visible:ring-ring/50"
+                      className="hidden w-4 items-center justify-center rounded-r-md border-l border-border bg-secondary text-secondary-foreground outline-none transition-colors hover:bg-secondary/80 focus-visible:ring-1 focus-visible:ring-ring/50 @[160px]:flex"
                     >
                       <HugeiconsIcon icon={ArrowDown01Icon} size={8} strokeWidth={2.5} />
                     </button>
@@ -161,40 +158,43 @@ export function SnippetItem({ snippet, hostName, groupColor, onRun, onEdit, onDu
 
               <div className="flex-1" />
 
-              <div className="flex items-center gap-1 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
-                <button
-                  type="button"
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
                   title="Copy command"
-                  className="flex h-[22px] w-[22px] items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                  className="hidden text-muted-foreground hover:text-foreground @[190px]:flex"
                   onClick={(e) => {
                     e.stopPropagation();
                     void copyCommand();
                   }}
                 >
-                  <HugeiconsIcon icon={Copy01Icon} size={10} strokeWidth={1.5} />
-                </button>
-                <button
-                  type="button"
+                  <HugeiconsIcon icon={Copy01Icon} size={11} strokeWidth={1.5} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
                   title="Edit"
-                  className="flex h-[22px] w-[22px] items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground"
                   onClick={(e) => {
                     e.stopPropagation();
                     onEdit(snippet);
                   }}
                 >
-                  <HugeiconsIcon icon={Edit01Icon} size={10} strokeWidth={1.5} />
-                </button>
-                <button
-                  type="button"
+                  <HugeiconsIcon icon={Edit01Icon} size={11} strokeWidth={1.5} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
                   title="Delete"
-                  className="flex h-[22px] w-[22px] items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-destructive/15 hover:text-destructive"
+                  className="text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
                   onClick={(e) => {
                     e.stopPropagation();
                     onDelete(snippet);
                   }}
                 >
-                  <HugeiconsIcon icon={Delete02Icon} size={10} strokeWidth={1.5} />
-                </button>
+                  <HugeiconsIcon icon={Delete02Icon} size={11} strokeWidth={1.5} />
+                </Button>
               </div>
             </div>
           </div>
