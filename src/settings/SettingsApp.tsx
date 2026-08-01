@@ -379,6 +379,9 @@ function applySettingChange(id: PrefKey, value: unknown): void {
     case "aiShellMaxOutputKb":
       void store.setAiShellMaxOutputKb(Number(value));
       break;
+    case "aiNotifyOnHeadlessCommand":
+      void store.setAiNotifyOnHeadlessCommand(value as boolean);
+      break;
     case "scrollbackMaxSizeMb":
       void store.setScrollbackMaxSizeMb(Number(value));
       break;

@@ -49,6 +49,11 @@ export type AgentRunStatus = "idle" | "thinking" | "streaming" | "awaiting-appro
 
 export type QueuedMessage = { id: string; text: string; createdAt: number };
 
+/** A chat session's sticky terminal binding — `paneId` is the specific pane
+ *  bound at bind time (== ssh session_id for ssh panes), not just "whatever
+ *  pane is active in this tab now". */
+export type BoundTab = { tabId: number; paneId: string };
+
 export type AgentTokens = {
   inputTokens: number;
   outputTokens: number;
@@ -199,6 +204,16 @@ type StoreState = {
   dequeueMessage: (sessionId: string) => QueuedMessage | null;
   cancelQueuedMessage: (sessionId: string, id: string) => void;
   clearQueue: (sessionId: string) => void;
+
+  /** Per-session sticky terminal-tab binding for `bash_run` — see
+   *  `src/modules/ai/lib/resolveTerminalTarget.ts`. Bound once (on first
+   *  tab-bound shell tool call in a chat session) and reused for every
+   *  subsequent call in that session, regardless of which tab the user has
+   *  focused in the UI, until explicitly retargeted or the bound tab/pane
+   *  is closed. */
+  boundTabs: Record<string, BoundTab | undefined>;
+  setBoundTab: (sessionId: string, bound: BoundTab) => void;
+  clearBoundTab: (sessionId: string) => void;
 };
 
 const NOOP_LIVE: Live = {
@@ -607,6 +622,7 @@ export const useChatStore = create<StoreState>((set, get) => ({
     void useTodosStore.getState().clearSession(id);
     void clearSessionShell(id);
     get().clearQueue(id);
+    get().clearBoundTab(id);
 
     if (remaining.length === 0) {
       const fresh: SessionMeta = {
@@ -669,6 +685,20 @@ export const useChatStore = create<StoreState>((set, get) => ({
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [sessionId]: _dropped, ...rest } = s.queues;
       return { queues: rest };
+    });
+  },
+
+  boundTabs: {},
+  setBoundTab: (sessionId, bound) => {
+    if (!sessionId) return;
+    set((s) => ({ boundTabs: { ...s.boundTabs, [sessionId]: bound } }));
+  },
+  clearBoundTab: (sessionId) => {
+    if (!sessionId) return;
+    set((s) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [sessionId]: _dropped, ...rest } = s.boundTabs;
+      return { boundTabs: rest };
     });
   },
 

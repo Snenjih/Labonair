@@ -47,6 +47,7 @@ import {
   setAiAutoOpenMiniOnSend,
   setAiEnabled,
   setAiMaxAgentSteps,
+  setAiNotifyOnHeadlessCommand,
   setAiShellMaxOutputKb,
   setAiShellMaxTimeoutSecs,
   setAiTemperature,
@@ -380,6 +381,7 @@ function BehaviourContent() {
   const aiShellMaxTimeoutSecs = usePreferencesStore((s) => s.aiShellMaxTimeoutSecs);
   const aiShellMaxOutputKb = usePreferencesStore((s) => s.aiShellMaxOutputKb);
   const aiAutoOpenMiniOnSend = usePreferencesStore((s) => s.aiAutoOpenMiniOnSend);
+  const aiNotifyOnHeadlessCommand = usePreferencesStore((s) => s.aiNotifyOnHeadlessCommand);
 
   return (
     <div className="flex flex-col gap-3">
@@ -388,6 +390,15 @@ function BehaviourContent() {
         description="Automatically pop open the AI Mini window whenever you send a message."
       >
         <Switch checked={aiAutoOpenMiniOnSend} onCheckedChange={(v) => void setAiAutoOpenMiniOnSend(v)} />
+      </SettingRow>
+      <SettingRow
+        title="Notify on headless/background commands"
+        description="Show a notification whenever the agent runs a command without a visible terminal tab, or spawns a background process."
+      >
+        <Switch
+          checked={aiNotifyOnHeadlessCommand}
+          onCheckedChange={(v) => void setAiNotifyOnHeadlessCommand(v)}
+        />
       </SettingRow>
       <SettingRow
         title="Max agent steps"

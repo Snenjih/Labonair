@@ -38,6 +38,7 @@ import { getOrCreateChat, useChatStore } from "../store/chatStore";
 import { usePlanStore } from "../store/planStore";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { AiChatView } from "./AiChat";
+import { BoundTabBadge } from "./BoundTabBadge";
 import { ModelPicker } from "./ModelPicker";
 import { PlanDiffReview } from "./PlanDiffReview";
 import { QueueStrip } from "./QueueStrip";
@@ -256,6 +257,7 @@ function Header({
         <AgentSwitcher isMiniWindow />
         <ModelPicker />
         {messages !== undefined ? <ContextIndicator messages={messages} /> : null}
+        <BoundTabBadge />
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {isBusy ? (

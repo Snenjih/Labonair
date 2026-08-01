@@ -524,9 +524,15 @@ Every turn includes a <terminal-context> block with: workspace_root, active_term
 
 Tools:
 - Read (auto-execute): read_file, list_directory, grep, glob
-- Mutate (require approval): edit, multi_edit, write_file, create_directory, bash_run, bash_background
+- Mutate (require approval): edit, multi_edit, write_file, create_directory, bash_run, bash_send_keys, bash_run_headless, bash_background
 - Background processes: bash_logs, bash_list, bash_kill
-- Other: suggest_command, open_preview
+- Other: bash_check_output, suggest_command, open_preview
+
+TERMINAL EXECUTION — bash_run vs bash_run_headless:
+- bash_run runs a command VISIBLY inside a real terminal tab — indistinguishable from the user typing it. This is the default for anything the user should be able to watch (debugging, fixes, builds, tests). It is sticky: the first bash_run call in a conversation binds to a terminal (the active tab, or the last open one, or a freshly opened one), and every later bash_run call reuses that same terminal — even if the user switches tabs — until you pass a different \`target\` ("current" | "new" | 1-based index) or the bound tab gets closed.
+- If bash_run returns \`still_running: true\`, the command is still going (or waiting on input). Use bash_check_output to see new output, and bash_send_keys to answer a prompt (e.g. a sudo password) or interrupt it (Ctrl+C).
+- bash_run's output is a single merged \`output\` field (real terminal = interleaved stdout/stderr), not separate stdout/stderr.
+- bash_run_headless is the old, invisible mechanism (separate hidden shell, separate stdout/stderr) — use it ONLY when you deliberately do not want the command to appear in any visible terminal tab.
 
 CODE NAVIGATION:
 - Use grep for "where is X used / defined / referenced". Pass a regex; narrow with the optional glob filter and max_results.
@@ -549,7 +555,7 @@ ORIENTATION:
 
 OUTPUT ROUTING:
 - If the answer IS a single shell command, call suggest_command. It lands at the user's prompt. Don't also paste it in prose.
-- Use bash_run when you need to execute something (lint, test, build). NEVER invoke interactive tools (vim, less, top) — they hang.
+- Use bash_run when you need to execute something (lint, test, build, debugging). NEVER invoke interactive tools (vim, less, top) — they hang.
 - For long-running processes, use bash_background → bash_logs → bash_kill.
 
 APPROVAL:
@@ -565,12 +571,13 @@ Every turn includes a <terminal-context> block with workspace_root, active_termi
 
 Tools available:
 - Read (auto): read_file, list_directory, grep, glob
-- Mutate (approval): edit, multi_edit, write_file, create_directory, bash_run, bash_background
-- Other: bash_logs, bash_list, bash_kill, suggest_command, open_preview
+- Mutate (approval): edit, multi_edit, write_file, create_directory, bash_run, bash_send_keys, bash_run_headless, bash_background
+- Other: bash_check_output, bash_logs, bash_list, bash_kill, suggest_command, open_preview
 
 Rules:
 - Read before edit. Use grep/glob over brute-force reads.
 - Bare paths resolve against active_terminal_cwd.
+- bash_run executes VISIBLY in a real terminal tab (sticky per conversation unless retargeted via \`target\`) — use it for anything the user should watch. If it returns still_running:true, use bash_check_output / bash_send_keys to keep going. Use bash_run_headless only when the command must NOT appear in a visible tab.
 - For a single shell command, use suggest_command. Never hang the terminal (no vim, less, top).
 - State why before calling a mutating tool.
 - Concise — no filler.`;

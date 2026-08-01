@@ -201,6 +201,7 @@ export type Preferences = {
   aiAutoOpenMiniOnSend: boolean;
   aiShellMaxTimeoutSecs: number;
   aiShellMaxOutputKb: number;
+  aiNotifyOnHeadlessCommand: boolean;
 
   // --- Terminal (input / scrolling) ---
   terminalCopyOnSelect: boolean;
@@ -397,6 +398,7 @@ const KEY_AI_WARN_DESTRUCTIVE = "aiWarnDestructiveCommands";
 const KEY_AI_AUTO_OPEN_MINI_ON_SEND = "aiAutoOpenMiniOnSend";
 const KEY_AI_SHELL_MAX_TIMEOUT_SECS = "aiShellMaxTimeoutSecs";
 const KEY_AI_SHELL_MAX_OUTPUT_KB = "aiShellMaxOutputKb";
+const KEY_AI_NOTIFY_ON_HEADLESS_COMMAND = "aiNotifyOnHeadlessCommand";
 const KEY_TERMINAL_COPY_ON_SELECT = "terminalCopyOnSelect";
 const KEY_TERMINAL_RIGHT_CLICK_PASTES = "terminalRightClickPastes";
 const KEY_TERMINAL_WORD_SEPARATOR = "terminalWordSeparator";
@@ -577,6 +579,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   aiAutoOpenMiniOnSend: true,
   aiShellMaxTimeoutSecs: 300,
   aiShellMaxOutputKb: 256,
+  aiNotifyOnHeadlessCommand: true,
 
   terminalCopyOnSelect: false,
   terminalRightClickPastes: false,
@@ -923,6 +926,8 @@ export async function loadPreferences(): Promise<Preferences> {
       2048,
       Math.max(64, get<number>(KEY_AI_SHELL_MAX_OUTPUT_KB) ?? DEFAULT_PREFERENCES.aiShellMaxOutputKb),
     ),
+    aiNotifyOnHeadlessCommand:
+      get<boolean>(KEY_AI_NOTIFY_ON_HEADLESS_COMMAND) ?? DEFAULT_PREFERENCES.aiNotifyOnHeadlessCommand,
     terminalCopyOnSelect:
       get<boolean>(KEY_TERMINAL_COPY_ON_SELECT) ?? DEFAULT_PREFERENCES.terminalCopyOnSelect,
     terminalRightClickPastes:
@@ -1706,6 +1711,11 @@ export async function setAiShellMaxOutputKb(value: number): Promise<void> {
   await (await getStore()).save();
 }
 
+export async function setAiNotifyOnHeadlessCommand(value: boolean): Promise<void> {
+  await (await getStore()).set(KEY_AI_NOTIFY_ON_HEADLESS_COMMAND, value);
+  await (await getStore()).save();
+}
+
 export async function setTerminalCopyOnSelect(value: boolean): Promise<void> {
   await (await getStore()).set(KEY_TERMINAL_COPY_ON_SELECT, value);
   await (await getStore()).save();
@@ -2025,6 +2035,7 @@ export async function onPreferencesChange(cb: (key: PrefKey, value: unknown) => 
     [KEY_AI_AUTO_OPEN_MINI_ON_SEND]: "aiAutoOpenMiniOnSend",
     [KEY_AI_SHELL_MAX_TIMEOUT_SECS]: "aiShellMaxTimeoutSecs",
     [KEY_AI_SHELL_MAX_OUTPUT_KB]: "aiShellMaxOutputKb",
+    [KEY_AI_NOTIFY_ON_HEADLESS_COMMAND]: "aiNotifyOnHeadlessCommand",
     [KEY_TERMINAL_COPY_ON_SELECT]: "terminalCopyOnSelect",
     [KEY_TERMINAL_RIGHT_CLICK_PASTES]: "terminalRightClickPastes",
     [KEY_TERMINAL_WORD_SEPARATOR]: "terminalWordSeparator",

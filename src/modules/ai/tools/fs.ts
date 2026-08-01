@@ -26,7 +26,7 @@ export function buildFsTools(ctx: ToolContext) {
           try {
             const r = await invoke<{ stdout: string; stderr: string; exit_code: number }>(
               "ssh_exec_command",
-              { tabId: sshTabId, command: `cat -- ${JSON.stringify(path)}` },
+              { sessionId: sshTabId, command: `cat -- ${JSON.stringify(path)}` },
             );
             if (r.exit_code !== 0) return { error: r.stderr || `cat exited ${r.exit_code}`, path };
             const content = r.stdout.slice(0, AI_READ_CAP);
@@ -86,7 +86,7 @@ export function buildFsTools(ctx: ToolContext) {
           try {
             const r = await invoke<{ stdout: string; stderr: string; exit_code: number }>(
               "ssh_exec_command",
-              { tabId: sshTabId, command: `ls -la -- ${JSON.stringify(path)}` },
+              { sessionId: sshTabId, command: `ls -la -- ${JSON.stringify(path)}` },
             );
             if (r.exit_code !== 0) return { error: r.stderr || `ls exited ${r.exit_code}`, path };
             return { path, listing: r.stdout, remote: true };

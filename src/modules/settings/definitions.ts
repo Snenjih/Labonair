@@ -1056,6 +1056,14 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     controlType: "Switch",
   },
   {
+    id: "aiNotifyOnHeadlessCommand",
+    label: "Notify on headless/background commands",
+    description:
+      "Show a notification whenever the AI agent runs a command without a visible terminal tab (bash_run_headless) or spawns a background process (bash_background).",
+    category: "AI",
+    controlType: "Switch",
+  },
+  {
     id: "aiMaxAgentSteps",
     label: "Max agent steps",
     description:
