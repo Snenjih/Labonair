@@ -131,19 +131,6 @@ function FontListView({
         <CommandInput placeholder="Search fonts…" />
         <CommandList className="max-h-64">
           <CommandEmpty>No fonts found.</CommandEmpty>
-          <CommandGroup heading="Bundled">
-            {BUNDLED_FONTS.map((name) => (
-              <FontRow key={name} name={name} selected={name === currentName} onSelect={() => onPick(name)} />
-            ))}
-          </CommandGroup>
-          <CommandGroup heading="System">
-            {systemLoading && families.length === 0 && (
-              <div className="px-3 py-2 text-[11px] text-muted-foreground">Scanning system fonts…</div>
-            )}
-            {families.map((name) => (
-              <FontRow key={name} name={name} selected={name === currentName} onSelect={() => onPick(name)} />
-            ))}
-          </CommandGroup>
           {customFonts.length > 0 && (
             <CommandGroup heading="Custom">
               {customFonts.map((f) => (
@@ -157,6 +144,19 @@ function FontListView({
               ))}
             </CommandGroup>
           )}
+          <CommandGroup heading="Bundled">
+            {BUNDLED_FONTS.map((name) => (
+              <FontRow key={name} name={name} selected={name === currentName} onSelect={() => onPick(name)} />
+            ))}
+          </CommandGroup>
+          <CommandGroup heading="System">
+            {systemLoading && families.length === 0 && (
+              <div className="px-3 py-2 text-[11px] text-muted-foreground">Scanning system fonts…</div>
+            )}
+            {families.map((name) => (
+              <FontRow key={name} name={name} selected={name === currentName} onSelect={() => onPick(name)} />
+            ))}
+          </CommandGroup>
         </CommandList>
       </Command>
       {/* Fixed footer, deliberately outside CommandList so search/scroll
