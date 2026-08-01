@@ -470,7 +470,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   appTheme: "default",
   themeVariantOverrides: {},
-  appFontFamily: "system-ui",
+  // A full CSS stack (not a bare name — consumed as-is, like
+  // terminalFontFamily/editorFontFamily below) matching the hardcoded CSS
+  // default that was in effect while this preference was dead code — wiring
+  // it up (useTypographyEngine.ts) must not silently change existing users'
+  // UI font.
+  appFontFamily: '"Inter Variable", sans-serif',
   appFontSize: 13,
   appLineHeight: 1.5,
   backgroundImage: "",

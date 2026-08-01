@@ -6,6 +6,7 @@ import { useMenuBridge } from "@/app/hooks/useMenuBridge";
 import { useAiLiveBridge, useChatStore, useHasComposer } from "@/modules/ai";
 import { usePaletteCallbacks } from "@/modules/command-palette";
 import { useExplorerTarget } from "@/modules/explorer/lib/useExplorerTarget";
+import { useDeferredSystemFontHydration } from "@/modules/fonts";
 import { setScrollbackLive, useSessionLifecycle } from "@/modules/session";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useShortcutHandlers } from "@/modules/shortcuts";
@@ -80,6 +81,8 @@ export default function App() {
     const t = setTimeout(() => void invoke("show_main_window"), 8_000);
     return () => clearTimeout(t);
   }, []);
+
+  useDeferredSystemFontHydration(prefsHydrated, sessionRestored);
 
   // Wire terminal refs into the scrollback live context
   useEffect(() => {

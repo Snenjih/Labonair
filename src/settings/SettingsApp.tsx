@@ -22,7 +22,9 @@ import { WindowControls } from "@/components/WindowControls";
 import { getStoragePaths } from "@/lib/paths";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { useThemeEngine } from "@/lib/useThemeEngine";
+import { useTypographyEngine } from "@/lib/useTypographyEngine";
 import { cn } from "@/lib/utils";
+import { useCustomFontsStore, useSystemFontsStore } from "@/modules/fonts";
 import { BackgroundImageLayer } from "@/modules/settings/BackgroundImageLayer";
 import { SETTING_DEFINITIONS, type SettingCategory } from "@/modules/settings/definitions";
 import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
@@ -94,6 +96,16 @@ export function SettingsApp() {
     void initKeybinds();
   }, [initKeybinds]);
   useThemeEngine();
+  useTypographyEngine();
+
+  // System/custom fonts: hydrated immediately (not idle-deferred) here — the
+  // settings window is only ever created lazily, well after main-window
+  // startup, so it's inherently "late"; the Rust-side OnceLock cache means
+  // this resolves instantly if the main window already scanned.
+  useEffect(() => {
+    void useSystemFontsStore.getState().hydrate();
+    void useCustomFontsStore.getState().hydrate();
+  }, []);
 
   useEffect(() => {
     const apply = (detail: string) => {

@@ -2,6 +2,7 @@ pub mod credentials;
 pub mod errors;
 #[cfg(target_os = "macos")]
 pub mod dock_menu;
+pub mod fonts;
 pub mod fs;
 pub mod git;
 pub mod hosts;

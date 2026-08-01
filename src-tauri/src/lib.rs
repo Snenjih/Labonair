@@ -15,6 +15,7 @@ use modules::{
     snippets::exec::{snippet_run_local, snippet_run_ssh, snippet_run_cancel, SnippetRunState},
     themes::{themes_get_all, theme_get_default, theme_import, theme_export, theme_delete, theme_fetch_index, theme_download, theme_create, themes_get_dir},
     backgrounds::{backgrounds_list, background_import, background_delete, background_read_data_url},
+    fonts::{fonts_list_system, fonts_list_custom, font_import, font_delete, font_read_data_url},
 };
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
@@ -641,6 +642,11 @@ pub fn run() {
             background_import,
             background_delete,
             background_read_data_url,
+            fonts_list_system,
+            fonts_list_custom,
+            font_import,
+            font_delete,
+            font_read_data_url,
             modules::scrollback::scrollback_save,
             modules::scrollback::scrollback_load,
             modules::scrollback::scrollback_cleanup,

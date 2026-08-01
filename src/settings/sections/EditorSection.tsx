@@ -1,31 +1,31 @@
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { FontPicker } from "@/modules/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  EDITOR_THEME_LABELS,
+  EDITOR_THEMES,
+  type EditorThemeId,
+  setEditorAutocompleteDebounceMs,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
   setEditorBracketMatching,
+  setEditorFontFamily,
   setEditorFormatOnSave,
   setEditorIndentationGuides,
+  setEditorIndentWithTabs,
+  setEditorInsertFinalNewline,
+  setEditorLineHeight,
   setEditorLineNumbers,
+  setEditorMaxFileSizeMb,
   setEditorShowCursorPosition,
   setEditorShowOutline,
   setEditorShowSelectionStats,
   setEditorTabSize,
-  setEditorWordWrap,
   setEditorTheme,
-  setEditorFontFamily,
-  setEditorLineHeight,
-  setEditorIndentWithTabs,
   setEditorTrimTrailingWhitespace,
-  setEditorInsertFinalNewline,
-  setEditorAutocompleteDebounceMs,
-  setEditorMaxFileSizeMb,
+  setEditorWordWrap,
   setVimMode,
-  EDITOR_THEMES,
-  EDITOR_THEME_LABELS,
-  type EditorThemeId,
 } from "@/modules/settings/store";
 import { NumInput } from "../components/NumInput";
 import { SectionHeader } from "../components/SectionHeader";
@@ -86,10 +86,11 @@ export function EditorSection() {
         <Label>Font</Label>
         <div className="flex flex-col gap-2">
           <SettingRow title="Font family" description="Monospace font used in the code editor.">
-            <Input
+            <FontPicker
               value={editorFontFamily}
-              onChange={(e) => void setEditorFontFamily(e.target.value)}
-              className="h-7 w-52 text-[11.5px]"
+              onChange={(v) => void setEditorFontFamily(v)}
+              context="monospace"
+              className="w-52"
             />
           </SettingRow>
           <SettingRow

@@ -23,10 +23,10 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { FontPicker } from "@/modules/fonts";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
@@ -523,10 +523,11 @@ export function AppearanceSection() {
         <Label>Typography</Label>
         <div className="flex flex-col gap-2">
           <SettingRow title="UI font family" description="The font used for all application UI text.">
-            <Input
+            <FontPicker
               value={appFontFamily}
-              onChange={(e) => void setAppFontFamily(e.target.value)}
-              className="h-7 w-44 text-[11.5px]"
+              onChange={(v) => void setAppFontFamily(v)}
+              context="ui"
+              className="w-44"
             />
           </SettingRow>
           <SettingRow title="UI font size" description="Base font size for the interface (in px).">

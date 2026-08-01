@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { FontPicker } from "@/modules/fonts";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -127,10 +128,11 @@ export function TerminalSection() {
         <Label>Font</Label>
         <div className="flex flex-col gap-2">
           <SettingRow title="Font family" description="Monospace font for the terminal emulator.">
-            <Input
+            <FontPicker
               value={terminalFontFamily}
-              onChange={(e) => void setTerminalFontFamily(e.target.value)}
-              className="h-7 w-52 text-[11.5px]"
+              onChange={(v) => void setTerminalFontFamily(v)}
+              context="monospace"
+              className="w-52"
             />
           </SettingRow>
           <SettingRow title="Font size" description="Font size used in the terminal (in px).">

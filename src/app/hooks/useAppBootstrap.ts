@@ -5,11 +5,13 @@ import { runStoreMigration } from "@/lib/storeMigration";
 import { useLayoutEngine } from "@/lib/useLayoutEngine";
 import { useTerminalCursorBlinkInterval } from "@/lib/useTerminalCursorBlinkInterval";
 import { useThemeEngine } from "@/lib/useThemeEngine";
+import { useTypographyEngine } from "@/lib/useTypographyEngine";
 import { getAllKeys, type ProviderKeys, useChatStore } from "@/modules/ai";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useDirectivesStore } from "@/modules/ai/store/directivesStore";
 import { useProvidersStore } from "@/modules/ai/store/providersStore";
 import { usePathBookmarksStore } from "@/modules/bookmarks/store/pathBookmarksStore";
+import { useCustomFontsStore } from "@/modules/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
 import { bootstrapSftpConnectionListener } from "@/modules/sftp/store/sftpStore";
@@ -83,6 +85,9 @@ export function useAppBootstrap(): AppBootstrapReturn {
   // Layout engine — applies --radius and density class to <html>
   useLayoutEngine();
 
+  // Typography engine — applies --app-font-family/-size/-line-height to <html>
+  useTypographyEngine();
+
   // Terminal cursor blink (owns its own effects internally)
   useTerminalCursorBlinkInterval();
 
@@ -112,6 +117,14 @@ export function useAppBootstrap(): AppBootstrapReturn {
   useEffect(() => {
     void hydrateSessions();
   }, [hydrateSessions]);
+
+  // Custom fonts: eager, not idle-deferred — a saved font preference may
+  // already reference one, so it must be registered (FontFace) before
+  // terminal/editor/UI text can render it correctly. Cheap manifest read,
+  // not a filesystem scan, so no startup-latency concern.
+  useEffect(() => {
+    void useCustomFontsStore.getState().hydrate();
+  }, []);
 
   // Providers store: init once, then reload whenever the settings window changes providers
   useEffect(() => {
