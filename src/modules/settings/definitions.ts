@@ -140,7 +140,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     id: "newTabInheritsCwd",
     label: "New tab inherits current directory",
     description:
-      "Open new terminal tabs in the working directory of the active tab instead of the home directory.",
+      "Open new terminal tabs in the working directory of the active tab instead of the home directory. Enabled by default — takes priority over 'Default working directory' while on.",
     category: "Terminal",
     controlType: "Switch",
   },

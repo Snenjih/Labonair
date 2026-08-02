@@ -110,6 +110,10 @@ export function TerminalSection() {
         <SettingRow
           title="New tab inherits current directory"
           description="Open new terminal tabs in the working directory of the active tab instead of the home directory."
+          hint={{
+            text: "Enabled by default — while on, this takes priority over 'Default working directory' above, which is ignored.",
+            variant: "info",
+          }}
         >
           <Switch checked={newTabInheritsCwd} onCheckedChange={(v) => void setNewTabInheritsCwd(v)} />
         </SettingRow>
