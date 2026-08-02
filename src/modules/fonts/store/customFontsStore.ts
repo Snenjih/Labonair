@@ -50,13 +50,14 @@ export const useCustomFontsStore = create<CustomFontsState>((set, get) => ({
       const prevByFilename = new Map(prev.map((f) => [f.filename, f]));
       const freshByFilename = new Map(fresh.map((f) => [f.filename, f]));
 
-      for (const f of fresh) {
-        if (!prevByFilename.has(f.filename)) {
-          await registerCustomFontFace(f).catch((e) =>
+      const added = fresh.filter((f) => !prevByFilename.has(f.filename));
+      await Promise.all(
+        added.map((f) =>
+          registerCustomFontFace(f).catch((e) =>
             handleApiError(e, `Failed to load custom font "${f.label}"`, "Fonts"),
-          );
-        }
-      }
+          ),
+        ),
+      );
       for (const f of prev) {
         if (!freshByFilename.has(f.filename)) {
           unregisterCustomFontFace(f.filename);

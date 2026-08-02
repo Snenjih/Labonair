@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { handleApiError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
@@ -7,7 +7,13 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useTransferStore } from "@/modules/sftp/store/transferStore";
 import type { EditorTab } from "@/modules/tabs";
 import { useTabsStore } from "@/modules/tabs/store/tabsStore";
-import { EditorPane, type EditorPaneHandle } from "./EditorPane";
+import type { EditorPaneHandle } from "./EditorPane";
+
+// CodeMirror plus the editor's own language/formatter/autocomplete modules
+// are only needed once a file is actually opened — lazy-load the pane so
+// none of that ships in the app's initial bundle for users who only use
+// terminals in a given session.
+const EditorPane = lazy(() => import("./EditorPane").then((m) => ({ default: m.EditorPane })));
 
 type Props = {
   onDirtyChange: (id: number, dirty: boolean) => void;
@@ -183,20 +189,28 @@ export function EditorStack({ onDirtyChange, registerHandle, onCloseTab, onSaveA
             className={cn("absolute inset-0", !visible && "invisible pointer-events-none")}
             aria-hidden={!visible}
           >
-            <EditorPane
-              ref={getRefCallback(t.id)}
-              path={t.path}
-              isUntitled={t.isUntitled}
-              isActive={visible}
-              languageOverride={t.languageOverride}
-              onDirtyChange={getDirtyCallback(t.id)}
-              onClose={getCloseCallback(t.id)}
-              onSaved={getSavedCallback(t)}
-              onSaveAs={getSaveAsCallback(t)}
-              onLanguageChange={(lang) =>
-                useTabsStore.getState().updateTab(t.id, { languageOverride: lang ?? null })
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                  Loading…
+                </div>
               }
-            />
+            >
+              <EditorPane
+                ref={getRefCallback(t.id)}
+                path={t.path}
+                isUntitled={t.isUntitled}
+                isActive={visible}
+                languageOverride={t.languageOverride}
+                onDirtyChange={getDirtyCallback(t.id)}
+                onClose={getCloseCallback(t.id)}
+                onSaved={getSavedCallback(t)}
+                onSaveAs={getSaveAsCallback(t)}
+                onLanguageChange={(lang) =>
+                  useTabsStore.getState().updateTab(t.id, { languageOverride: lang ?? null })
+                }
+              />
+            </Suspense>
           </div>
         );
       })}
