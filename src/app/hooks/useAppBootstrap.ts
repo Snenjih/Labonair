@@ -1,12 +1,12 @@
 import { homeDir } from "@tauri-apps/api/path";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { handleApiError } from "@/lib/errors";
 import { runStoreMigration } from "@/lib/storeMigration";
 import { useLayoutEngine } from "@/lib/useLayoutEngine";
 import { useTerminalCursorBlinkInterval } from "@/lib/useTerminalCursorBlinkInterval";
 import { useThemeEngine } from "@/lib/useThemeEngine";
 import { useTypographyEngine } from "@/lib/useTypographyEngine";
-import { getAllKeys, type ProviderKeys, useChatStore } from "@/modules/ai";
+import { getAllKeys, hasPersistedModelSelection, type ProviderKeys, useChatStore } from "@/modules/ai";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useDirectivesStore } from "@/modules/ai/store/directivesStore";
 import { useProvidersStore } from "@/modules/ai/store/providersStore";
@@ -91,9 +91,20 @@ export function useAppBootstrap(): AppBootstrapReturn {
   // Terminal cursor blink (owns its own effects internally)
   useTerminalCursorBlinkInterval();
 
-  // Sync default model from preferences once hydrated
+  // Sync default model from preferences once hydrated. This used to fire
+  // unconditionally on every startup, clobbering whatever model the user had
+  // actively picked via the ModelPicker (persisted separately) with the
+  // "Default model" Settings preference — so the active model silently reset
+  // on every relaunch. Now it only seeds `selectedModelId` from the
+  // preference when there's no prior explicit pick (fresh install); live
+  // edits to the Settings preference while the app is running still sync.
+  const defaultModelSeeded = useRef(false);
   useEffect(() => {
     if (!prefsHydrated) return;
+    if (!defaultModelSeeded.current) {
+      defaultModelSeeded.current = true;
+      if (hasPersistedModelSelection()) return;
+    }
     setSelectedModelId(prefDefaultModel);
   }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
 

@@ -73,6 +73,8 @@ export type AgentMeta = {
   compactionNotice: { droppedCount: number; at: number } | null;
 };
 
+const SELECTED_MODEL_KEY = "labonair-selected-model";
+
 const ZERO_TOKENS: AgentTokens = {
   inputTokens: 0,
   outputTokens: 0,
@@ -438,7 +440,7 @@ export const useChatStore = create<StoreState>((set, get) => ({
 
   selectedModelId: (() => {
     try {
-      return (localStorage.getItem("labonair-selected-model") as ModelId | null) ?? DEFAULT_MODEL_ID;
+      return (localStorage.getItem(SELECTED_MODEL_KEY) as ModelId | null) ?? DEFAULT_MODEL_ID;
     } catch {
       return DEFAULT_MODEL_ID;
     }
@@ -447,7 +449,7 @@ export const useChatStore = create<StoreState>((set, get) => ({
     const recents = [id, ...get().recentModelIds.filter((r) => r !== id)].slice(0, 10);
     set({ selectedModelId: id, recentModelIds: recents });
     try {
-      localStorage.setItem("labonair-selected-model", id);
+      localStorage.setItem(SELECTED_MODEL_KEY, id);
     } catch {
       /* ignore */
     }
@@ -732,6 +734,18 @@ export const useChatStore = create<StoreState>((set, get) => ({
 
 export function getAgentMeta(): AgentMeta {
   return useChatStore.getState().agentMeta;
+}
+
+/** Whether the user has ever picked a model via the ModelPicker. Used at
+ *  startup to decide whether the "Default model" Settings preference should
+ *  seed `selectedModelId` (fresh install) or be left alone (an explicit pick
+ *  already exists and must survive app restarts). */
+export function hasPersistedModelSelection(): boolean {
+  try {
+    return localStorage.getItem(SELECTED_MODEL_KEY) !== null;
+  } catch {
+    return false;
+  }
 }
 
 export function getActiveProviderKey(): string | null {
