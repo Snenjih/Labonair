@@ -116,6 +116,11 @@ function useSidebarSlot({
 }: SlotOptions): Slot {
   const ref = useRef<PanelImperativeHandle | null>(null);
   const [activePanel, setActivePanel] = useState<SidebarPanel>(initialPanel);
+  // Mirrors `activePanel` for callbacks/effects that need the latest value
+  // without depending on it (see the `tabsLocation` effect and `onResize`
+  // below) — keeps their own identity/dep-array stable across activePanel changes.
+  const activePanelRef = useRef(activePanel);
+  activePanelRef.current = activePanel;
   const lastActivePanelRef = useRef<SidebarPanel>(initialPanel ?? "explorer");
   const restoredRef = useRef(false);
   const widthPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,12 +174,9 @@ function useSidebarSlot({
 
   // When tabs location changes away from sidebar, switch this slot away from "tabs".
   useEffect(() => {
-    if (tabsLocation === "titlebar") {
-      setActivePanel((prev) => {
-        if (prev !== "tabs") return prev;
-        lastActivePanelRef.current = "explorer";
-        return "explorer";
-      });
+    if (tabsLocation === "titlebar" && activePanelRef.current === "tabs") {
+      lastActivePanelRef.current = "explorer";
+      setActivePanel("explorer");
     }
   }, [tabsLocation]);
 
@@ -241,11 +243,9 @@ function useSidebarSlot({
     if (!isCollapsed(size.asPercentage)) {
       lastOpenWidthPxRef.current = size.inPixels;
     }
-    setActivePanel((current) => {
-      const { nextPanel } = resolveResize(size.asPercentage, current, lastActivePanelRef.current);
-      if (nextPanel) lastActivePanelRef.current = nextPanel;
-      return nextPanel;
-    });
+    const { nextPanel } = resolveResize(size.asPercentage, activePanelRef.current, lastActivePanelRef.current);
+    if (nextPanel) lastActivePanelRef.current = nextPanel;
+    setActivePanel(nextPanel);
   }, []);
 
   const notifyLayoutSettled = useCallback(() => {

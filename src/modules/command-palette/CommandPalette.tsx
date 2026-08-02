@@ -109,15 +109,19 @@ export function CommandPalette({
   }, [close, currentPage]);
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     if (!prevOpenRef.current && isOpen) {
       setPages([initialPage || "root"]);
       setSearch("");
-      setTimeout(() => inputRef.current?.focus(), 0);
+      timeoutId = setTimeout(() => inputRef.current?.focus(), 0);
     }
     if (prevOpenRef.current && !isOpen) {
       restoreFocus();
     }
     prevOpenRef.current = isOpen;
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [isOpen, restoreFocus]);
 
   const handleKeyDown = useCallback(

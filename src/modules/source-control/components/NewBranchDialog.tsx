@@ -52,15 +52,15 @@ export function NewBranchDialog({
 
   // Reset state when dialog opens
   useEffect(() => {
-    if (open) {
-      setName("");
-      setFrom(fromRef ?? resolveDefaultFromRef(currentBranch));
-      setCheckout(true);
-      setIsLoading(false);
-      setError(null);
-      setNameError(false);
-      setTimeout(() => nameInputRef.current?.focus(), 50);
-    }
+    if (!open) return;
+    setName("");
+    setFrom(fromRef ?? resolveDefaultFromRef(currentBranch));
+    setCheckout(true);
+    setIsLoading(false);
+    setError(null);
+    setNameError(false);
+    const id = setTimeout(() => nameInputRef.current?.focus(), 50);
+    return () => clearTimeout(id);
   }, [open, currentBranch, fromRef]);
 
   async function handleCreate() {

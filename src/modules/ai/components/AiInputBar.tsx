@@ -205,10 +205,8 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
     const newDirective = detectDirectiveTrigger(c.value, caret);
     const newFile = newDirective ? null : detectFileTrigger(c.value, caret);
     setTrigger(newDirective);
-    setFileTrigger((prev) => {
-      if (prev?.query !== newFile?.query) setFileActiveIndex(0);
-      return newFile;
-    });
+    if (fileTrigger?.query !== newFile?.query) setFileActiveIndex(0);
+    setFileTrigger(newFile);
   };
 
   useEffect(() => {
@@ -245,6 +243,7 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
     };
   }, [fileTrigger?.query, explorerRoot]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fileTrigger must stay out of these deps — updateTrigger both reads and (via setFileTrigger) writes it, so listing it here would re-run this effect on every trigger change and loop forever (a fresh newFile object never === the previous one)
   useEffect(updateTrigger, [c.value, c.textareaRef]);
 
   const filteredItems = useMemo<PickerItem[]>(() => {

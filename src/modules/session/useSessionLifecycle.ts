@@ -39,6 +39,7 @@ export function useSessionLifecycle(): SessionLifecycleReturn {
       return;
     }
     let alive = true;
+    let cleanupTimeoutId: ReturnType<typeof setTimeout> | undefined;
     const actions = useTabsStore.getState();
     void restoreIfEnabled({
       setActiveId: actions.setActiveId,
@@ -57,13 +58,14 @@ export function useSessionLifecycle(): SessionLifecycleReturn {
       if (!result || result.restoredCount === 0) actions.openDefaultTab();
       setSessionRestored(true);
       if (sessionRestore) {
-        setTimeout(() => {
+        cleanupTimeoutId = setTimeout(() => {
           void cleanupScrollbacks(collectAllSessionIds());
         }, 5000);
       }
     });
     return () => {
       alive = false;
+      if (cleanupTimeoutId) clearTimeout(cleanupTimeoutId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefsHydrated, sessionRestore]);
