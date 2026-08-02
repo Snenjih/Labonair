@@ -316,7 +316,7 @@ type ExpandedModel = ModelInfo & {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function ModelPicker() {
+export function ModelPicker({ grouped }: { grouped?: boolean } = {}) {
   const selected = useChatStore((s) => s.selectedModelId);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
@@ -529,7 +529,9 @@ export function ModelPicker() {
           variant="ghost"
           size="sm"
           className={cn(
-            "h-5.5 gap-1 rounded-md px-1.5 my-1 text-xs hover:bg-accent hover:text-foreground",
+            grouped
+              ? "h-7 gap-1 rounded-none border-0 px-2 text-xs hover:bg-accent hover:text-foreground"
+              : "h-5.5 gap-1 rounded-md px-1.5 my-1 text-xs hover:bg-accent hover:text-foreground",
             hasKey ? "text-muted-foreground" : "text-warning",
           )}
           title={hasKey ? `Model: ${triggerLabel}` : `${triggerLabel} — no key configured`}

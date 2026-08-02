@@ -254,16 +254,19 @@ function Header({
   return (
     <div className="relative flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
       <div className="flex min-w-0 items-center gap-1.5">
-        <AgentSwitcher isMiniWindow />
-        <ModelPicker />
-        {messages !== undefined ? <ContextIndicator messages={messages} /> : null}
+        <div className="flex h-7 shrink-0 items-center divide-x divide-border/50 overflow-hidden rounded-md border border-border/60 bg-card">
+          <AgentSwitcher isMiniWindow />
+          <ModelPicker grouped />
+          {messages !== undefined ? <ContextIndicator messages={messages} /> : null}
+        </div>
+        {/* Bound tab stays right next to the identity pill — binding happens
+            immediately at session start, so it needs to stay one glance away. */}
         <BoundTabBadge />
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1.5">
         {isBusy ? (
-          <span className="flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
-            <Spinner className="size-2.5" />
-            <span className="max-w-32 truncate">{step ?? "Thinking…"}</span>
+          <span title={step ?? "Thinking…"}>
+            <Spinner className="size-3 text-muted-foreground" />
           </span>
         ) : null}
         <SessionPicker />
@@ -318,7 +321,7 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
 
   return (
     <Context usedTokens={used} maxTokens={max} modelId={modelId}>
-      <ContextTrigger className="h-6 gap-1 px-0 text-[10.5px]" />
+      <ContextTrigger className="h-7 gap-1 rounded-none border-0 px-2 text-[10.5px]" />
       <ContextContent className="w-64 text-[11px]">
         <ContextContentHeader />
         <ContextContentBody>

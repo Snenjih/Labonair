@@ -51,16 +51,17 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
       <DropdownMenuTrigger asChild>
         <Button
           size="xs"
-          variant="outline"
+          variant={isMiniWindow ? "ghost" : "outline"}
           className={cn(
-            !isMiniWindow
-              ? "flex h-6 items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
-              : "text-xs mr-1",
+            "gap-1 text-[10.5px]",
+            isMiniWindow
+              ? "h-7 rounded-none border-0 bg-transparent px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+              : "flex h-6 items-center rounded-md border border-border/60 bg-card px-1.5 text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground",
           )}
           title={`Agent: ${active.name}`}
         >
           <HugeiconsIcon icon={ActiveIcon} size={12} strokeWidth={1.75} />
-          <span className="max-w-[7rem] truncate">{active.name}</span>
+          <span className={cn("truncate", isMiniWindow ? "max-w-[5.5rem]" : "max-w-[7rem]")}>{active.name}</span>
           <HugeiconsIcon icon={ArrowDown01Icon} size={10} strokeWidth={2} className="opacity-70" />
         </Button>
       </DropdownMenuTrigger>
