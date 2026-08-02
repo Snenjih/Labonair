@@ -83,7 +83,7 @@ pub async fn fonts_list_custom() -> Result<Vec<CustomFontInfo>, String> {
         .into_iter()
         .filter(|f| dir.join(&f.filename).exists())
         .collect();
-    entries.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    entries.sort_by_key(|a| a.label.to_lowercase());
     Ok(entries)
 }
 

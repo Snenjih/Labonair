@@ -268,7 +268,17 @@ function useSidebarSlot({
     }, WIDTH_PERSIST_DEBOUNCE_MS);
   }, [persistWidth]);
 
-  return { ref, activePanel, width: initialWidth, onResize, toggle, move, collapse, expand, notifyLayoutSettled };
+  return {
+    ref,
+    activePanel,
+    width: initialWidth,
+    onResize,
+    toggle,
+    move,
+    collapse,
+    expand,
+    notifyLayoutSettled,
+  };
 }
 
 export function useSidebar(): SidebarReturn {

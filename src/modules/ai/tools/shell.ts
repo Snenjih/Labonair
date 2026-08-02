@@ -23,7 +23,8 @@ function notifyHeadlessCommand(action: "bash_run_headless" | "bash_background", 
   if (!usePreferencesStore.getState().aiNotifyOnHeadlessCommand) return;
   useNotificationStore.getState().addNotification({
     type: "info",
-    title: action === "bash_background" ? "Agent started a background process" : "Agent ran a headless command",
+    title:
+      action === "bash_background" ? "Agent started a background process" : "Agent ran a headless command",
     message: truncate(command, 120),
     source: "AI",
   });
@@ -90,7 +91,7 @@ export function buildShellTools(ctx: ToolContext) {
       description:
         "Run a shell command visibly inside a real terminal tab — indistinguishable from the user typing it themselves. This is the default way to execute anything the user should be able to watch (debugging, builds, tests, fixes). " +
         "Default (no `target`): uses this chat's bound terminal — picked once (the active tab, or the last open one, or a freshly opened one if none exists) and then reused for every later `bash_run` call in this conversation, even if the user switches which tab is focused, until you pass a different `target` or the bound tab gets closed. " +
-        "`target`: \"current\" = rebind to whichever terminal tab is focused right now, \"new\" = open a fresh local terminal tab and bind to it, or a 1-based terminal-tab index to rebind to a specific open tab. " +
+        '`target`: "current" = rebind to whichever terminal tab is focused right now, "new" = open a fresh local terminal tab and bind to it, or a 1-based terminal-tab index to rebind to a specific open tab. ' +
         "Returns merged `output` (stdout+stderr interleaved, since this runs in a real terminal, not a separate pipe) and `exit_code`. If the command doesn't finish within `timeout_secs`, returns `still_running: true` with the output so far — use `bash_check_output` to keep watching it, or `bash_send_keys` to answer a prompt (e.g. sudo password) or send Ctrl+C. " +
         "NEVER invoke interactive tools (vim, less, top) — they will hang. Asks for user approval.",
       inputSchema: z.object({
@@ -149,7 +150,12 @@ export function buildShellTools(ctx: ToolContext) {
             localPtyId: resolved.localPtyId,
             waitMs: wait_ms,
           });
-          return { output: r.output, exit_code: r.exit_code, still_running: r.still_running, tab: resolved.label };
+          return {
+            output: r.output,
+            exit_code: r.exit_code,
+            still_running: r.still_running,
+            tab: resolved.label,
+          };
         } catch (e) {
           return { error: String(e) };
         }

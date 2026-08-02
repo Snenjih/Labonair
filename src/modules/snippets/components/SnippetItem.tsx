@@ -104,7 +104,9 @@ export function SnippetItem({ snippet, hostName, groupColor, onRun, onEdit, onDu
 
             {/* Command preview — hidden below 220px to keep the action row reachable */}
             <div className="hidden overflow-hidden rounded border border-border/60 bg-muted/30 px-2 py-1 @[220px]:block">
-              <p className="truncate font-mono text-[10px] leading-relaxed text-muted-foreground">{preview}</p>
+              <p className="truncate font-mono text-[10px] leading-relaxed text-muted-foreground">
+                {preview}
+              </p>
             </div>
 
             {/* Footer: run + actions — always visible, never hover-gated */}

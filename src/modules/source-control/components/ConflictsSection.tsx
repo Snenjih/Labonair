@@ -60,7 +60,12 @@ export function ConflictsSection({ files, onRefresh }: ConflictsSectionProps) {
         ) : (
           <div className="px-1 pb-0.5">
             {sortedFiles.map((file) => (
-              <FileChangeItem key={`conflict:${file.path}`} file={file} section="unstaged" onRefresh={onRefresh} />
+              <FileChangeItem
+                key={`conflict:${file.path}`}
+                file={file}
+                section="unstaged"
+                onRefresh={onRefresh}
+              />
             ))}
           </div>
         ))}

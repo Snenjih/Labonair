@@ -64,7 +64,9 @@ async function resolvePane(
   let localPtyId = getLocalPtyId(paneId);
   if (localPtyId === undefined) {
     if (!opts.pollForPty) {
-      return { error: `terminal "${labelFor(tab)}"'s shell hasn't finished starting yet — try again shortly` };
+      return {
+        error: `terminal "${labelFor(tab)}"'s shell hasn't finished starting yet — try again shortly`,
+      };
     }
     const polled = await waitForLocalPtyId(paneId);
     if (typeof polled !== "number") return polled;
