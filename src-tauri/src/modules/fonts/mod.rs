@@ -45,9 +45,9 @@ fn sniff_font_signature(bytes: &[u8], ext: &str) -> bool {
     let sig = &bytes[0..4];
     match ext.to_lowercase().as_str() {
         "ttf" => matches!(sig, [0x00, 0x01, 0x00, 0x00] | [b't', b'r', b'u', b'e'] | [b't', b'y', b'p', b'1']),
-        "otf" => sig == [b'O', b'T', b'T', b'O'],
-        "woff" => sig == [b'w', b'O', b'F', b'F'],
-        "woff2" => sig == [b'w', b'O', b'F', b'2'],
+        "otf" => sig == *b"OTTO",
+        "woff" => sig == *b"wOFF",
+        "woff2" => sig == *b"wOF2",
         _ => false,
     }
 }
