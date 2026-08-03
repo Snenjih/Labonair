@@ -61,7 +61,9 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
           title={`Agent: ${active.name}`}
         >
           <HugeiconsIcon icon={ActiveIcon} size={12} strokeWidth={1.75} />
-          <span className={cn("truncate", isMiniWindow ? "max-w-[5.5rem]" : "max-w-[7rem]")}>{active.name}</span>
+          <span className={cn("truncate", isMiniWindow ? "max-w-[5.5rem]" : "max-w-[7rem]")}>
+            {active.name}
+          </span>
           <HugeiconsIcon icon={ArrowDown01Icon} size={10} strokeWidth={2} className="opacity-70" />
         </Button>
       </DropdownMenuTrigger>

@@ -243,7 +243,11 @@ function useSidebarSlot({
     if (!isCollapsed(size.asPercentage)) {
       lastOpenWidthPxRef.current = size.inPixels;
     }
-    const { nextPanel } = resolveResize(size.asPercentage, activePanelRef.current, lastActivePanelRef.current);
+    const { nextPanel } = resolveResize(
+      size.asPercentage,
+      activePanelRef.current,
+      lastActivePanelRef.current,
+    );
     if (nextPanel) lastActivePanelRef.current = nextPanel;
     setActivePanel(nextPanel);
   }, []);
