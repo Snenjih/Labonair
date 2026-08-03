@@ -22,7 +22,9 @@ import { WindowControls } from "@/components/WindowControls";
 import { getStoragePaths } from "@/lib/paths";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { useThemeEngine } from "@/lib/useThemeEngine";
+import { useTypographyEngine } from "@/lib/useTypographyEngine";
 import { cn } from "@/lib/utils";
+import { useCustomFontsStore, useSystemFontsStore } from "@/modules/fonts";
 import { BackgroundImageLayer } from "@/modules/settings/BackgroundImageLayer";
 import { SETTING_DEFINITIONS, type SettingCategory } from "@/modules/settings/definitions";
 import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
@@ -37,7 +39,6 @@ import {
   applyMcpPort,
 } from "@/modules/tabs";
 import { SettingRow } from "./components/SettingRow";
-import { AgentsSection } from "./sections/AgentsSection";
 import { AiSection } from "./sections/AiSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
 import { ConnectionsSection } from "./sections/ConnectionsSection";
@@ -45,7 +46,6 @@ import { EditorSection } from "./sections/EditorSection";
 import { FileManagerSection } from "./sections/FileManagerSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { KeyboardShortcutsSection } from "./sections/KeyboardShortcutsSection";
-import { ModelsSection } from "./sections/ModelsSection";
 import { TerminalSection } from "./sections/TerminalSection";
 import { ThemeMarketplace } from "./sections/ThemeMarketplace";
 import { WorkspaceSection } from "./sections/WorkspaceSection";
@@ -96,6 +96,16 @@ export function SettingsApp() {
     void initKeybinds();
   }, [initKeybinds]);
   useThemeEngine();
+  useTypographyEngine();
+
+  // System/custom fonts: hydrated immediately (not idle-deferred) here — the
+  // settings window is only ever created lazily, well after main-window
+  // startup, so it's inherently "late"; the Rust-side OnceLock cache means
+  // this resolves instantly if the main window already scanned.
+  useEffect(() => {
+    void useSystemFontsStore.getState().hydrate();
+    void useCustomFontsStore.getState().hydrate();
+  }, []);
 
   useEffect(() => {
     const apply = (detail: string) => {
@@ -223,8 +233,6 @@ export function SettingsApp() {
                 {active === "workspace" && <WorkspaceSection />}
                 {active === "shortcuts" && <KeyboardShortcutsSection />}
                 {active === "ai" && <AiSection />}
-                {active === "models" && <ModelsSection />}
-                {active === "agents" && <AgentsSection />}
               </>
             )}
           </div>
@@ -370,6 +378,9 @@ function applySettingChange(id: PrefKey, value: unknown): void {
       break;
     case "aiShellMaxOutputKb":
       void store.setAiShellMaxOutputKb(Number(value));
+      break;
+    case "aiNotifyOnHeadlessCommand":
+      void store.setAiNotifyOnHeadlessCommand(value as boolean);
       break;
     case "scrollbackMaxSizeMb":
       void store.setScrollbackMaxSizeMb(Number(value));

@@ -1,5 +1,5 @@
-import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useSftpStore } from "./sftpStore";
@@ -30,6 +30,13 @@ interface TransferState {
   jobs: TransferJob[];
   /** Timestamped per-job log, kept only as long as the job itself is shown. */
   stepsByJob: Record<string, TransferStep[]>;
+  /** "Overwrite All"/"Skip All" picked from the `ConflictModal` — keyed by
+   *  session id, applied to every future conflict in that same SFTP
+   *  session (not just the already-visible batch) until the session
+   *  reconnects. See `bootstrapTransferListeners`'s `file_conflict`
+   *  handler, which checks this before ever pausing a job for the modal. */
+  stickyConflictResolution: Record<string, "overwrite" | "skip">;
+  setStickyConflictResolution: (sessionId: string, resolution: "overwrite" | "skip" | null) => void;
   addJob: (job: TransferJob) => void;
   updateJob: (job: TransferJob) => void;
   removeJob: (id: string) => void;
@@ -46,6 +53,15 @@ interface TransferState {
 export const useTransferStore = create<TransferState>((set) => ({
   jobs: [],
   stepsByJob: {},
+  stickyConflictResolution: {},
+
+  setStickyConflictResolution: (sessionId, resolution) =>
+    set((s) => {
+      const next = { ...s.stickyConflictResolution };
+      if (resolution === null) delete next[sessionId];
+      else next[sessionId] = resolution;
+      return { stickyConflictResolution: next };
+    }),
 
   addJob: (job) => set((s) => ({ jobs: [job, ...s.jobs] })),
 
@@ -134,6 +150,15 @@ export async function bootstrapTransferListeners() {
     const store = useTransferStore.getState();
     const job = store.jobs.find((j) => j.id === event.payload.job_id);
     if (!job) return;
+    const sticky = store.stickyConflictResolution[job.session_id];
+    if (sticky) {
+      // "Overwrite All"/"Skip All" was already picked for this session —
+      // auto-resolve without ever surfacing the modal, including for
+      // conflicts discovered progressively (large recursive folder copies
+      // report them one at a time, not all upfront).
+      void store.resolveConflict(job.id, sticky);
+      return;
+    }
     store.updateJob({
       ...job,
       status: "paused",

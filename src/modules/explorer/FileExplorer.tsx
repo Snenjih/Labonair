@@ -394,7 +394,7 @@ export function FileExplorer({
           size="icon"
           className="size-6 text-muted-foreground hover:text-foreground"
           onClick={() => setIsSearchOpen(!isSearchOpen)}
-          title="New file"
+          title="Search"
         >
           <HugeiconsIcon icon={Search01Icon} size={13} strokeWidth={2} />
         </Button>

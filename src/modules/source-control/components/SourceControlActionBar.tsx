@@ -157,7 +157,7 @@ export function SourceControlActionBar({ onRefresh }: SourceControlActionBarProp
           onClick={handleViewDiff}
           disabled={!hasAnyChanges}
           className={cn(
-            "flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+            "flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40",
             isViewingDiff
               ? "bg-accent text-foreground"
               : "text-muted-foreground hover:bg-foreground/6 hover:text-foreground",
@@ -182,7 +182,7 @@ export function SourceControlActionBar({ onRefresh }: SourceControlActionBarProp
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/6 hover:text-foreground"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:bg-foreground/6 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
               title="Options"
             >
               <HugeiconsIcon icon={MoreHorizontalIcon} size={13} strokeWidth={2} />
@@ -266,7 +266,7 @@ export function SourceControlActionBar({ onRefresh }: SourceControlActionBarProp
           type="button"
           onClick={() => void handleStageOrUnstageAll()}
           disabled={!hasAnyChanges}
-          className="flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/6 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium text-muted-foreground outline-none transition-colors hover:bg-foreground/6 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <HugeiconsIcon
             icon={hasUnstagedOrUntracked ? PlusSignIcon : MinusSignIcon}

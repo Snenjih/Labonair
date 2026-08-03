@@ -75,7 +75,7 @@ export function FileChangeList({ files, section, onRefresh }: FileChangeListProp
         {/* Collapse chevron */}
         <button
           type="button"
-          className="flex shrink-0 items-center"
+          className="flex shrink-0 items-center outline-none focus-visible:ring-1 focus-visible:ring-ring/50 rounded"
           onClick={(e) => {
             e.stopPropagation();
             setCollapsed((c) => !c);
@@ -92,7 +92,7 @@ export function FileChangeList({ files, section, onRefresh }: FileChangeListProp
         {/* Label + count — clicking selects section */}
         <button
           type="button"
-          className="flex flex-1 items-center gap-1.5 text-left"
+          className="flex flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring/50 rounded"
           onClick={() => {
             if (isSectionSelected) {
               clearSelectedFile();

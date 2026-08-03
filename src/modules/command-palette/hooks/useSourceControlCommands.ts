@@ -104,10 +104,7 @@ export function useSourceControlCommands(cb: RegistryCallbacks): {
         perform: () => {
           const root = useSourceControlStore.getState().repoRoot;
           if (!root) return;
-          void git
-            .pushForceWithLease(root)
-            .then(() => notify("success", "Force Pushed", "Force-pushed to remote (with-lease)"))
-            .catch((e: unknown) => notify("error", "Force Push Failed", String(e)));
+          useSourceControlStore.getState().requestForcePushConfirm();
         },
       },
       {

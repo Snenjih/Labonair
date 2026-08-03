@@ -1,4 +1,22 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -13,12 +31,12 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useHostsStore } from "@/modules/hosts/store/hostsStore";
 import { useCommandSnippetsStore } from "../store/commandSnippetsStore";
 import { SnippetFormPanel } from "./SnippetFormPanel";
 import { SnippetItem } from "./SnippetItem";
-import type { CommandSnippet, SnippetExecMode } from "../types";
+import type { CommandSnippet, SnippetExecMode, SnippetGroup } from "../types";
 
 interface Props {
   onRun: (snippet: CommandSnippet, mode?: SnippetExecMode) => void;
@@ -28,6 +46,8 @@ export function SnippetsPanel({ onRun }: Props) {
   const snippets = useCommandSnippetsStore((s) => s.snippets);
   const groups = useCommandSnippetsStore((s) => s.groups);
   const createGroup = useCommandSnippetsStore((s) => s.createGroup);
+  const updateGroup = useCommandSnippetsStore((s) => s.updateGroup);
+  const deleteGroup = useCommandSnippetsStore((s) => s.deleteGroup);
   const createSnippet = useCommandSnippetsStore((s) => s.createSnippet);
   const hosts = useHostsStore((s) => s.hosts);
 
@@ -36,9 +56,24 @@ export function SnippetsPanel({ onRun }: Props) {
   const [editingId, setEditingId] = useState<string | null | "new">(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
+  const [addingGroup, setAddingGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const groupInputRef = useRef<HTMLInputElement>(null);
+
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const [groupToDelete, setGroupToDelete] = useState<SnippetGroup | null>(null);
+
   const searchRef = useRef<HTMLInputElement>(null);
 
   const showForm = editingId !== null;
+
+  useEffect(() => {
+    if (!addingGroup) return;
+    const id = setTimeout(() => groupInputRef.current?.focus(), 50);
+    return () => clearTimeout(id);
+  }, [addingGroup]);
 
   function toggleSearch() {
     if (searchOpen) {
@@ -75,6 +110,38 @@ export function SnippetsPanel({ onRun }: Props) {
       name: `${snippet.name} (copy)`,
       sortOrder: snippet.sortOrder + 1,
     });
+  }
+
+  async function handleAddGroupKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && groupName.trim()) {
+      await createGroup(groupName.trim());
+      setGroupName("");
+      setAddingGroup(false);
+    }
+    if (e.key === "Escape") {
+      setGroupName("");
+      setAddingGroup(false);
+    }
+  }
+
+  function startRename(group: SnippetGroup) {
+    setRenameValue(group.name);
+    setRenamingGroupId(group.id);
+  }
+
+  function commitRename(group: SnippetGroup) {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== group.name) void updateGroup(group.id, trimmed);
+    setRenamingGroupId(null);
+  }
+
+  function handleRenameKeyDown(e: React.KeyboardEvent<HTMLInputElement>, group: SnippetGroup) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitRename(group);
+    }
+    if (e.key === "Escape") setRenamingGroupId(null);
+    e.stopPropagation();
   }
 
   const filtered = query.trim()
@@ -127,13 +194,13 @@ export function SnippetsPanel({ onRun }: Props) {
             className="flex h-full flex-col"
           >
             {/* Toolbar header */}
-            <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
+            <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border px-2">
               <span className="flex-1 pl-1 text-xs font-medium text-foreground/80">Snippets</span>
               <Button
                 variant="ghost"
-                size="icon"
+                size="icon-xs"
                 className={cn(
-                  "size-6 text-muted-foreground hover:text-foreground",
+                  "text-muted-foreground hover:text-foreground",
                   searchOpen && "bg-muted text-foreground",
                 )}
                 onClick={toggleSearch}
@@ -143,8 +210,8 @@ export function SnippetsPanel({ onRun }: Props) {
               </Button>
               <Button
                 variant="ghost"
-                size="icon"
-                className="size-6 text-muted-foreground hover:text-foreground"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground"
                 onClick={() => setEditingId("new")}
                 title="New snippet"
               >
@@ -160,7 +227,7 @@ export function SnippetsPanel({ onRun }: Props) {
                   animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.08 }}
-                  className="overflow-hidden border-b border-border/30"
+                  className="overflow-hidden border-b border-border/60"
                 >
                   <div className="relative px-2 py-1.5">
                     <HugeiconsIcon
@@ -174,7 +241,7 @@ export function SnippetsPanel({ onRun }: Props) {
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       placeholder="Search snippets…"
-                      className="h-7 border-border/40 bg-background/60 pl-6 font-mono text-[11px] placeholder:text-muted-foreground/40 focus-visible:ring-1"
+                      className="h-7 bg-background pl-6 font-mono text-[11px] placeholder:text-muted-foreground/40 focus-visible:ring-1"
                       onKeyDown={(e) => e.key === "Escape" && toggleSearch()}
                     />
                     {query && (
@@ -197,7 +264,7 @@ export function SnippetsPanel({ onRun }: Props) {
                 {/* Empty state */}
                 {filtered.length === 0 && (
                   <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-border/40 bg-muted/30">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-muted/30">
                       <HugeiconsIcon
                         icon={CommandIcon}
                         size={22}
@@ -217,7 +284,7 @@ export function SnippetsPanel({ onRun }: Props) {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 border-border/50 text-xs"
+                        className="h-8 text-xs"
                         onClick={() => setEditingId("new")}
                       >
                         <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={2} className="mr-1.5" />
@@ -230,30 +297,68 @@ export function SnippetsPanel({ onRun }: Props) {
                 {/* Grouped sections */}
                 {grouped.map(({ group, items }) => (
                   <div key={group.id} className="mb-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(group.id)}
-                      className="group/hdr mb-1.5 flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/30"
-                    >
-                      <HugeiconsIcon
-                        icon={collapsedGroups.has(group.id) ? ArrowRight01Icon : ArrowDown01Icon}
-                        size={9}
-                        strokeWidth={2.5}
-                        className="shrink-0 text-muted-foreground/40 transition-transform"
-                      />
-                      {group.color && (
-                        <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ background: group.color }}
+                    {renamingGroupId === group.id ? (
+                      <div className="mb-1.5 flex items-center gap-1.5 rounded px-1 py-0.5">
+                        <HugeiconsIcon
+                          icon={collapsedGroups.has(group.id) ? ArrowRight01Icon : ArrowDown01Icon}
+                          size={9}
+                          strokeWidth={2.5}
+                          className="shrink-0 text-muted-foreground/40"
                         />
-                      )}
-                      <span className="flex-1 truncate font-mono text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/60 group-hover/hdr:text-muted-foreground">
-                        {group.name}
-                      </span>
-                      <span className="font-mono text-[9px] tabular-nums text-muted-foreground/30">
-                        {items.length}
-                      </span>
-                    </button>
+                        {group.color && (
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ background: group.color }}
+                          />
+                        )}
+                        <input
+                          // eslint-disable-next-line jsx-a11y/no-autofocus
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => handleRenameKeyDown(e, group)}
+                          onBlur={() => commitRename(group)}
+                          onFocus={(e) => e.target.select()}
+                          className="min-w-0 flex-1 bg-transparent font-mono text-[9px] font-semibold uppercase tracking-widest text-foreground outline-none"
+                        />
+                      </div>
+                    ) : (
+                      <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup(group.id)}
+                            className="group/hdr mb-1.5 flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/30"
+                          >
+                            <HugeiconsIcon
+                              icon={collapsedGroups.has(group.id) ? ArrowRight01Icon : ArrowDown01Icon}
+                              size={9}
+                              strokeWidth={2.5}
+                              className="shrink-0 text-muted-foreground/40 transition-transform"
+                            />
+                            {group.color && (
+                              <span
+                                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                style={{ background: group.color }}
+                              />
+                            )}
+                            <span className="flex-1 truncate font-mono text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/70 group-hover/hdr:text-muted-foreground">
+                              {group.name}
+                            </span>
+                            <Badge variant="secondary" className="h-4 shrink-0 px-1.5 text-[9px]">
+                              {items.length}
+                            </Badge>
+                          </button>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <ContextMenuItem onSelect={() => startRename(group)}>Rename</ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem variant="destructive" onSelect={() => setGroupToDelete(group)}>
+                            Delete
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    )}
                     {!collapsedGroups.has(group.id) && (
                       <div className="space-y-1.5">
                         {items.map((s) => (
@@ -278,7 +383,7 @@ export function SnippetsPanel({ onRun }: Props) {
                   <div>
                     {grouped.length > 0 && (
                       <div className="mb-1.5 flex items-center gap-1.5 px-1 py-0.5">
-                        <span className="font-mono text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                        <span className="font-mono text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/70">
                           Other
                         </span>
                       </div>
@@ -302,23 +407,64 @@ export function SnippetsPanel({ onRun }: Props) {
 
                 {/* Add group footer */}
                 {filtered.length > 0 && !query && (
-                  <button
-                    type="button"
-                    className="mt-3 flex w-full items-center gap-1.5 rounded px-1 py-1 font-mono text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground"
-                    onClick={() => {
-                      const name = prompt("Group name:");
-                      if (name?.trim()) void createGroup(name.trim());
-                    }}
-                  >
-                    <HugeiconsIcon icon={Add02Icon} size={10} strokeWidth={2} />
-                    Add group
-                  </button>
+                  <div className="mt-3">
+                    {addingGroup ? (
+                      <input
+                        ref={groupInputRef}
+                        value={groupName}
+                        onChange={(e) => setGroupName(e.target.value)}
+                        onKeyDown={handleAddGroupKeyDown}
+                        onBlur={() => {
+                          setAddingGroup(false);
+                          setGroupName("");
+                        }}
+                        placeholder="Group name…"
+                        className="h-7 w-full rounded border border-primary bg-card px-2 text-xs text-foreground outline-none ring-2 ring-primary/40"
+                      />
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-full justify-start gap-1.5 text-muted-foreground hover:text-foreground"
+                        onClick={() => setAddingGroup(true)}
+                      >
+                        <HugeiconsIcon icon={Add02Icon} size={10} strokeWidth={2} />
+                        Add group
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
             </ScrollArea>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Delete group confirmation */}
+      <AlertDialog open={!!groupToDelete} onOpenChange={(open) => !open && setGroupToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{groupToDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The group will be deleted. Snippets in this group will not be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (groupToDelete) {
+                  void deleteGroup(groupToDelete.id);
+                  setGroupToDelete(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

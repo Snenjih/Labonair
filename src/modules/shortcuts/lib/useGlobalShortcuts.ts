@@ -9,6 +9,18 @@ export type UseGlobalShortcutsOptions = {
   isDisabled?: (id: ShortcutId, e: KeyboardEvent) => boolean;
 };
 
+/** True when the given element is a plain text-entry control (`<input>`/
+ *  `<textarea>`) — e.g. `TabRenameInput`. Deliberately does NOT include
+ *  `[contenteditable]`: CodeMirror's editor surface is contenteditable, and
+ *  shortcuts like `search.focus` (⌘F) legitimately need to keep firing while
+ *  the cursor is in the code editor. Every entry in `SHORTCUTS` requires a
+ *  modifier key (none bind a bare key or Escape), so restricting this guard
+ *  to literal text inputs can't accidentally block a shortcut that's meant
+ *  to work while the user is typing plain text. */
+export function isPlainTextInputFocused(el: Element | null): boolean {
+  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+}
+
 export function useGlobalShortcuts(handlers: ShortcutHandlers, options?: UseGlobalShortcutsOptions) {
   const latest = useRef({ handlers, options });
   latest.current = { handlers, options };
@@ -18,6 +30,7 @@ export function useGlobalShortcuts(handlers: ShortcutHandlers, options?: UseGlob
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isPlainTextInputFocused(document.activeElement)) return;
       const { handlers, options } = latest.current;
       for (const s of SHORTCUTS) {
         if (!matchesShortcut(s.id, s.match, e)) continue;

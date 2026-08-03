@@ -319,7 +319,9 @@ export function HomeDashboard({
   }, [fetchData]);
 
   useEffect(() => {
-    if (addingGroup) setTimeout(() => groupInputRef.current?.focus(), 50);
+    if (!addingGroup) return;
+    const id = setTimeout(() => groupInputRef.current?.focus(), 50);
+    return () => clearTimeout(id);
   }, [addingGroup]);
 
   const filteredHosts = useMemo(() => {

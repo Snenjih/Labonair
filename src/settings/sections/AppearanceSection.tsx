@@ -23,10 +23,10 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { FontPicker } from "@/modules/fonts";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
@@ -41,10 +41,7 @@ import {
   setBackgroundOpacity,
   setBackgroundTintColor,
   setBackgroundTintOpacity,
-  setConfirmCloseTerminalTab,
-  setConfirmQuitWithSsh,
   setHmCardScale,
-  setNewTabInheritsCwd,
   setTabsLocation,
   setZenModeShowHeader,
   setZenModeShowStatusbar,
@@ -78,9 +75,6 @@ export function AppearanceSection() {
   const appFontSize = usePreferencesStore((s) => s.appFontSize);
   const appLineHeight = usePreferencesStore((s) => s.appLineHeight);
   const tabsLocation = usePreferencesStore((s) => s.tabsLocation);
-  const newTabInheritsCwd = usePreferencesStore((s) => s.newTabInheritsCwd);
-  const confirmCloseTerminalTab = usePreferencesStore((s) => s.confirmCloseTerminalTab);
-  const confirmQuitWithSsh = usePreferencesStore((s) => s.confirmQuitWithSsh);
   const zenModeShowHeader = usePreferencesStore((s) => s.zenModeShowHeader);
   const zenModeShowStatusbar = usePreferencesStore((s) => s.zenModeShowStatusbar);
   const backgroundImage = usePreferencesStore((s) => s.backgroundImage);
@@ -512,27 +506,6 @@ export function AppearanceSection() {
           </Select>
         </SettingRow>
         <SettingRow
-          title="New tab inherits current directory"
-          description="Open new terminal tabs in the working directory of the active tab instead of the home directory."
-        >
-          <Switch checked={newTabInheritsCwd} onCheckedChange={(v) => void setNewTabInheritsCwd(v)} />
-        </SettingRow>
-        <SettingRow
-          title="Confirm before closing terminal tab"
-          description="Show a confirmation dialog when closing a terminal tab with a running shell."
-        >
-          <Switch
-            checked={confirmCloseTerminalTab}
-            onCheckedChange={(v) => void setConfirmCloseTerminalTab(v)}
-          />
-        </SettingRow>
-        <SettingRow
-          title="Confirm quit with active SSH connections"
-          description="Show a confirmation dialog before closing the app when SSH sessions are open."
-        >
-          <Switch checked={confirmQuitWithSsh} onCheckedChange={(v) => void setConfirmQuitWithSsh(v)} />
-        </SettingRow>
-        <SettingRow
           title="Show header bar"
           description="Display the header bar with tabs and window controls. Hide it to maximise vertical space."
         >
@@ -550,10 +523,11 @@ export function AppearanceSection() {
         <Label>Typography</Label>
         <div className="flex flex-col gap-2">
           <SettingRow title="UI font family" description="The font used for all application UI text.">
-            <Input
+            <FontPicker
               value={appFontFamily}
-              onChange={(e) => void setAppFontFamily(e.target.value)}
-              className="h-7 w-44 text-[11.5px]"
+              onChange={(v) => void setAppFontFamily(v)}
+              context="ui"
+              className="w-44"
             />
           </SettingRow>
           <SettingRow title="UI font size" description="Base font size for the interface (in px).">

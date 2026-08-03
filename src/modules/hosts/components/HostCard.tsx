@@ -1,20 +1,6 @@
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { invoke } from "@tauri-apps/api/core";
+import { save as dialogSave } from "@tauri-apps/plugin-dialog";
+import { useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,15 +11,29 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { save as dialogSave } from "@tauri-apps/plugin-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { handleApiError } from "@/lib/errors";
+import { cn } from "@/lib/utils";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
-import type { Group, Host } from "../types";
-import { useHostsStore } from "../store/hostsStore";
-import { useCredentialsStore } from "../store/credentialsStore";
 import { useTabsStore } from "@/modules/tabs/store/tabsStore";
+import { useCredentialsStore } from "../store/credentialsStore";
+import { useHostsStore } from "../store/hostsStore";
+import type { Group, Host } from "../types";
 import { HostAvatar } from "./HostAvatar";
 
 interface HostCardProps {
@@ -350,6 +350,7 @@ export function HostCard({
                   <Button
                     variant="ghost"
                     size="sm"
+                    aria-label="Host actions"
                     onClick={(e) => e.stopPropagation()}
                     className="shrink-0 p-0 text-muted-foreground hover:text-foreground hover:bg-background/50"
                     style={{ height: scalePx(36), width: scalePx(36) }}
@@ -358,21 +359,45 @@ export function HostCard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem onClick={() => onEdit()}>Edit</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => duplicateHost(host.id)}>Duplicate</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => togglePin(host.id)}>
-                    {host.pin_to_top ? "Unpin" : "Pin to Top"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void handleExportSshConfig()}>
-                    Export SSH Config
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    Delete…
-                  </DropdownMenuItem>
+                  {isBulk ? (
+                    <>
+                      <DropdownMenuItem onClick={connectSshBulk}>
+                        Connect SSH ({bulkIds.length})
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={connectSftpBulk}>
+                        Open SFTP ({bulkIds.length})
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => Promise.all(bulkIds.map((id) => duplicateHost(id)))}>
+                        Duplicate Selected
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setBulkDeleteOpen(true)}
+                      >
+                        Delete {bulkIds.length} Hosts…
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <>
+                      <DropdownMenuItem onClick={() => onEdit()}>Edit</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => duplicateHost(host.id)}>Duplicate</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => togglePin(host.id)}>
+                        {host.pin_to_top ? "Unpin" : "Pin to Top"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => void handleExportSshConfig()}>
+                        Export SSH Config
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setDeleteOpen(true)}
+                      >
+                        Delete…
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

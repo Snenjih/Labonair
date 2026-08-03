@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { handleApiError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { SftpContextMenu } from "./components/SftpContextMenu";
 import { SftpToolbar } from "./components/SftpToolbar";
 import { VirtualizedFileList } from "./components/VirtualizedFileList";
 import { useSftpStore } from "./store/sftpStore";
+import { useTransferStore } from "./store/transferStore";
 import type { FileNode } from "./types";
 import {
   blurActiveInput,
@@ -20,6 +21,35 @@ import {
   parentPath,
   sanitizeEntryName,
 } from "./utils";
+
+// Inline rename and inline new-file/new-folder editing are mutually
+// exclusive (starting one always cancels the other, see startRename/
+// startCreatingEntry below) and share a single on-screen slot, so they're
+// modeled as one reducer instead of five useState setters that each had to
+// remember to null out the other's fields.
+type EditSlotState =
+  | { mode: "idle" }
+  | { mode: "renaming"; path: string; side: "local" | "remote"; value: string }
+  | { mode: "creating"; side: "local" | "remote"; kind: "folder" | "file"; value: string };
+
+type EditSlotAction =
+  | { type: "startRename"; path: string; side: "local" | "remote"; value: string }
+  | { type: "startCreating"; side: "local" | "remote"; kind: "folder" | "file" }
+  | { type: "setValue"; value: string }
+  | { type: "cancel" };
+
+function editSlotReducer(state: EditSlotState, action: EditSlotAction): EditSlotState {
+  switch (action.type) {
+    case "startRename":
+      return { mode: "renaming", path: action.path, side: action.side, value: action.value };
+    case "startCreating":
+      return { mode: "creating", side: action.side, kind: action.kind, value: "" };
+    case "setValue":
+      return state.mode === "idle" ? state : { ...state, value: action.value };
+    case "cancel":
+      return { mode: "idle" };
+  }
+}
 
 interface SftpPaneProps {
   tab: SftpTab;
@@ -79,20 +109,18 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
   const remotePaneRef = useRef<HTMLDivElement>(null);
   const draggedPathsRef = useRef<string[]>([]);
 
-  // Inline rename state — renamingSide is tracked explicitly (rather than
-  // derived from selection) since a local and remote item could in theory
-  // share the same absolute path string, which would make derivation ambiguous.
-  const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  const [renamingSide, setRenamingSide] = useState<"local" | "remote" | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-
-  // Inline new file/folder state (one shared slot — creating on one side/kind
-  // implicitly cancels any other in-flight create or rename, see startCreatingEntry/startRename)
-  const [creatingEntry, setCreatingEntry] = useState<{
-    side: "local" | "remote";
-    kind: "folder" | "file";
-  } | null>(null);
-  const [creatingEntryName, setCreatingEntryName] = useState("");
+  // Inline rename + inline new file/folder state — mutually exclusive, see
+  // the EditSlotState/editSlotReducer comment above. renamingSide is tracked
+  // explicitly (rather than derived from selection) since a local and remote
+  // item could in theory share the same absolute path string, which would
+  // make derivation ambiguous.
+  const [editSlot, dispatchEditSlot] = useReducer(editSlotReducer, { mode: "idle" });
+  const renamingPath = editSlot.mode === "renaming" ? editSlot.path : null;
+  const renamingSide = editSlot.mode === "renaming" ? editSlot.side : null;
+  const renameValue = editSlot.mode === "renaming" ? editSlot.value : "";
+  const creatingEntry = editSlot.mode === "creating" ? { side: editSlot.side, kind: editSlot.kind } : null;
+  const creatingEntryName = editSlot.mode === "creating" ? editSlot.value : "";
+  const setEditSlotValue = (value: string) => dispatchEditSlot({ type: "setValue", value });
 
   // Deep search state
   const [deepSearchResults, setDeepSearchResults] = useState<string[] | null>(null);
@@ -254,12 +282,9 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
 
   function startRename(path: string, side: "local" | "remote") {
     const name = path.split("/").pop() ?? path;
-    // Mutual exclusion — starting a rename cancels any in-flight create.
-    setCreatingEntry(null);
-    setCreatingEntryName("");
-    setRenamingPath(path);
-    setRenamingSide(side);
-    setRenameValue(name);
+    // Mutual exclusion — replaces any in-flight create, since both live in
+    // the same edit slot.
+    dispatchEditSlot({ type: "startRename", path, side, value: name });
   }
 
   /** Removes `path` from the given side's selection set. Called on every
@@ -280,8 +305,7 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
 
   function cancelRename() {
     if (renamingPath && renamingSide) clearRenameSelection(renamingSide, renamingPath);
-    setRenamingPath(null);
-    setRenamingSide(null);
+    dispatchEditSlot({ type: "cancel" });
   }
 
   async function commitRename() {
@@ -294,8 +318,7 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
     // disappear immediately and guards against a second stray Enter/blur
     // re-entering this function while the first call is still in flight.
     clearRenameSelection(side, path);
-    setRenamingPath(null);
-    setRenamingSide(null);
+    dispatchEditSlot({ type: "cancel" });
     // Invalid name, or unchanged name (renaming "to" the same name would
     // always fail server-side since the target path already exists) — just
     // close, no backend call, no error.
@@ -424,15 +447,14 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
   }
 
   function startCreatingEntry(side: "local" | "remote", kind: "folder" | "file") {
-    // Mutual exclusion — starting a create cancels any in-flight rename.
-    cancelRename();
-    setCreatingEntry({ side, kind });
-    setCreatingEntryName("");
+    // Mutual exclusion — replaces any in-flight rename, since both live in
+    // the same edit slot; still needs to clear that rename's row selection.
+    if (renamingPath && renamingSide) clearRenameSelection(renamingSide, renamingPath);
+    dispatchEditSlot({ type: "startCreating", side, kind });
   }
 
   function cancelCreatingEntry() {
-    setCreatingEntry(null);
-    setCreatingEntryName("");
+    dispatchEditSlot({ type: "cancel" });
   }
 
   async function commitCreatingEntry() {
@@ -447,8 +469,7 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
     const sanitized = sanitizeEntryName(creatingEntryName, { allowNested: kind === "folder" });
     // Clear state synchronously, before the invoke() below — same
     // double-submit guard as commitRename.
-    setCreatingEntry(null);
-    setCreatingEntryName("");
+    dispatchEditSlot({ type: "cancel" });
     if (!sanitized) return;
     const basePath = side === "remote" ? (tabState?.remotePath ?? "/") : (tabState?.localPath ?? "~");
     const sep = basePath.endsWith("/") ? "" : "/";
@@ -515,6 +536,10 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
       // against the now-dead connection — cancel + re-enqueue those against
       // the fresh session. No-op if nothing was in flight for this tab.
       await invoke("sftp_session_reconnected", { sessionId: tabId }).catch(() => {});
+      // A fresh connection is a reasonable "start fresh" boundary for a
+      // sticky "Overwrite All"/"Skip All" conflict choice — don't let a
+      // reconnect silently keep auto-resolving future transfers.
+      useTransferStore.getState().setStickyConflictResolution(tabId, null);
       clearDisconnected(tabId);
       useConnectionStatusStore.getState().setStatus(tabId, "connected");
       loadLocalDir(tabId, tabState?.localPath ?? "~");
@@ -700,11 +725,11 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
                     isDropHovered={dropHoveredPane === "local"}
                     renamingPath={renamingSide === "local" ? renamingPath : null}
                     renameValue={renameValue}
-                    onRenameChange={setRenameValue}
+                    onRenameChange={setEditSlotValue}
                     onRenameCommit={commitRename}
                     onRenameCancel={cancelRename}
                     creatingEntryValue={creatingEntryName}
-                    onCreatingEntryChange={setCreatingEntryName}
+                    onCreatingEntryChange={setEditSlotValue}
                     onCreatingEntryCommit={commitCreatingEntry}
                     onCreatingEntryCancel={cancelCreatingEntry}
                     hasMore={tabState?.localHasMore}
@@ -830,11 +855,11 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
                       isDropHovered={dropHoveredPane === "remote"}
                       renamingPath={renamingSide === "remote" ? renamingPath : null}
                       renameValue={renameValue}
-                      onRenameChange={setRenameValue}
+                      onRenameChange={setEditSlotValue}
                       onRenameCommit={commitRename}
                       onRenameCancel={cancelRename}
                       creatingEntryValue={creatingEntryName}
-                      onCreatingEntryChange={setCreatingEntryName}
+                      onCreatingEntryChange={setEditSlotValue}
                       onCreatingEntryCommit={commitCreatingEntry}
                       onCreatingEntryCancel={cancelCreatingEntry}
                       hasMore={tabState?.remoteHasMore}

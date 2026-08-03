@@ -1,15 +1,17 @@
 import { homeDir } from "@tauri-apps/api/path";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { handleApiError } from "@/lib/errors";
 import { runStoreMigration } from "@/lib/storeMigration";
 import { useLayoutEngine } from "@/lib/useLayoutEngine";
 import { useTerminalCursorBlinkInterval } from "@/lib/useTerminalCursorBlinkInterval";
 import { useThemeEngine } from "@/lib/useThemeEngine";
-import { getAllKeys, type ProviderKeys, useChatStore } from "@/modules/ai";
+import { useTypographyEngine } from "@/lib/useTypographyEngine";
+import { getAllKeys, hasPersistedModelSelection, type ProviderKeys, useChatStore } from "@/modules/ai";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useDirectivesStore } from "@/modules/ai/store/directivesStore";
 import { useProvidersStore } from "@/modules/ai/store/providersStore";
 import { usePathBookmarksStore } from "@/modules/bookmarks/store/pathBookmarksStore";
+import { useCustomFontsStore } from "@/modules/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
 import { bootstrapSftpConnectionListener } from "@/modules/sftp/store/sftpStore";
@@ -83,12 +85,26 @@ export function useAppBootstrap(): AppBootstrapReturn {
   // Layout engine — applies --radius and density class to <html>
   useLayoutEngine();
 
+  // Typography engine — applies --app-font-family/-size/-line-height to <html>
+  useTypographyEngine();
+
   // Terminal cursor blink (owns its own effects internally)
   useTerminalCursorBlinkInterval();
 
-  // Sync default model from preferences once hydrated
+  // Sync default model from preferences once hydrated. This used to fire
+  // unconditionally on every startup, clobbering whatever model the user had
+  // actively picked via the ModelPicker (persisted separately) with the
+  // "Default model" Settings preference — so the active model silently reset
+  // on every relaunch. Now it only seeds `selectedModelId` from the
+  // preference when there's no prior explicit pick (fresh install); live
+  // edits to the Settings preference while the app is running still sync.
+  const defaultModelSeeded = useRef(false);
   useEffect(() => {
     if (!prefsHydrated) return;
+    if (!defaultModelSeeded.current) {
+      defaultModelSeeded.current = true;
+      if (hasPersistedModelSelection()) return;
+    }
     setSelectedModelId(prefDefaultModel);
   }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
 
@@ -112,6 +128,14 @@ export function useAppBootstrap(): AppBootstrapReturn {
   useEffect(() => {
     void hydrateSessions();
   }, [hydrateSessions]);
+
+  // Custom fonts: eager, not idle-deferred — a saved font preference may
+  // already reference one, so it must be registered (FontFace) before
+  // terminal/editor/UI text can render it correctly. Cheap manifest read,
+  // not a filesystem scan, so no startup-latency concern.
+  useEffect(() => {
+    void useCustomFontsStore.getState().hydrate();
+  }, []);
 
   // Providers store: init once, then reload whenever the settings window changes providers
   useEffect(() => {

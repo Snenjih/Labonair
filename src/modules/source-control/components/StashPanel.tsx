@@ -141,7 +141,7 @@ function StashEntryRow({ entry, repoRoot, sessionId, onRefresh }: StashEntryRowP
           {/* Apply */}
           <button
             type="button"
-            className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
             onClick={() => void handleApply()}
             disabled={disabled}
             title="Apply (keep stash)"
@@ -156,7 +156,7 @@ function StashEntryRow({ entry, repoRoot, sessionId, onRefresh }: StashEntryRowP
           {/* Pop */}
           <button
             type="button"
-            className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
             onClick={() => void handlePop()}
             disabled={disabled}
             title="Pop (apply and drop)"
@@ -171,7 +171,7 @@ function StashEntryRow({ entry, repoRoot, sessionId, onRefresh }: StashEntryRowP
           {/* Drop */}
           <button
             type="button"
-            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-red-500/20 hover:text-red-500"
+            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground outline-none hover:bg-red-500/20 hover:text-red-500 focus-visible:ring-1 focus-visible:ring-red-500/50"
             onClick={() => setShowDropConfirm(true)}
             disabled={disabled}
             title="Drop stash"

@@ -1,3 +1,11 @@
+import {
+  Cancel01Icon,
+  Cancel02Icon,
+  CancelSquareIcon,
+  Copy01Icon,
+  Layers01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { pluralLabelFor } from "../lib/tabUtils";
 import type { Tab } from "../types";
@@ -26,16 +34,34 @@ export function NonWorkspaceTabContextMenuContent({
     <ContextMenuContent>
       {tab.kind !== "home" && (
         <>
-          <ContextMenuItem onSelect={() => onClose(tab.id)}>Close Tab</ContextMenuItem>
-          <ContextMenuItem onSelect={() => onDuplicate(tab.id)}>Duplicate Tab</ContextMenuItem>
+          <ContextMenuItem onSelect={() => onDuplicate(tab.id)}>
+            <HugeiconsIcon icon={Copy01Icon} size={14} strokeWidth={1.75} />
+            <span className="flex-1">Duplicate Tab</span>
+          </ContextMenuItem>
           <ContextMenuSeparator />
         </>
       )}
-      <ContextMenuItem onSelect={() => onCloseOthers(tab.id)}>Close Others</ContextMenuItem>
-      <ContextMenuItem onSelect={onCloseAll}>Close All</ContextMenuItem>
-      <ContextMenuItem onSelect={() => onCloseByKind(tab.kind)}>
-        Close All {pluralLabelFor(tab.kind)}
+      <ContextMenuItem onSelect={() => onCloseOthers(tab.id)}>
+        <HugeiconsIcon icon={Cancel02Icon} size={14} strokeWidth={1.75} />
+        <span className="flex-1">Close Others</span>
       </ContextMenuItem>
+      <ContextMenuItem onSelect={onCloseAll}>
+        <HugeiconsIcon icon={CancelSquareIcon} size={14} strokeWidth={1.75} />
+        <span className="flex-1">Close All</span>
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => onCloseByKind(tab.kind)}>
+        <HugeiconsIcon icon={Layers01Icon} size={14} strokeWidth={1.75} />
+        <span className="flex-1">Close All {pluralLabelFor(tab.kind)}</span>
+      </ContextMenuItem>
+      {tab.kind !== "home" && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => onClose(tab.id)}>
+            <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={1.75} />
+            <span className="flex-1">Close Tab</span>
+          </ContextMenuItem>
+        </>
+      )}
     </ContextMenuContent>
   );
 }

@@ -1,5 +1,6 @@
 import { indentUnit } from "@codemirror/language";
 import { lintGutter } from "@codemirror/lint";
+import { search } from "@codemirror/search";
 import { Compartment, EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
 import {
   Decoration,
@@ -68,6 +69,11 @@ export function buildSharedExtensions(
     fullWidthLineSelectionPlugin,
     indentWithTabsCompartment.of(indentUnit.of("  ")),
     EditorState.tabSize.of(2),
+    // Pre-register @codemirror/search's state field so our own findNext/findPrevious/
+    // replaceNext/replaceAll calls (driven by the custom FindWidget) never hit the
+    // library's "field missing" fallback, which auto-installs the field AND pops open
+    // its own built-in search panel (see @codemirror/search's `openSearchPanel`).
+    search(),
     keymap.of([{ key: "Mod-f", run: () => true }]),
     lintGutter(),
     fontSizeCompartment.of(

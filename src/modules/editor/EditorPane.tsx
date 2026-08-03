@@ -1,27 +1,25 @@
-import { findNext, findPrevious, SearchQuery, setSearchQuery, gotoLine } from "@codemirror/search";
 import { toggleComment } from "@codemirror/commands";
-import { FindWidget } from "@/modules/search";
-import { bracketMatching, foldCode, unfoldCode, foldAll, unfoldAll, indentUnit } from "@codemirror/language";
-import { lineNumbers } from "@codemirror/view";
-import { keymap, EditorView } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
-import { usePreferencesStore } from "@/modules/settings/preferences";
+import { bracketMatching, foldAll, foldCode, indentUnit, unfoldAll, unfoldCode } from "@codemirror/language";
+import { findNext, findPrevious, gotoLine, SearchQuery, setSearchQuery } from "@codemirror/search";
+import { EditorState, Prec } from "@codemirror/state";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { vim } from "@replit/codemirror-vim";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { EDITOR_THEME_EXT } from "./lib/themes";
 import {
   forwardRef,
+  startTransition,
   useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
-  startTransition,
 } from "react";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Streamdown } from "streamdown";
-import { Prec } from "@codemirror/state";
-import { vim } from "@replit/codemirror-vim";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { handleApiError } from "@/lib/errors";
+import { FindWidget } from "@/modules/search";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   bracketMatchingCompartment,
   buildSharedExtensions,
@@ -37,21 +35,23 @@ import {
   wrapCompartment,
 } from "./lib/extensions";
 import { indentationGuides } from "./lib/indentationGuides";
+import { EDITOR_THEME_EXT } from "./lib/themes";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
 
 initVimGlobals();
-import { resolveLanguage } from "./lib/languageResolver";
-import { useDocument } from "./lib/useDocument";
+
+import { EditorToolbar } from "./EditorToolbar";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { useEditorCursorStore } from "./lib/cursorStore";
 import { useEditorMetaStore } from "./lib/editorMetaStore";
-import { extractOutline, type OutlineItem } from "./lib/outline";
-import { OutlinePanel } from "./OutlinePanel";
 import { formatDocument } from "./lib/formatter";
-import { useCompartmentEffect } from "./lib/useCompartmentEffect";
+import { resolveLanguage } from "./lib/languageResolver";
+import { extractOutline, type OutlineItem } from "./lib/outline";
 import { useApiKeys } from "./lib/useApiKeys";
 import { useAutoSave } from "./lib/useAutoSave";
-import { EditorToolbar } from "./EditorToolbar";
+import { useCompartmentEffect } from "./lib/useCompartmentEffect";
+import { useDocument } from "./lib/useDocument";
+import { OutlinePanel } from "./OutlinePanel";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -322,7 +322,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPan
   const handleBlur = useCallback(async () => {
     if (editorAutoSave !== "onFocusChange") return;
     if (isUntitled) return;
-    await performSaveRef.current();
+    try {
+      await performSaveRef.current();
+    } catch (e) {
+      handleApiError(e, "Failed to save file", "Editor");
+    }
   }, [editorAutoSave, isUntitled]);
 
   const extensions = useMemo(
@@ -334,7 +338,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPan
         vimCompartment.of(prefs.vimMode ? Prec.highest(vim()) : []),
         vimHandlersExtension(() => ({
           save: () => {
-            void performSaveRef.current();
+            void performSaveRef.current().catch((e) => handleApiError(e, "Failed to save file", "Editor"));
           },
           close: () => onCloseRef.current?.(),
         })),
@@ -391,7 +395,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPan
             key: "Mod-s",
             preventDefault: true,
             run: () => {
-              void performSaveRef.current();
+              void performSaveRef.current().catch((e) => handleApiError(e, "Failed to save file", "Editor"));
               return true;
             },
           },

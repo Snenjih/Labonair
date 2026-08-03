@@ -37,6 +37,12 @@ export type GrepResponse = {
 export type GlobHit = { path: string; rel: string };
 export type GlobResponse = { hits: GlobHit[]; truncated: boolean };
 
+export type TerminalExecResult = {
+  output: string;
+  exit_code: number | null;
+  still_running: boolean;
+};
+
 export const native = {
   readFile: (path: string) =>
     invoke<ReadResult>("fs_read_file", {
@@ -115,4 +121,43 @@ export const native = {
         exit_code: number | null;
       }[]
     >("shell_bg_list"),
+
+  terminalExecRunCommand: (params: {
+    kind: "local" | "ssh";
+    sessionId?: string;
+    localPtyId?: number;
+    command: string;
+    timeoutMs?: number;
+  }) =>
+    invoke<TerminalExecResult>("terminal_exec_run_command", {
+      kind: params.kind,
+      sessionId: params.sessionId ?? null,
+      localPtyId: params.localPtyId ?? null,
+      command: params.command,
+      timeoutMs: params.timeoutMs ?? null,
+    }),
+  terminalExecPeekOutput: (params: {
+    kind: "local" | "ssh";
+    sessionId?: string;
+    localPtyId?: number;
+    waitMs?: number;
+  }) =>
+    invoke<TerminalExecResult>("terminal_exec_peek_output", {
+      kind: params.kind,
+      sessionId: params.sessionId ?? null,
+      localPtyId: params.localPtyId ?? null,
+      waitMs: params.waitMs ?? null,
+    }),
+  terminalExecSendKeys: (params: {
+    kind: "local" | "ssh";
+    sessionId?: string;
+    localPtyId?: number;
+    data: string;
+  }) =>
+    invoke<void>("terminal_exec_send_keys", {
+      kind: params.kind,
+      sessionId: params.sessionId ?? null,
+      localPtyId: params.localPtyId ?? null,
+      data: params.data,
+    }),
 };

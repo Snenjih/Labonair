@@ -1,16 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
-import { useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useEffect, useRef, useState } from "react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -23,7 +13,7 @@ import { handleApiError } from "@/lib/errors";
 import { usePathBookmarksStore } from "@/modules/bookmarks/store/pathBookmarksStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { FileNode } from "../types";
-import { PropertiesDialog } from "./PropertiesDialog";
+import { PropertiesDialog, permStringToOctal } from "./PropertiesDialog";
 
 interface SftpContextMenuProps {
   tabId: string;
@@ -59,7 +49,16 @@ export function SftpContextMenu({
   onOpenRemoteEditor,
   children,
 }: SftpContextMenuProps) {
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  // "Click again to confirm" 2-click delete (matches the sidebar Explorer's
+  // pattern) instead of a modal — with a properly cleaned-up re-arm timer
+  // (the sidebar's own version leaks its timeout; this doesn't).
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const confirmResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (confirmResetTimerRef.current) clearTimeout(confirmResetTimerRef.current);
+    };
+  }, []);
   const [chmodOpen, setChmodOpen] = useState(false);
   const [chmodValue, setChmodValue] = useState("755");
   const [propertiesFile, setPropertiesFile] = useState<FileNode | null>(null);
@@ -205,10 +204,24 @@ export function SftpContextMenu({
 
           {count > 0 && (
             <ContextMenuItem
-              onClick={() => setDeleteOpen(true)}
+              onSelect={(e) => {
+                e.preventDefault();
+                if (isConfirmingDelete) {
+                  void handleDelete();
+                  setIsConfirmingDelete(false);
+                  return;
+                }
+                setIsConfirmingDelete(true);
+              }}
+              onMouseLeave={() => {
+                if (confirmResetTimerRef.current) clearTimeout(confirmResetTimerRef.current);
+                confirmResetTimerRef.current = setTimeout(() => setIsConfirmingDelete(false), 1500);
+              }}
               className="text-destructive focus:text-destructive"
             >
-              Delete{count > 1 ? ` ${count} items` : ""}…
+              {isConfirmingDelete
+                ? `Click again to delete${count > 1 ? ` ${count} items` : ""}`
+                : `Delete${count > 1 ? ` ${count} items` : ""}…`}
             </ContextMenuItem>
           )}
 
@@ -221,7 +234,11 @@ export function SftpContextMenu({
               <ContextMenuSeparator />
               <ContextMenuItem
                 onClick={() => {
-                  setChmodValue("755");
+                  const perm = singleFile?.permissions;
+                  // `permStringToOctal("")` returns "000", not a sane
+                  // default — only feed it a real permission string, and
+                  // fall back to "755" when metadata hasn't loaded yet.
+                  setChmodValue(perm ? permStringToOctal(perm) : "755");
                   setChmodOpen(true);
                 }}
               >
@@ -246,30 +263,6 @@ export function SftpContextMenu({
           )}
         </ContextMenuContent>
       </ContextMenu>
-
-      {/* Delete confirmation */}
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete {count} item{count !== 1 ? "s" : ""}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. The {count === 1 ? "file" : "files"} will be permanently deleted
-              from the {side === "remote" ? "remote server" : "local disk"}.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Quick chmod dialog — only mounted when open to avoid Radix portal side-effects */}
       {chmodOpen && (

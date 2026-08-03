@@ -231,6 +231,7 @@ export function VirtualizedFileList({
 
     e.preventDefault();
     let didDrag = false;
+    let latestMarquee: MarqueeRect | null = null;
 
     // `preventDefault()` above only stops the default action tied to this
     // specific pointerdown — as the pointer keeps moving during the drag it
@@ -254,6 +255,7 @@ export function VirtualizedFileList({
       if (!didDrag) return;
       const next: MarqueeRect = { ...rect, currentX: ev.clientX, currentY: ev.clientY };
       const hits = computeMarqueeHits(next);
+      latestMarquee = next;
       setMarqueeHighlight(new Set(hits));
       setMarquee(next);
     }
@@ -267,13 +269,12 @@ export function VirtualizedFileList({
         setMarqueeHighlight(new Set());
         return;
       }
-      setMarquee((prev) => {
-        if (!prev) return null;
-        const hits = computeMarqueeHits({ ...prev });
-        onMarqueeSelect?.(hits, prev.additive);
+      if (latestMarquee) {
+        const hits = computeMarqueeHits(latestMarquee);
+        onMarqueeSelect?.(hits, latestMarquee.additive);
         setMarqueeHighlight(new Set());
-        return null;
-      });
+      }
+      setMarquee(null);
     }
 
     function onCancel() {

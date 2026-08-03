@@ -10,9 +10,7 @@ export type SettingCategory =
   | "Connections"
   | "Source Control"
   | "AI"
-  | "Directives"
-  | "Bookmarks"
-  | "About";
+  | "Bookmarks";
 
 export type ControlType = "Switch" | "Select" | "Input" | "NumberInput" | "Custom";
 
@@ -135,22 +133,22 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     id: "confirmQuitWithSsh",
     label: "Confirm quit with active SSH connections",
     description: "Show a confirmation dialog before closing the app when SSH sessions are open.",
-    category: "Appearance & Layout",
+    category: "General",
     controlType: "Switch",
   },
   {
     id: "newTabInheritsCwd",
     label: "New tab inherits current directory",
     description:
-      "Open new terminal tabs in the working directory of the active tab instead of the home directory.",
-    category: "Appearance & Layout",
+      "Open new terminal tabs in the working directory of the active tab instead of the home directory. Enabled by default — takes priority over 'Default working directory' while on.",
+    category: "Terminal",
     controlType: "Switch",
   },
   {
     id: "confirmCloseTerminalTab",
     label: "Confirm before closing terminal tab",
     description: "Show a confirmation dialog when closing a terminal tab with a running shell.",
-    category: "Appearance & Layout",
+    category: "Terminal",
     controlType: "Switch",
   },
   {
@@ -1051,6 +1049,21 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     controlType: "Switch",
   },
   {
+    id: "aiAutoOpenMiniOnSend",
+    label: "Auto-open Mini window on send",
+    description: "Automatically pop open the AI Mini window whenever you send a message.",
+    category: "AI",
+    controlType: "Switch",
+  },
+  {
+    id: "aiNotifyOnHeadlessCommand",
+    label: "Notify on headless/background commands",
+    description:
+      "Show a notification whenever the AI agent runs a command without a visible terminal tab (bash_run_headless) or spawns a background process (bash_background).",
+    category: "AI",
+    controlType: "Switch",
+  },
+  {
     id: "aiMaxAgentSteps",
     label: "Max agent steps",
     description:
@@ -1174,7 +1187,5 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
   "Connections",
   "Source Control",
   "AI",
-  "Directives",
   "Bookmarks",
-  "About",
 ];

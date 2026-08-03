@@ -283,7 +283,8 @@ function GitGraphPaneContent({ tab }: Props) {
               onClick={reload}
               disabled={isLoading}
               title="Refresh git graph"
-              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+              aria-label="Refresh"
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50 disabled:opacity-40"
             >
               <HugeiconsIcon icon={Refresh01Icon} size={11} strokeWidth={1.75} />
             </button>
@@ -296,7 +297,8 @@ function GitGraphPaneContent({ tab }: Props) {
             {actionError}
             <button
               type="button"
-              className="ml-2 opacity-60 hover:opacity-100"
+              aria-label="Dismiss error"
+              className="ml-2 opacity-60 outline-none transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:ring-ring/50"
               onClick={() => setActionError(null)}
             >
               ✕

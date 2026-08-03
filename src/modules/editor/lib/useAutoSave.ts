@@ -1,4 +1,5 @@
-import { useEffect, useRef, type MutableRefObject } from "react";
+import { type MutableRefObject, useEffect, useRef } from "react";
+import { handleApiError } from "@/lib/errors";
 import type { DocumentState } from "./useDocument";
 
 type Options = {
@@ -30,7 +31,11 @@ export function useAutoSave({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
       timerRef.current = null;
-      await performSaveRef.current();
+      try {
+        await performSaveRef.current();
+      } catch (e) {
+        handleApiError(e, "Failed to save file", "Editor");
+      }
     }, editorAutoSaveDelay);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);

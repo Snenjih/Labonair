@@ -52,15 +52,15 @@ export function NewBranchDialog({
 
   // Reset state when dialog opens
   useEffect(() => {
-    if (open) {
-      setName("");
-      setFrom(fromRef ?? resolveDefaultFromRef(currentBranch));
-      setCheckout(true);
-      setIsLoading(false);
-      setError(null);
-      setNameError(false);
-      setTimeout(() => nameInputRef.current?.focus(), 50);
-    }
+    if (!open) return;
+    setName("");
+    setFrom(fromRef ?? resolveDefaultFromRef(currentBranch));
+    setCheckout(true);
+    setIsLoading(false);
+    setError(null);
+    setNameError(false);
+    const id = setTimeout(() => nameInputRef.current?.focus(), 50);
+    return () => clearTimeout(id);
   }, [open, currentBranch, fromRef]);
 
   async function handleCreate() {
@@ -140,7 +140,7 @@ export function NewBranchDialog({
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="mt-0.5 shrink-0 text-error/60 hover:text-error"
+                className="mt-0.5 shrink-0 text-error/60 outline-none hover:text-error focus-visible:ring-1 focus-visible:ring-error/50 rounded"
               >
                 <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
               </button>

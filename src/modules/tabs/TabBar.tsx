@@ -199,7 +199,13 @@ export function TabBar({
                       >
                         <TabIconFor tab={t} active={isActive} />
                         <span className="truncate">{labelFor(t)}</span>
-                        {t.kind === "editor" && t.dirty ? (
+                        {t.kind === "editor" && t.remoteSyncFailed ? (
+                          <span
+                            aria-label="Failed to save to remote — click to retry"
+                            title="Failed to save to remote — click to retry"
+                            className="size-1.5 shrink-0 rounded-full bg-destructive"
+                          />
+                        ) : t.kind === "editor" && t.dirty ? (
                           <span
                             aria-label="Unsaved changes"
                             className="size-1.5 shrink-0 rounded-full bg-foreground/70"
@@ -209,13 +215,21 @@ export function TabBar({
                       {tabs.length > 1 && t.kind !== "home" && (
                         <span
                           role="button"
+                          tabIndex={0}
                           aria-label="Close tab"
                           data-no-drag
                           onClick={(e) => {
                             e.stopPropagation();
                             onClose(t.id);
                           }}
-                          className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onClose(t.id);
+                            }
+                          }}
+                          className="rounded p-0.5 opacity-0 outline-none transition-opacity hover:bg-accent hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring/50 group-hover:opacity-60"
                         >
                           <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
                         </span>
@@ -233,6 +247,8 @@ export function TabBar({
                             tabsLength={tabs.length}
                             onStartRename={() => startEditing(t.id)}
                             onClose={onClose}
+                            onDuplicate={onDuplicate}
+                            onCloseOthers={onCloseOthers}
                             onCloseByKind={onCloseByKind}
                           />
                         ) : (

@@ -41,7 +41,11 @@ export function UntrackedSection({ files, onRefresh }: UntrackedSectionProps) {
   return (
     <div className="mb-0.5">
       <div className="group/hdr flex h-6 items-center gap-1.5 px-3 transition-colors hover:bg-foreground/6">
-        <button type="button" className="flex shrink-0 items-center" onClick={() => setCollapsed((c) => !c)}>
+        <button
+          type="button"
+          className="flex shrink-0 items-center outline-none focus-visible:ring-1 focus-visible:ring-ring/50 rounded"
+          onClick={() => setCollapsed((c) => !c)}
+        >
           <HugeiconsIcon
             icon={collapsed ? ArrowRight01Icon : ArrowDown01Icon}
             size={8}
@@ -52,7 +56,7 @@ export function UntrackedSection({ files, onRefresh }: UntrackedSectionProps) {
 
         <button
           type="button"
-          className="flex flex-1 items-center gap-1.5 text-left"
+          className="flex flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring/50 rounded"
           onClick={() => setCollapsed((c) => !c)}
         >
           <span className="select-none text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50 group-hover/hdr:text-muted-foreground/70">

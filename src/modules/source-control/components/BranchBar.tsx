@@ -2,16 +2,6 @@ import { ArrowDown01Icon, ArrowUp01Icon, Cancel01Icon, GitBranchIcon } from "@hu
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -38,8 +28,9 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
   const currentBranch = useSourceControlStore((s) => s.currentBranch);
   const branchList = useSourceControlStore((s) => s.branchList);
 
+  const requestForcePushConfirm = useSourceControlStore((s) => s.requestForcePushConfirm);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [showForcePushConfirm, setShowForcePushConfirm] = useState(false);
   const [showSetUpstreamPrompt, setShowSetUpstreamPrompt] = useState(false);
 
   const ahead = status?.ahead ?? 0;
@@ -127,27 +118,6 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
     }
   }
 
-  async function handleForcePush() {
-    setShowForcePushConfirm(false);
-    if (!repoRoot || operationInProgress) return;
-    setOperationInProgress("push");
-    try {
-      await git.pushForceWithLease(repoRoot, undefined, undefined, sessionId ?? undefined);
-      onRefresh();
-      useNotificationStore.getState().addActionResultNotification({
-        type: "success",
-        title: "Force Pushed",
-        message: currentBranch ? `${currentBranch} force-pushed to remote` : "Force-pushed to remote",
-      });
-    } catch (e) {
-      useNotificationStore
-        .getState()
-        .addActionResultNotification({ type: "error", title: "Force Push Failed", message: String(e) });
-    } finally {
-      setOperationInProgress(null);
-    }
-  }
-
   async function handleSetUpstream() {
     if (!repoRoot || !currentBranch || operationInProgress) return;
     setOperationInProgress("push");
@@ -173,7 +143,7 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
   const branchTrigger = (
     <button
       type="button"
-      className="flex max-w-[200px] items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-foreground/90 transition-colors hover:bg-foreground/6"
+      className="flex max-w-[200px] items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-foreground/90 outline-none transition-colors hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
     >
       <span className="truncate">{currentBranch || "—"}</span>
       <HugeiconsIcon
@@ -227,7 +197,7 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
               type="button"
               onClick={() => void handlePush()}
               disabled={operationInProgress !== null}
-              className="flex items-center gap-1.5 px-2.5 font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-1.5 px-2.5 font-medium text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {operationInProgress === "push" ? (
                 <Spinner className="size-2.5" />
@@ -245,7 +215,7 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
                 <button
                   type="button"
                   disabled={operationInProgress !== null}
-                  className="flex w-6 items-center justify-center text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/6 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-6 items-center justify-center text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <HugeiconsIcon icon={ArrowDown01Icon} size={9} strokeWidth={2.5} />
                 </button>
@@ -276,7 +246,7 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
                   Push To
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => setShowForcePushConfirm(true)}
+                  onClick={() => requestForcePushConfirm()}
                   className="text-xs text-warning focus:text-warning"
                 >
                   Force Push
@@ -310,41 +280,19 @@ export function BranchBar({ onRefresh }: BranchBarProps) {
           <button
             type="button"
             onClick={() => void handleSetUpstream()}
-            className="h-5 shrink-0 rounded border border-info/40 px-2 text-[10px] text-info hover:bg-info/20"
+            className="h-5 shrink-0 rounded border border-info/40 px-2 text-[10px] text-info outline-none hover:bg-info/20 focus-visible:ring-1 focus-visible:ring-info/50"
           >
             Set upstream & push
           </button>
           <button
             type="button"
             onClick={() => setShowSetUpstreamPrompt(false)}
-            className="text-info/60 hover:text-info"
+            className="text-info/60 outline-none hover:text-info focus-visible:ring-1 focus-visible:ring-info/50 rounded"
           >
             <HugeiconsIcon icon={Cancel01Icon} size={9} strokeWidth={2} />
           </button>
         </div>
       )}
-
-      {/* Force push confirm */}
-      <AlertDialog open={showForcePushConfirm} onOpenChange={setShowForcePushConfirm}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Force Push?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will overwrite the remote branch. Force-with-lease protects against overwriting others'
-              work if they pushed after your last fetch — but it is still a destructive operation.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => void handleForcePush()}
-              className="bg-orange-500 text-white hover:bg-orange-600"
-            >
-              Force Push
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

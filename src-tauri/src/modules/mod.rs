@@ -2,6 +2,7 @@ pub mod credentials;
 pub mod errors;
 #[cfg(target_os = "macos")]
 pub mod dock_menu;
+pub mod fonts;
 pub mod fs;
 pub mod git;
 pub mod hosts;
@@ -13,6 +14,7 @@ pub mod sftp;
 pub mod shell;
 pub mod snippets;
 pub mod ssh;
+pub mod terminal_exec;
 pub mod themes;
 pub mod backgrounds;
 pub mod scrollback;

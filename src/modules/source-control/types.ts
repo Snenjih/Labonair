@@ -16,6 +16,10 @@ export interface FileStatus {
   indexStatus: string; // single char: '.', 'A', 'M', 'D', 'R', 'C', 'U'
   worktreeStatus: string;
   submodule: SubmoduleState | null;
+  /** True only for entries from a porcelain v2 conflict ("u") line — the
+   *  only reliable "is this file conflicted" signal, since conflict XY codes
+   *  vary ("UU", "AA", "DD", "AU", ...) and don't always include 'U' itself. */
+  conflicted: boolean;
 }
 
 export type SubmoduleSyncState = "uninitialized" | "pointerChanged" | "conflict" | "clean";
@@ -98,6 +102,6 @@ export type FileListViewMode = "list" | "tree";
 
 export type SelectionMode =
   | { type: "file"; path: string; staged: boolean }
-  | { type: "section"; section: "staged" | "unstaged" | "untracked" }
+  | { type: "section"; section: "staged" | "unstaged" | "untracked" | "conflicts" }
   | { type: "all" }
   | { type: "commit"; hash: string; repositoryPath: string; sessionId?: string };

@@ -6,7 +6,6 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useTransferStore } from "@/modules/sftp/store/transferStore";
 import { useCommandSnippetsStore } from "@/modules/snippets/store/commandSnippetsStore";
 import { labelFor } from "../lib/tabUtils";
-import { setAgentAccessGrant, useAgentAccessStore } from "./agentAccessStore";
 import {
   type AiDiffStatus,
   basename,
@@ -26,6 +25,7 @@ import {
   titleFromUrl,
   type WorkspaceTab,
 } from "../types";
+import { setAgentAccessGrant, useAgentAccessStore } from "./agentAccessStore";
 
 // Module-level guard — same pattern as usePreferencesStore
 let _defaultTabOpened = false;
@@ -512,6 +512,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           ...x,
           ...(patch.title !== undefined && { title: patch.title }),
           ...(patch.dirty !== undefined && { dirty: patch.dirty }),
+          ...(patch.remoteSyncFailed !== undefined && { remoteSyncFailed: patch.remoteSyncFailed }),
           ...(patch.path !== undefined && { path: patch.path, isUntitled: false }),
           ...(patch.languageOverride !== undefined && {
             languageOverride: patch.languageOverride ?? undefined,

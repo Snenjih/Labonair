@@ -11,6 +11,10 @@ import type { TerminalPaneHandle, WorkspacePaneHandle } from "@/modules/terminal
 import { disposeSession } from "@/modules/terminal/lib/terminalSessionRegistry";
 import { selectActivePaneId, selectActiveTabKind, useTabsStore } from "../store/tabsStore";
 import type { AiDiffTab, Tab, WorkspaceTab } from "../types";
+import type { PendingConfirmation } from "./closeConfirmation";
+import { resolveCloseAction } from "./closeConfirmation";
+
+export type { PendingConfirmation } from "./closeConfirmation";
 
 export interface UseTabManagementOptions {
   home: string | null;
@@ -27,13 +31,9 @@ export interface TabManagementReturn {
   activeEditorHandle: EditorPaneHandle | null;
   activeDetectedUrl: string | null;
 
-  // Pending dialogs
-  pendingCloseTabId: number | null;
-  setPendingCloseTabId: React.Dispatch<React.SetStateAction<number | null>>;
-  pendingSaveTab: { id: number; title: string } | null;
-  setPendingSaveTab: React.Dispatch<React.SetStateAction<{ id: number; title: string } | null>>;
-  pendingDirtyTab: { id: number; title: string } | null;
-  setPendingDirtyTab: React.Dispatch<React.SetStateAction<{ id: number; title: string } | null>>;
+  // Pending close-confirmation queue (see `PendingConfirmation`)
+  pendingConfirmations: PendingConfirmation[];
+  setPendingConfirmations: React.Dispatch<React.SetStateAction<PendingConfirmation[]>>;
 
   // Snippet drawer
   snippetLogDrawerOpen: boolean;
@@ -112,9 +112,7 @@ export function useTabManagement({
   // ── State ─────────────────────────────────────────────────────────────────
   const [activeDetectedUrl, setActiveDetectedUrl] = useState<string | null>(null);
   const [activeEditorHandle, setActiveEditorHandle] = useState<EditorPaneHandle | null>(null);
-  const [pendingCloseTabId, setPendingCloseTabId] = useState<number | null>(null);
-  const [pendingSaveTab, setPendingSaveTab] = useState<{ id: number; title: string } | null>(null);
-  const [pendingDirtyTab, setPendingDirtyTab] = useState<{ id: number; title: string } | null>(null);
+  const [pendingConfirmations, setPendingConfirmations] = useState<PendingConfirmation[]>([]);
   const [snippetLogDrawerOpen, setSnippetLogDrawerOpen] = useState(false);
 
   // ── Reactive preference (needed as a dep in handleClose) ──────────────────
@@ -190,23 +188,21 @@ export function useTabManagement({
     (id: number) => {
       const { tabs } = useTabsStore.getState();
       const t = tabs.find((x) => x.id === id);
-      if (t?.kind === "workspace") {
-        if (confirmCloseTerminalTab) {
-          setPendingCloseTabId(id);
-          return;
-        }
+      if (!t) return;
+      const action = resolveCloseAction(
+        t as Tab & { isUntitled?: boolean; dirty?: boolean; remoteSyncFailed?: boolean },
+        confirmCloseTerminalTab,
+      );
+      if (action.type === "dispose") {
         disposeTab(id);
         return;
       }
-      if (t?.kind === "editor" && (t as { isUntitled: boolean }).isUntitled) {
-        setPendingSaveTab({ id, title: t.title });
-        return;
-      }
-      if (t?.kind === "editor" && (t as { dirty: boolean }).dirty) {
-        setPendingDirtyTab({ id, title: t.title });
-        return;
-      }
-      disposeTab(id);
+      // Functional updater — essential for bulk closes (Close All/Others/
+      // By-Kind), which call `handleClose` synchronously in a loop: each
+      // push must see the previous iteration's queued item, not a stale
+      // closure snapshot, or earlier tabs needing confirmation would be
+      // silently dropped from the queue.
+      setPendingConfirmations((q) => [...q, { ...action.item, id } as PendingConfirmation]);
     },
     [disposeTab, confirmCloseTerminalTab],
   );
@@ -245,7 +241,7 @@ export function useTabManagement({
       if (tab.kind === "workspace") {
         const wt = tab as WorkspaceTab;
         const session = wt.sessions[wt.activePaneId] ?? null;
-        if (session?.kind === "ssh" && session.hostId) newSshTab(session.hostId, tab.title);
+        if (session?.kind === "ssh" && session.hostId) newSshTab(session.hostId, tab.title, session.cwd);
         else newTab(session?.cwd);
       } else if (tab.kind === "editor") {
         openFileTab((tab as { path: string }).path);
@@ -431,12 +427,8 @@ export function useTabManagement({
     },
     activeEditorHandle,
     activeDetectedUrl,
-    pendingCloseTabId,
-    setPendingCloseTabId,
-    pendingSaveTab,
-    setPendingSaveTab,
-    pendingDirtyTab,
-    setPendingDirtyTab,
+    pendingConfirmations,
+    setPendingConfirmations,
     snippetLogDrawerOpen,
     setSnippetLogDrawerOpen,
     disposeTab,

@@ -1,9 +1,12 @@
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { FontPicker } from "@/modules/fonts";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  setConfirmCloseTerminalTab,
+  setNewTabInheritsCwd,
   setTerminalBell,
   setTerminalBlocksAutoCollapseOnAltScreen,
   setTerminalBlocksEnabled,
@@ -62,6 +65,8 @@ export function TerminalSection() {
   const terminalFastScrollModifier = usePreferencesStore((s) => s.terminalFastScrollModifier);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const terminalDefaultPath = usePreferencesStore((s) => s.terminalDefaultPath);
+  const newTabInheritsCwd = usePreferencesStore((s) => s.newTabInheritsCwd);
+  const confirmCloseTerminalTab = usePreferencesStore((s) => s.confirmCloseTerminalTab);
 
   return (
     <div className="flex flex-col gap-6">
@@ -102,16 +107,36 @@ export function TerminalSection() {
             className="h-7 w-52 font-mono text-[11.5px]"
           />
         </SettingRow>
+        <SettingRow
+          title="New tab inherits current directory"
+          description="Open new terminal tabs in the working directory of the active tab instead of the home directory."
+          hint={{
+            text: "Enabled by default — while on, this takes priority over 'Default working directory' above, which is ignored.",
+            variant: "info",
+          }}
+        >
+          <Switch checked={newTabInheritsCwd} onCheckedChange={(v) => void setNewTabInheritsCwd(v)} />
+        </SettingRow>
+        <SettingRow
+          title="Confirm before closing terminal tab"
+          description="Show a confirmation dialog when closing a terminal tab with a running shell."
+        >
+          <Switch
+            checked={confirmCloseTerminalTab}
+            onCheckedChange={(v) => void setConfirmCloseTerminalTab(v)}
+          />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
         <Label>Font</Label>
         <div className="flex flex-col gap-2">
           <SettingRow title="Font family" description="Monospace font for the terminal emulator.">
-            <Input
+            <FontPicker
               value={terminalFontFamily}
-              onChange={(e) => void setTerminalFontFamily(e.target.value)}
-              className="h-7 w-52 text-[11.5px]"
+              onChange={(v) => void setTerminalFontFamily(v)}
+              context="monospace"
+              className="w-52"
             />
           </SettingRow>
           <SettingRow title="Font size" description="Font size used in the terminal (in px).">

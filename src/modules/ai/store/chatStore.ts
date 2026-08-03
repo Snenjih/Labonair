@@ -49,6 +49,11 @@ export type AgentRunStatus = "idle" | "thinking" | "streaming" | "awaiting-appro
 
 export type QueuedMessage = { id: string; text: string; createdAt: number };
 
+/** A chat session's sticky terminal binding — `paneId` is the specific pane
+ *  bound at bind time (== ssh session_id for ssh panes), not just "whatever
+ *  pane is active in this tab now". */
+export type BoundTab = { tabId: number; paneId: string };
+
 export type AgentTokens = {
   inputTokens: number;
   outputTokens: number;
@@ -67,6 +72,8 @@ export type AgentMeta = {
   hitStepCap: boolean;
   compactionNotice: { droppedCount: number; at: number } | null;
 };
+
+const SELECTED_MODEL_KEY = "labonair-selected-model";
 
 const ZERO_TOKENS: AgentTokens = {
   inputTokens: 0,
@@ -199,6 +206,16 @@ type StoreState = {
   dequeueMessage: (sessionId: string) => QueuedMessage | null;
   cancelQueuedMessage: (sessionId: string, id: string) => void;
   clearQueue: (sessionId: string) => void;
+
+  /** Per-session sticky terminal-tab binding for `bash_run` — see
+   *  `src/modules/ai/lib/resolveTerminalTarget.ts`. Bound once (on first
+   *  tab-bound shell tool call in a chat session) and reused for every
+   *  subsequent call in that session, regardless of which tab the user has
+   *  focused in the UI, until explicitly retargeted or the bound tab/pane
+   *  is closed. */
+  boundTabs: Record<string, BoundTab | undefined>;
+  setBoundTab: (sessionId: string, bound: BoundTab) => void;
+  clearBoundTab: (sessionId: string) => void;
 };
 
 const NOOP_LIVE: Live = {
@@ -423,7 +440,7 @@ export const useChatStore = create<StoreState>((set, get) => ({
 
   selectedModelId: (() => {
     try {
-      return (localStorage.getItem("labonair-selected-model") as ModelId | null) ?? DEFAULT_MODEL_ID;
+      return (localStorage.getItem(SELECTED_MODEL_KEY) as ModelId | null) ?? DEFAULT_MODEL_ID;
     } catch {
       return DEFAULT_MODEL_ID;
     }
@@ -432,7 +449,7 @@ export const useChatStore = create<StoreState>((set, get) => ({
     const recents = [id, ...get().recentModelIds.filter((r) => r !== id)].slice(0, 10);
     set({ selectedModelId: id, recentModelIds: recents });
     try {
-      localStorage.setItem("labonair-selected-model", id);
+      localStorage.setItem(SELECTED_MODEL_KEY, id);
     } catch {
       /* ignore */
     }
@@ -607,6 +624,7 @@ export const useChatStore = create<StoreState>((set, get) => ({
     void useTodosStore.getState().clearSession(id);
     void clearSessionShell(id);
     get().clearQueue(id);
+    get().clearBoundTab(id);
 
     if (remaining.length === 0) {
       const fresh: SessionMeta = {
@@ -672,6 +690,20 @@ export const useChatStore = create<StoreState>((set, get) => ({
     });
   },
 
+  boundTabs: {},
+  setBoundTab: (sessionId, bound) => {
+    if (!sessionId) return;
+    set((s) => ({ boundTabs: { ...s.boundTabs, [sessionId]: bound } }));
+  },
+  clearBoundTab: (sessionId) => {
+    if (!sessionId) return;
+    set((s) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [sessionId]: _dropped, ...rest } = s.boundTabs;
+      return { boundTabs: rest };
+    });
+  },
+
   persistMessages: (id, messages) => {
     // Debounce the message-blob write so streaming doesn't pound the store.
     const existing = pendingPersist.get(id);
@@ -702,6 +734,18 @@ export const useChatStore = create<StoreState>((set, get) => ({
 
 export function getAgentMeta(): AgentMeta {
   return useChatStore.getState().agentMeta;
+}
+
+/** Whether the user has ever picked a model via the ModelPicker. Used at
+ *  startup to decide whether the "Default model" Settings preference should
+ *  seed `selectedModelId` (fresh install) or be left alone (an explicit pick
+ *  already exists and must survive app restarts). */
+export function hasPersistedModelSelection(): boolean {
+  try {
+    return localStorage.getItem(SELECTED_MODEL_KEY) !== null;
+  } catch {
+    return false;
+  }
 }
 
 export function getActiveProviderKey(): string | null {

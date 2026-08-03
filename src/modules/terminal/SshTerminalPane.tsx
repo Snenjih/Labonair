@@ -244,16 +244,17 @@ export const SshTerminalPane = forwardRef<TerminalPaneHandle, Props>(function Ss
     setReconnectCountdown(delay);
 
     if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
+    let remaining = delay;
     reconnectTimerRef.current = setInterval(() => {
-      setReconnectCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(reconnectTimerRef.current!);
-          reconnectTimerRef.current = null;
-          handleReconnect();
-          return 0;
-        }
-        return prev - 1;
-      });
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(reconnectTimerRef.current!);
+        reconnectTimerRef.current = null;
+        setReconnectCountdown(0);
+        handleReconnect();
+      } else {
+        setReconnectCountdown(remaining);
+      }
     }, 1000);
   }, [handleReconnect]);
 

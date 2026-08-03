@@ -62,6 +62,22 @@ impl Shell {
     }
 }
 
+fn expand_home(path: &str) -> PathBuf {
+    if path == "~" {
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from(path))
+    } else if let Some(stripped) = path.strip_prefix("~/") {
+        match dirs::home_dir() {
+            Some(mut home) => {
+                home.push(stripped);
+                home
+            }
+            None => PathBuf::from(path),
+        }
+    } else {
+        PathBuf::from(path)
+    }
+}
+
 pub fn build_command(
     cwd: Option<String>,
     shell_override: Option<String>,
@@ -96,7 +112,7 @@ pub fn build_command(
     }
 
     let resolved_cwd = cwd
-        .map(PathBuf::from)
+        .map(|p| expand_home(&p))
         .filter(|p| p.is_dir())
         .or_else(|| {
             std::env::var_os("HOME")

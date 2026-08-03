@@ -344,7 +344,8 @@ export function CommitDetailPanel({
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 flex size-5 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="Close commit details"
+          className="absolute right-3 top-3 flex size-5 items-center justify-center rounded text-muted-foreground/50 outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="18" y1="6" x2="6" y2="18" />

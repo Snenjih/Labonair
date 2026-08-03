@@ -198,8 +198,10 @@ export type Preferences = {
   aiTerminalContextLines: number;
   aiTemperature: number;
   aiWarnDestructiveCommands: boolean;
+  aiAutoOpenMiniOnSend: boolean;
   aiShellMaxTimeoutSecs: number;
   aiShellMaxOutputKb: number;
+  aiNotifyOnHeadlessCommand: boolean;
 
   // --- Terminal (input / scrolling) ---
   terminalCopyOnSelect: boolean;
@@ -393,8 +395,10 @@ const KEY_AI_MAX_AGENT_STEPS = "aiMaxAgentSteps";
 const KEY_AI_TERMINAL_CONTEXT_LINES = "aiTerminalContextLines";
 const KEY_AI_TEMPERATURE = "aiTemperature";
 const KEY_AI_WARN_DESTRUCTIVE = "aiWarnDestructiveCommands";
+const KEY_AI_AUTO_OPEN_MINI_ON_SEND = "aiAutoOpenMiniOnSend";
 const KEY_AI_SHELL_MAX_TIMEOUT_SECS = "aiShellMaxTimeoutSecs";
 const KEY_AI_SHELL_MAX_OUTPUT_KB = "aiShellMaxOutputKb";
+const KEY_AI_NOTIFY_ON_HEADLESS_COMMAND = "aiNotifyOnHeadlessCommand";
 const KEY_TERMINAL_COPY_ON_SELECT = "terminalCopyOnSelect";
 const KEY_TERMINAL_RIGHT_CLICK_PASTES = "terminalRightClickPastes";
 const KEY_TERMINAL_WORD_SEPARATOR = "terminalWordSeparator";
@@ -468,7 +472,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   appTheme: "default",
   themeVariantOverrides: {},
-  appFontFamily: "system-ui",
+  // A full CSS stack (not a bare name — consumed as-is, like
+  // terminalFontFamily/editorFontFamily below) matching the hardcoded CSS
+  // default that was in effect while this preference was dead code — wiring
+  // it up (useTypographyEngine.ts) must not silently change existing users'
+  // UI font.
+  appFontFamily: '"Inter Variable", sans-serif',
   appFontSize: 13,
   appLineHeight: 1.5,
   backgroundImage: "",
@@ -567,8 +576,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   aiTerminalContextLines: 300,
   aiTemperature: 0.7,
   aiWarnDestructiveCommands: true,
+  aiAutoOpenMiniOnSend: true,
   aiShellMaxTimeoutSecs: 300,
   aiShellMaxOutputKb: 256,
+  aiNotifyOnHeadlessCommand: true,
 
   terminalCopyOnSelect: false,
   terminalRightClickPastes: false,
@@ -905,6 +916,8 @@ export async function loadPreferences(): Promise<Preferences> {
     aiTemperature: get<number>(KEY_AI_TEMPERATURE) ?? DEFAULT_PREFERENCES.aiTemperature,
     aiWarnDestructiveCommands:
       get<boolean>(KEY_AI_WARN_DESTRUCTIVE) ?? DEFAULT_PREFERENCES.aiWarnDestructiveCommands,
+    aiAutoOpenMiniOnSend:
+      get<boolean>(KEY_AI_AUTO_OPEN_MINI_ON_SEND) ?? DEFAULT_PREFERENCES.aiAutoOpenMiniOnSend,
     aiShellMaxTimeoutSecs: Math.min(
       1800,
       Math.max(30, get<number>(KEY_AI_SHELL_MAX_TIMEOUT_SECS) ?? DEFAULT_PREFERENCES.aiShellMaxTimeoutSecs),
@@ -913,6 +926,8 @@ export async function loadPreferences(): Promise<Preferences> {
       2048,
       Math.max(64, get<number>(KEY_AI_SHELL_MAX_OUTPUT_KB) ?? DEFAULT_PREFERENCES.aiShellMaxOutputKb),
     ),
+    aiNotifyOnHeadlessCommand:
+      get<boolean>(KEY_AI_NOTIFY_ON_HEADLESS_COMMAND) ?? DEFAULT_PREFERENCES.aiNotifyOnHeadlessCommand,
     terminalCopyOnSelect:
       get<boolean>(KEY_TERMINAL_COPY_ON_SELECT) ?? DEFAULT_PREFERENCES.terminalCopyOnSelect,
     terminalRightClickPastes:
@@ -1679,6 +1694,11 @@ export async function setAiWarnDestructiveCommands(value: boolean): Promise<void
   await (await getStore()).save();
 }
 
+export async function setAiAutoOpenMiniOnSend(value: boolean): Promise<void> {
+  await (await getStore()).set(KEY_AI_AUTO_OPEN_MINI_ON_SEND, value);
+  await (await getStore()).save();
+}
+
 export async function setAiShellMaxTimeoutSecs(value: number): Promise<void> {
   const clamped = Math.min(1800, Math.max(30, Math.round(value)));
   await (await getStore()).set(KEY_AI_SHELL_MAX_TIMEOUT_SECS, clamped);
@@ -1688,6 +1708,11 @@ export async function setAiShellMaxTimeoutSecs(value: number): Promise<void> {
 export async function setAiShellMaxOutputKb(value: number): Promise<void> {
   const clamped = Math.min(2048, Math.max(64, Math.round(value)));
   await (await getStore()).set(KEY_AI_SHELL_MAX_OUTPUT_KB, clamped);
+  await (await getStore()).save();
+}
+
+export async function setAiNotifyOnHeadlessCommand(value: boolean): Promise<void> {
+  await (await getStore()).set(KEY_AI_NOTIFY_ON_HEADLESS_COMMAND, value);
   await (await getStore()).save();
 }
 
@@ -2007,8 +2032,10 @@ export async function onPreferencesChange(cb: (key: PrefKey, value: unknown) => 
     [KEY_AI_TERMINAL_CONTEXT_LINES]: "aiTerminalContextLines",
     [KEY_AI_TEMPERATURE]: "aiTemperature",
     [KEY_AI_WARN_DESTRUCTIVE]: "aiWarnDestructiveCommands",
+    [KEY_AI_AUTO_OPEN_MINI_ON_SEND]: "aiAutoOpenMiniOnSend",
     [KEY_AI_SHELL_MAX_TIMEOUT_SECS]: "aiShellMaxTimeoutSecs",
     [KEY_AI_SHELL_MAX_OUTPUT_KB]: "aiShellMaxOutputKb",
+    [KEY_AI_NOTIFY_ON_HEADLESS_COMMAND]: "aiNotifyOnHeadlessCommand",
     [KEY_TERMINAL_COPY_ON_SELECT]: "terminalCopyOnSelect",
     [KEY_TERMINAL_RIGHT_CLICK_PASTES]: "terminalRightClickPastes",
     [KEY_TERMINAL_WORD_SEPARATOR]: "terminalWordSeparator",

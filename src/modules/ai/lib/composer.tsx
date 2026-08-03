@@ -204,7 +204,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
     if (!trimmed && files.length === 0 && pickedDirectives.length === 0 && pickedCommands.length === 0)
       return;
 
-    useChatStore.getState().openMini();
+    if (usePreferencesStore.getState().aiAutoOpenMiniOnSend) useChatStore.getState().openMini();
 
     // Slash-command interception. `/plan` toggles plan mode; `/init` rewrites
     // the prompt to the LABONAIR.md scan template before sending.
