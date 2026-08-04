@@ -127,12 +127,16 @@ export function VirtualizedTreeList({
                   Loading…
                 </div>
               ) : row.kind === "error" ? (
-                <div
-                  className="flex h-full items-center text-[11px] text-destructive"
+                <button
+                  type="button"
+                  onClick={() => tree.refresh(row.parentPath)}
+                  title="Click to retry"
+                  className="flex h-full w-full items-center gap-1.5 text-left text-[11px] text-destructive hover:underline"
                   style={{ paddingLeft: 6 + row.depth * 12 + 18 }}
                 >
-                  {row.message}
-                </div>
+                  <span className="truncate">{row.message}</span>
+                  <span className="shrink-0 text-primary">Retry</span>
+                </button>
               ) : (
                 <button
                   type="button"

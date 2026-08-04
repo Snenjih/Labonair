@@ -1,6 +1,39 @@
 # Handshake — Session State
 
-## Last Session: 2026-07-21 (Host Manager — host card size setting)
+## Last Session: 2026-08-04 (Explorer Reconnect After Sleep/Wake — No Retry Affordance)
+
+### What Was Done
+User reported: after the laptop sleeps/lid-closes for a while, the SSH **terminal** auto-reconnects fine, but the sidebar **Explorer** just shows a dead/stale state with no way to reconnect. User asked for a "simple reconnect button" plus confirmation that reconnecting resyncs the terminal's cwd. Investigated via 3 research passes (2 background Explore agents + direct reading) before touching any code — the codebase already had substantial explorer-reconnect infrastructure (`useLazyExplorerSession.ts`, `ExplorerAuthPrompt.tsx` retry overlay, commits `752da0f`/`30c22c9`), so the real bug was narrower than "no reconnect exists at all." Used `AskUserQuestion` to confirm scope (UI-only fix vs. UI fix + proactive backend detection) — user chose the full scope.
+
+**Root causes found** (all verified by reading the actual code, not speculation):
+1. `VirtualizedTreeList.tsx`'s inline per-node tree error row (`row.kind === "error"`, fed by `buildTreeRows.ts`) rendered as **plain unclickable text** — no retry affordance at all. This is very likely the literal "just says closed, nothing to click" the user saw, since a directory-read failure at the tree-node level doesn't necessarily coincide with the session-level `ExplorerAuthPrompt` overlay flipping on (timing/race between per-node error state in `useFileTree.ts` and the session-level `ssh_connection_lost` listener in `useLazyExplorerSession.ts`).
+2. `FileExplorer.tsx`'s session-level reconnect overlay (`ExplorerAuthPrompt`) was **only wired for `source: "lazy-session"` targets** (an SSH workspace tab's sidebar tree) — a sidebar tree anchored to a dedicated SFTP tab's session (`source: "sftp-tab"`, or an editor/preview tab pinned to one) had **zero session-level reconnect UI**, only the same unclickable per-node error row.
+3. **No proactive dead-connection detection for SFTP**, unlike PTY: `ssh/pty.rs`'s `spawn_reader` is an always-on background task blocked on the channel that notices a keepalive failure immediately; the SFTP subsystem (`sftp/connection.rs`) has no equivalent — a dead socket is only discovered reactively, on whatever `sftp_*` request the frontend happens to issue next (a poll tick, gated by `explorerRemotePollInterval`, or a manual folder expand). Verified `is_network_error` (`sftp/net_error.rs`) *does* correctly classify a `russh_sftp` request timeout (its 10s built-in `request_timeout_secs`) as a network error and *does* trigger `handle_sftp_error`'s session removal + `ssh_connection_lost` emission — so the classifier itself wasn't the gap, detection latency/triggering was.
+4. **Path sync turned out to already be a non-issue** for the main scenario (SSH workspace tab + sidebar tree): `useExplorerTarget.ts`'s `deriveExplorerTarget` derives the lazy-session's `rootPath` from `session.cwd` (line 86), which is itself kept live by OSC7 shell-integration — so once both the terminal and the Explorer session are reconnected, the Explorer's root path re-derives reactively with no extra plumbing needed. Deliberately did **not** add speculative "push path to terminal" code for this case, since the sync is already one-way-correct by existing architecture (Explorer follows Terminal, not the reverse) — added only where an actual gap existed.
+
+**Fixes implemented** (3 files, all verified: `cargo check`/`clippy --all-targets`/`test --lib` 116/116 ✅, `tsc --noEmit` ✅, `vitest run` 609/609 ✅, `biome check` on touched files shows only pre-existing unrelated warnings):
+- `src-tauri/src/modules/sftp/connection.rs` — new `spawn_sftp_health_check()`, spawned once per newly-opened SFTP subsystem (placed right after `session.sftp.get_or_try_init(...)`, which is only reached when the subsystem wasn't already open — so no duplicate-spawn risk from `sftp_connect`'s existing idempotency early-return). Pings `sftp.canonicalize(".")` every `keep_alive_interval` (reused from host config, floor 10s) seconds; re-resolves the session from `SshState` by `session_id` on every tick instead of holding an `Arc`, so the loop both picks up a session replaced by reconnect and self-terminates the moment `sftp_disconnect` removes the map entry — no separate cancellation flag needed. On a network-classified failure, mirrors `handle_sftp_error`'s exact behavior (remove from `SshState`, emit `ssh_connection_lost`).
+- `src/modules/explorer/components/VirtualizedTreeList.tsx` — the inline tree error row is now a `<button>` calling `tree.refresh(row.parentPath)`, with a visible "Retry" label. No `buildTreeRows.ts` changes needed (it already carried `parentPath`).
+- `src/modules/explorer/lib/useSftpTabSessionHealth.ts` (new) — lightweight read-only health hook for `sftp-tab`-sourced sidebar views: listens for `ssh_connection_lost`/`session_established` for that exact `session_id` (doesn't own the connection's lifecycle — the owning tab does), exposes `{dead, error, reconnecting, reconnect}` where `reconnect()` calls `sftp_disconnect`+`sftp_connect` directly.
+- `src/modules/explorer/FileExplorer.tsx` — wires the new hook and adds a second early-return branch (mirrors the existing `lazyHostId` one) that swaps to `ExplorerAuthPrompt` when `sftpTabHealth.dead`, giving `sftp-tab`-sourced sidebar views the same one-click reconnect overlay the `lazy-session` case already had.
+
+### Verification done
+`cargo check` ✅ · `cargo clippy --all-targets` (0 warnings) ✅ · `cargo test --lib` (116/116) ✅ · `pnpm exec tsc --noEmit` ✅ · `pnpm test:run` (609/609, 48 files) ✅ · `pnpm exec biome check` on all touched files (only 4 pre-existing warnings in untouched lines of `FileExplorer.tsx`, none new). **Not done**: no live `pnpm tauri dev` + real SSH host test (headless sandbox, no display, no reachable SSH server — consistent with every prior SSH-reliability session in this project's history). The specific scenario to verify manually: put the app to sleep with an SSH workspace tab + sidebar Explorer open, wake after several minutes, confirm the Explorer surfaces a reconnect affordance within roughly one `keep_alive_interval` window (not just on the next manual click), and that clicking it restores browsing with the tree rooted at the terminal's current directory.
+
+### Current State
+Uncommitted on `main` — user has not asked to commit yet. 3 files changed (`src-tauri/src/modules/sftp/connection.rs`, `src/modules/explorer/components/VirtualizedTreeList.tsx`, `src/modules/explorer/FileExplorer.tsx`) + 1 new file (`src/modules/explorer/lib/useSftpTabSessionHealth.ts`).
+
+### What's Next
+- Manual `pnpm tauri dev` sleep/wake test against a real SSH host (see above) — mandatory before considering this closed, per this project's established pattern for anything SSH-reliability-related.
+- If the user wants this committed/PR'd, follow the standard branch/commit/push/PR workflow (not done automatically — user hadn't asked).
+- Not in scope for this pass, left as-is: the `lazy-session` case's own auto-reconnect (`useLazyExplorerSession.ts`'s existing `reconnectAttempts`/backoff) already existed and wasn't touched; only the detection-latency and missing-affordance gaps were fixed.
+
+### Blockers
+- None — ready for manual verification.
+
+---
+
+## Previous Session: 2026-07-21 (Host Manager — host card size setting)
 
 ### What Was Done
 Small, self-contained feature on `main` (user asked to commit directly, no PR): a "Host card size" slider in Settings → Appearance → Interface, letting the user uniformly scale the Host Manager's grid cards (85%–150%, default 100%, step 5%). Only the grid view is affected — list view (`HostListItem.tsx`) is deliberately untouched, per user's choice when asked.

@@ -1,7 +1,69 @@
 use tauri::Emitter;
 use crate::modules::errors::LabonairError;
+use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::{RushSession, SshState, TrustState};
 use std::sync::Arc;
+
+/// Proactively pings the lazily-opened SFTP subsystem with a cheap read-only
+/// request (`canonicalize(".")`) every `keep_alive_interval` seconds while
+/// the session stays registered. Unlike a PTY session — which has an
+/// always-on reader task blocked on the channel that notices a dead
+/// connection as soon as the transport's own keepalive gives up — the SFTP
+/// subsystem has no background reader; without this, a socket that died
+/// silently (e.g. the machine slept) is only ever discovered reactively, on
+/// whatever `sftp_*` request the frontend happens to issue next (a poll tick
+/// or a manual folder expand), which can lag arbitrarily behind the actual
+/// drop and leaves the sidebar Explorer looking "connected" while stale.
+///
+/// Spawned once per newly-opened SFTP subsystem (see the call site in
+/// `sftp_connect_inner`, gated by `OnceCell::get_or_try_init` so it only
+/// happens once even under concurrent `sftp_connect` calls). Deliberately
+/// re-resolves the session from `state` on every tick instead of holding an
+/// `Arc` — this both picks up a session that was replaced by a reconnect
+/// under the same `session_id`, and lets the loop self-terminate the moment
+/// `sftp_disconnect` removes the map entry, with no separate cancellation
+/// flag needed.
+fn spawn_sftp_health_check(
+    session_id: String,
+    state: SshState,
+    app: tauri::AppHandle,
+    keep_alive_interval: Option<i64>,
+) {
+    let interval = std::time::Duration::from_secs(keep_alive_interval.unwrap_or(25).max(10) as u64);
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(interval).await;
+
+            let sftp = {
+                let map = match state.0.lock() {
+                    Ok(m) => m,
+                    Err(_) => break,
+                };
+                match map.get(&session_id).and_then(|s| s.sftp.get().cloned()) {
+                    Some(sftp) => sftp,
+                    None => break, // session disconnected — nothing left to watch
+                }
+            };
+
+            if let Err(e) = sftp.canonicalize(".").await {
+                let msg = e.to_string();
+                if is_network_error(&msg) {
+                    if let Ok(mut map) = state.0.lock() {
+                        map.remove(&session_id);
+                    }
+                    let _ = app.emit(
+                        "ssh_connection_lost",
+                        serde_json::json!({ "session_id": session_id, "reason": msg }),
+                    );
+                    break;
+                }
+                // Non-network error (e.g. a transient permission hiccup on
+                // ".") — keep the session registered and just try again
+                // next tick.
+            }
+        }
+    });
+}
 
 /// Establishes (or reuses) the unified per-`session_id` SSH session and
 /// lazily opens its SFTP subsystem. Session storage moved from the old
@@ -231,6 +293,12 @@ async fn sftp_connect_inner(
     let _ = app_handle.emit("ssh_connect_log", serde_json::json!({
         "session_id": session_id, "message": "SFTP ready ✓"
     }));
+
+    // `sftp_connect_inner` is only reached when the SFTP subsystem wasn't
+    // already open (the outer `sftp_connect` command early-returns Ok(())
+    // otherwise) — so this always corresponds to a genuinely fresh open,
+    // never a redundant spawn from an idempotent re-call.
+    spawn_sftp_health_check(session_id.clone(), state.clone(), app.clone(), keep_alive_interval);
 
     app.emit(
         "session_established",

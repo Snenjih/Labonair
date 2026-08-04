@@ -40,6 +40,7 @@ import { useFileTree } from "./lib/useFileTree";
 import { useInternalDrop } from "./lib/useInternalDrop";
 import { useLazyExplorerSession } from "./lib/useLazyExplorerSession";
 import { useOsFileDrop } from "./lib/useOsFileDrop";
+import { useSftpTabSessionHealth } from "./lib/useSftpTabSessionHealth";
 
 type Props = {
   explorerTarget: ExplorerTarget;
@@ -102,6 +103,19 @@ export function FileExplorer({
       ? explorerTarget.hostId
       : null;
   const lazySession = useLazyExplorerSession(lazyHostId);
+
+  // "sftp-tab" targets don't need lifecycle management (the owning tab
+  // already connects/disconnects them) but previously had no session-level
+  // reconnect UI at all if that connection died — a dead session just left
+  // the tree showing an uninteractive inline error row per node. This is a
+  // read-only health signal + manual reconnect, not a lifecycle owner.
+  const sftpTabHostId =
+    explorerTarget.type === "remote" && explorerTarget.source === "sftp-tab" ? explorerTarget.hostId : null;
+  const sftpTabSessionId =
+    explorerTarget.type === "remote" && explorerTarget.source === "sftp-tab"
+      ? explorerTarget.sessionId
+      : null;
+  const sftpTabHealth = useSftpTabSessionHealth(sftpTabSessionId, sftpTabHostId);
 
   const activeSessionId =
     explorerTarget.type === "remote"
@@ -302,6 +316,19 @@ export function FileExplorer({
         hostLabel={host?.name ?? lazyHostId}
         onReconnect={() => lazySession?.reconnect()}
         onOpenSftpTab={() => onOpenSftpTab?.(lazyHostId, host?.name ?? "SSH")}
+      />
+    );
+  }
+
+  if (sftpTabHostId && sftpTabHealth.dead) {
+    const host = hosts.find((h) => h.id === sftpTabHostId);
+    return (
+      <ExplorerAuthPrompt
+        status={sftpTabHealth.reconnecting ? "connecting" : "error"}
+        error={sftpTabHealth.error}
+        hostLabel={host?.name ?? sftpTabHostId}
+        onReconnect={sftpTabHealth.reconnect}
+        onOpenSftpTab={() => onOpenSftpTab?.(sftpTabHostId, host?.name ?? "SSH")}
       />
     );
   }
