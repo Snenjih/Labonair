@@ -16,6 +16,7 @@ import { explorerDrag } from "@/modules/explorer/lib/explorerDrag";
 import { reconnectExplorerSessionForHost } from "@/modules/explorer/lib/useLazyExplorerSession";
 import { useConnectionStatusStore, useHostsStore } from "@/modules/hosts";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
+import { closeDanglingAltScreen } from "@/modules/session";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { setAgentAccessGrant, useAgentAccessStore, type TerminalSessionData } from "@/modules/tabs";
 import { useTheme } from "@/modules/theme";
@@ -496,7 +497,7 @@ export const SshTerminalPane = forwardRef<TerminalPaneHandle, Props>(function Ss
           maxBytes: usePreferencesStore.getState().scrollbackMaxSizeMb * 1024 * 1024,
         });
         if (ansi && !disposed) {
-          deliverText(sessionId, ansi);
+          deliverText(sessionId, closeDanglingAltScreen(ansi));
           const cols = getSlotForLeaf(sessionId)?.term.cols ?? 80;
           const sepLen = Math.max(20, cols - 20);
           deliverText(sessionId, `\r\n\x1b[2m\x1b[90m${"─".repeat(sepLen)} session restored \x1b[0m\r\n\r\n`);

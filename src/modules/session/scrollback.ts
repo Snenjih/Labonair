@@ -39,6 +39,38 @@ function truncateScrollback(ansi: string, maxBytes: number): string {
   return SCROLLBACK_OVERFLOW_NOTICE + ansi.slice(start);
 }
 
+const ALT_SCREEN_ENTER = /\x1b\[\?1049h/g;
+const ALT_SCREEN_EXIT = /\x1b\[\?1049l/g;
+
+/**
+ * Appended to a replayed scrollback blob only if it ends with a dangling
+ * (unmatched) alt-screen entry. SerializeAddon.serialize() (see
+ * saveAllScrollbacks below) appends `\x1b[?1049h` iff the buffer was in alt
+ * mode (vim/htop/a TUI) when saved — never a matching close — so for a
+ * direct save, "1049h present" == "dangling". flushDormantScrollback can
+ * combine that with raw dormant-ring bytes that *do* contain a real,
+ * balanced 1049h/1049l pair (a TUI opened and closed while the tab was
+ * backgrounded), so this counts markers rather than doing a presence check,
+ * to avoid a redundant restore on an already-clean blob.
+ *
+ * This must stay conditional, never unconditional: DECRST 1049 is NOT a
+ * true no-op in xterm.js when not needed — it always calls restoreCursor()
+ * (see InputHandler.ts case 1049), which jumps the cursor to
+ * Buffer.savedX/Y (0,0 by default when no matching 1049h ever ran). An
+ * unconditional append would corrupt the far more common non-TUI restore
+ * case by yanking the cursor to the top after every replay.
+ *
+ * Must be baked into the returned string itself (not a live post-hoc check
+ * against the bound Terminal) so it self-applies whether the bytes are
+ * written straight into a live slot or land in the dormant ring first and
+ * get replayed later when the tab becomes visible — see SshTerminalPane.tsx.
+ */
+export function closeDanglingAltScreen(ansi: string): string {
+  const enters = ansi.match(ALT_SCREEN_ENTER)?.length ?? 0;
+  const exits = ansi.match(ALT_SCREEN_EXIT)?.length ?? 0;
+  return enters > exits ? `${ansi}\x1b[?1049l` : ansi;
+}
+
 type ScrollbackLive = {
   getAllTerminalRefs: () => Map<string, TerminalPaneHandle>;
 };
