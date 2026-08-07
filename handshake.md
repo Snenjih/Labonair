@@ -1,6 +1,41 @@
 # Handshake — Session State
 
-## Last Session: 2026-08-04 (Explorer Reconnect After Sleep/Wake — No Retry Affordance)
+## Last Session: 2026-08-07 (Explorer Reconnect Button Did Nothing — Stale-Request Race + Missing Refetch)
+
+### What Was Done
+Follow-up to the 2026-08-04 session below: user did a real sleep/wake test of the reconnect button that fix added. The overlay correctly appeared ("Connection Lost — no SSH session for this host — reconnect and try again"), but **clicking Reconnect did nothing** — same overlay stayed up, only switching tabs away and back cleared it. Investigated via 3 background Explore agents (no speculation) before touching code; found two independent, compounding bugs rather than one:
+
+1. **Frontend — a successful reconnect never told the tree to refetch.** `useSftpTabSessionHealth.reconnect()` only flipped its own local `dead` flag; `FileExplorer.tsx`'s `activeSessionId`/`rootPath`/`provider` for `sftp-tab` targets were derived **unconditionally** from `explorerTarget.sessionId` (unlike the `lazy-session` path, which nulls them while disconnected), so `useFileTree`'s scope-reset effect never re-ran on reconnect. Switching tabs "fixed" it only as an accidental side effect of `useLocalExplorerStore`'s scope-cache leave/re-enter logic doing a silent background refetch.
+2. **Backend — the real reason the button looked completely broken.** Three places removed a session from `SshState` **by `session_id` alone**, with no check the map still held the *same* session that failed: `spawn_sftp_health_check` (`sftp/connection.rs`, 25s ping / 10s SFTP-internal timeout) and both `report_and_pass` closures in `git/executor.rs`'s `run_remote_script`/`run_remote_script_with_stdin` (Source Control polls the *same* `session_id` roughly every 12.5s, confirmed both sidebar slots share one `explorerTarget`). Since `sftp_connect` on reconnect does `sftp_disconnect` then a real multi-round-trip network reconnect, a stale in-flight ping/git-poll that captured the *old* session could fail *after* the new one was installed — and blindly tear the fresh session back out + re-emit `ssh_connection_lost`, undoing the reconnect the user just triggered. This is the concrete explanation for "I click Reconnect and nothing happens."
+3. **Related leak found while reading `spawn_sftp_health_check`**: it deliberately re-resolved by `session_id` every tick instead of self-terminating, so every reconnect over a session's lifetime (repeated sleep/wake) left the old health-check loop running (silently adopting the new session) *while* `sftp_connect_inner` also spawned a brand-new loop for it — permanently leaking one more redundant concurrent poller per reconnect.
+4. **Small parity gap**: `useSftpTabSessionHealth` had no `AuthFailed` classification (unlike `useLazyExplorerSession`), so an expired passphrase/2FA session would show a Retry button that fails identically forever instead of pointing at the SFTP tab's real credential-prompt UI.
+
+**Fixes implemented** (4 files):
+- `src/modules/explorer/FileExplorer.tsx` — `activeSessionId` for `sftp-tab` targets now nulls while `sftpTabHealth.dead`, mirroring the `lazy-session` gate exactly — reuses `useFileTree`'s existing, already-tested scope-reset path instead of inventing a new refresh mechanism. Also passes `authRequired`-aware `status` to `ExplorerAuthPrompt`.
+- `src/modules/explorer/lib/useSftpTabSessionHealth.ts` — added `authRequired: boolean`, classified from `LabonairError.code === "AuthFailed"` on reconnect failure.
+- `src-tauri/src/modules/sftp/connection.rs` — `spawn_sftp_health_check` now takes the specific `Arc<RushSession>` it was spawned for and checks `Arc::ptr_eq` against the map's current entry every tick, both to decide whether to keep polling (self-terminates if superseded — fixes the leak) and whether a failure is allowed to remove/emit (fixes the data-loss race).
+- `src-tauri/src/modules/git/executor.rs` — both `report_and_pass` closures (`run_remote_script`, `run_remote_script_with_stdin`) now do the same `Arc::ptr_eq` compare-and-remove against the `session` Arc they already had in scope before removing from `SshState`/emitting `ssh_connection_lost`. Added `use std::sync::Arc;`.
+
+**Deliberately left as documented, lower-priority residual risk** (not fixed this pass):
+- The upfront `map.get(session_id).ok_or_else(...)` miss in `executor.rs` (the exact site producing the "no SSH session for this host" string) has no Arc to compare against — narrow window between `sftp_disconnect` and `sftp_connect` re-inserting, self-heals once `session_established` fires.
+- `handle_sftp_error` in `ssh/sftp.rs` (~13 ordinary SFTP command call sites — read_dir, rename, delete, chmod, etc.) has the identical blind-removal pattern, but `get_sftp_session_arc` only returns the inner SFTP-subsystem Arc, not the outer session Arc — fixing it means threading the outer Arc through ~13 call sites. Lower priority since it's not what caused the reported symptom (one-off browsing ops racing a manual reconnect are comparatively rare vs. git-status's frequent polling / the health-check's periodic ping). Good candidate for a focused follow-up if ever observed in practice.
+
+### Verification done
+`cargo check` ✅ · `cargo clippy --all-targets` (0 warnings) ✅ · `cargo test --lib` (116/116) ✅ · `pnpm exec tsc --noEmit` ✅ · `pnpm test:run` (614/614, 49 files) ✅ · `pnpm exec biome check` on all 4 touched files (only same 4 pre-existing warnings in untouched `FileExplorer.tsx` lines noted in the 2026-08-04 entry below, none new). **Not done**: no live `pnpm tauri dev` + real SSH host retest (headless sandbox — same limitation as every prior SSH-reliability session). Specifically still needs: repeat the user's exact repro (sleep/wake an SFTP tab, click Reconnect without switching tabs, confirm tree shows fresh data) — ideally with Source Control open on the other sidebar slot for the same host during the outage, to exercise the git-poll race this fix targets.
+
+### Current State
+Committed to `main` (session-end protocol; not pushed unless asked). 4 files changed: `src-tauri/src/modules/git/executor.rs`, `src-tauri/src/modules/sftp/connection.rs`, `src/modules/explorer/FileExplorer.tsx`, `src/modules/explorer/lib/useSftpTabSessionHealth.ts`.
+
+### What's Next
+- Manual sleep/wake retest against a real SSH host (see above) — mandatory before considering this fully closed.
+- If the residual `handle_sftp_error` race (ordinary SFTP commands racing a reconnect) is ever observed in practice, revisit threading the outer session Arc through `ssh/sftp.rs`'s ~13 call sites the same way.
+
+### Blockers
+- None — ready for manual verification.
+
+---
+
+## Previous Session: 2026-08-04 (Explorer Reconnect After Sleep/Wake — No Retry Affordance)
 
 ### What Was Done
 User reported: after the laptop sleeps/lid-closes for a while, the SSH **terminal** auto-reconnects fine, but the sidebar **Explorer** just shows a dead/stale state with no way to reconnect. User asked for a "simple reconnect button" plus confirmation that reconnecting resyncs the terminal's cwd. Investigated via 3 research passes (2 background Explore agents + direct reading) before touching any code — the codebase already had substantial explorer-reconnect infrastructure (`useLazyExplorerSession.ts`, `ExplorerAuthPrompt.tsx` retry overlay, commits `752da0f`/`30c22c9`), so the real bug was narrower than "no reconnect exists at all." Used `AskUserQuestion` to confirm scope (UI-only fix vs. UI fix + proactive backend detection) — user chose the full scope.

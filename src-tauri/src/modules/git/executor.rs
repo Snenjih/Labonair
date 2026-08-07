@@ -3,6 +3,7 @@ use crate::modules::ssh::SshState;
 use crate::modules::ssh::shell::shell_quote;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command as TokioCommand;
 
@@ -388,12 +389,27 @@ async fn run_remote_script(
             .clone()
     };
 
+    // Guards against a stale exec failure (dispatched against `session`
+    // before this call started) resolving *after* a concurrent reconnect
+    // already installed a new `RushSession` under the same `session_id` —
+    // without the `Arc::ptr_eq` check, this would blindly rip out the fresh
+    // session and re-report it as lost, even though it's actually healthy.
     let report_and_pass = |e: String| -> String {
         if is_network_error(&e) {
-            if let Ok(mut map) = ssh_state.0.lock() {
-                map.remove(session_id);
+            let removed = if let Ok(mut map) = ssh_state.0.lock() {
+                match map.get(session_id) {
+                    Some(current) if Arc::ptr_eq(current, &session) => {
+                        map.remove(session_id);
+                        true
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            };
+            if removed {
+                emit_connection_lost(&e);
             }
-            emit_connection_lost(&e);
         }
         e
     };
@@ -480,12 +496,27 @@ async fn run_remote_script_with_stdin(
             .clone()
     };
 
+    // Guards against a stale exec failure (dispatched against `session`
+    // before this call started) resolving *after* a concurrent reconnect
+    // already installed a new `RushSession` under the same `session_id` —
+    // without the `Arc::ptr_eq` check, this would blindly rip out the fresh
+    // session and re-report it as lost, even though it's actually healthy.
     let report_and_pass = |e: String| -> String {
         if is_network_error(&e) {
-            if let Ok(mut map) = ssh_state.0.lock() {
-                map.remove(session_id);
+            let removed = if let Ok(mut map) = ssh_state.0.lock() {
+                match map.get(session_id) {
+                    Some(current) if Arc::ptr_eq(current, &session) => {
+                        map.remove(session_id);
+                        true
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            };
+            if removed {
+                emit_connection_lost(&e);
             }
-            emit_connection_lost(&e);
         }
         e
     };

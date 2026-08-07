@@ -120,7 +120,9 @@ export function FileExplorer({
   const activeSessionId =
     explorerTarget.type === "remote"
       ? explorerTarget.source === "sftp-tab"
-        ? explorerTarget.sessionId
+        ? sftpTabHealth.dead
+          ? null
+          : explorerTarget.sessionId
         : lazySession?.status === "connected"
           ? lazySession.sessionId
           : null
@@ -324,7 +326,9 @@ export function FileExplorer({
     const host = hosts.find((h) => h.id === sftpTabHostId);
     return (
       <ExplorerAuthPrompt
-        status={sftpTabHealth.reconnecting ? "connecting" : "error"}
+        status={
+          sftpTabHealth.reconnecting ? "connecting" : sftpTabHealth.authRequired ? "auth_required" : "error"
+        }
         error={sftpTabHealth.error}
         hostLabel={host?.name ?? sftpTabHostId}
         onReconnect={sftpTabHealth.reconnect}

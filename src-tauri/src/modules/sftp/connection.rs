@@ -17,17 +17,24 @@ use std::sync::Arc;
 ///
 /// Spawned once per newly-opened SFTP subsystem (see the call site in
 /// `sftp_connect_inner`, gated by `OnceCell::get_or_try_init` so it only
-/// happens once even under concurrent `sftp_connect` calls). Deliberately
-/// re-resolves the session from `state` on every tick instead of holding an
-/// `Arc` — this both picks up a session that was replaced by a reconnect
-/// under the same `session_id`, and lets the loop self-terminate the moment
-/// `sftp_disconnect` removes the map entry, with no separate cancellation
-/// flag needed.
+/// happens once even under concurrent `sftp_connect` calls). Pinned to the
+/// specific `owning_session` `Arc` it was spawned for via `Arc::ptr_eq` on
+/// every tick — both to decide whether to keep polling and whether a failure
+/// is allowed to remove the map entry / emit `ssh_connection_lost`. This
+/// matters for two reasons: (1) a manual reconnect (`sftp_disconnect` +
+/// `sftp_connect`) installs a *new* `RushSession` under the same
+/// `session_id`, so a stale ping already in flight against the old session
+/// must not be allowed to tear down the fresh one when it finally errors
+/// out; (2) without pinning, this loop would previously just adopt whatever
+/// session is currently registered instead of exiting, so every reconnect
+/// during a session's lifetime leaked one more redundant concurrent poller
+/// for it, forever.
 fn spawn_sftp_health_check(
     session_id: String,
     state: SshState,
     app: tauri::AppHandle,
     keep_alive_interval: Option<i64>,
+    owning_session: Arc<RushSession>,
 ) {
     let interval = std::time::Duration::from_secs(keep_alive_interval.unwrap_or(25).max(10) as u64);
     tokio::spawn(async move {
@@ -39,22 +46,39 @@ fn spawn_sftp_health_check(
                     Ok(m) => m,
                     Err(_) => break,
                 };
-                match map.get(&session_id).and_then(|s| s.sftp.get().cloned()) {
-                    Some(sftp) => sftp,
-                    None => break, // session disconnected — nothing left to watch
+                match map.get(&session_id) {
+                    Some(current) if Arc::ptr_eq(current, &owning_session) => {
+                        match current.sftp.get().cloned() {
+                            Some(sftp) => sftp,
+                            None => break,
+                        }
+                    }
+                    // Either disconnected, or superseded by a reconnect —
+                    // this generation's watch is over either way.
+                    _ => break,
                 }
             };
 
             if let Err(e) = sftp.canonicalize(".").await {
                 let msg = e.to_string();
                 if is_network_error(&msg) {
-                    if let Ok(mut map) = state.0.lock() {
-                        map.remove(&session_id);
+                    let removed = if let Ok(mut map) = state.0.lock() {
+                        match map.get(&session_id) {
+                            Some(current) if Arc::ptr_eq(current, &owning_session) => {
+                                map.remove(&session_id);
+                                true
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    };
+                    if removed {
+                        let _ = app.emit(
+                            "ssh_connection_lost",
+                            serde_json::json!({ "session_id": session_id, "reason": msg }),
+                        );
                     }
-                    let _ = app.emit(
-                        "ssh_connection_lost",
-                        serde_json::json!({ "session_id": session_id, "reason": msg }),
-                    );
                     break;
                 }
                 // Non-network error (e.g. a transient permission hiccup on
@@ -298,7 +322,13 @@ async fn sftp_connect_inner(
     // already open (the outer `sftp_connect` command early-returns Ok(())
     // otherwise) — so this always corresponds to a genuinely fresh open,
     // never a redundant spawn from an idempotent re-call.
-    spawn_sftp_health_check(session_id.clone(), state.clone(), app.clone(), keep_alive_interval);
+    spawn_sftp_health_check(
+        session_id.clone(),
+        state.clone(),
+        app.clone(),
+        keep_alive_interval,
+        session.clone(),
+    );
 
     app.emit(
         "session_established",

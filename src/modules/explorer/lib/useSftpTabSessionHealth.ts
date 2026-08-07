@@ -7,9 +7,10 @@ type HealthState = {
   dead: boolean;
   error: string | null;
   reconnecting: boolean;
+  authRequired: boolean;
 };
 
-const IDLE: HealthState = { dead: false, error: null, reconnecting: false };
+const IDLE: HealthState = { dead: false, error: null, reconnecting: false, authRequired: false };
 
 export interface SftpTabSessionHealth extends HealthState {
   reconnect: () => void;
@@ -37,7 +38,7 @@ export function useSftpTabSessionHealth(
 
     const unlistenLost = listen<{ session_id: string; reason: string }>("ssh_connection_lost", (e) => {
       if (e.payload.session_id === sessionId) {
-        setState({ dead: true, error: e.payload.reason, reconnecting: false });
+        setState({ dead: true, error: e.payload.reason, reconnecting: false, authRequired: false });
       }
     });
     const unlistenEstablished = listen<{ session_id: string }>("session_established", (e) => {
@@ -59,7 +60,13 @@ export function useSftpTabSessionHealth(
       .then(() => invoke("sftp_connect", { sessionId, hostId }))
       .then(() => setState(IDLE))
       .catch((e) => {
-        setState({ dead: true, error: isLabonairError(e) ? e.message : String(e), reconnecting: false });
+        const authRequired = isLabonairError(e) && e.code === "AuthFailed";
+        setState({
+          dead: true,
+          error: isLabonairError(e) ? e.message : String(e),
+          reconnecting: false,
+          authRequired,
+        });
       });
   };
 
