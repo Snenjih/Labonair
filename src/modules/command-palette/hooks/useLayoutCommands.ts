@@ -1,26 +1,32 @@
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowRight01Icon,
   ArrowDown01Icon,
+  ArrowRight01Icon,
   Cancel01Icon,
-  File02Icon,
-  TerminalIcon,
-  Folder01Icon,
   Copy01Icon,
+  File02Icon,
+  Folder01Icon,
+  TerminalIcon,
 } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { createElement } from "react";
-import type { CommandAction, CommandPage } from "../types";
-import type { RegistryCallbacks } from "../types";
+import { useShortcutHint } from "@/modules/shortcuts";
+import type { CommandAction, CommandPage, RegistryCallbacks } from "../types";
 
 export function useLayoutCommands(cb: RegistryCallbacks, activeTabKind: string | undefined): CommandPage {
   const isWorkspace = activeTabKind === "workspace";
+
+  const newTabShortcut = useShortcutHint("tab.new");
+  const newEditorShortcut = useShortcutHint("tab.newEditor");
+  const splitRightShortcut = useShortcutHint("pane.splitRight");
+  const splitDownShortcut = useShortcutHint("pane.splitDown");
+  const closePaneShortcut = useShortcutHint("pane.close");
 
   const actions: CommandAction[] = [
     {
       id: "layout.new-tab",
       title: "New Terminal Tab",
       section: "Layout",
-      shortcut: ["⌘", "T"],
+      shortcut: newTabShortcut,
       icon: createElement(HugeiconsIcon, {
         icon: TerminalIcon,
         strokeWidth: 2,
@@ -32,7 +38,7 @@ export function useLayoutCommands(cb: RegistryCallbacks, activeTabKind: string |
       id: "layout.new-editor",
       title: "New Editor Tab",
       section: "Layout",
-      shortcut: ["⌘", "E"],
+      shortcut: newEditorShortcut,
       icon: createElement(HugeiconsIcon, {
         icon: File02Icon,
         strokeWidth: 2,
@@ -92,7 +98,7 @@ export function useLayoutCommands(cb: RegistryCallbacks, activeTabKind: string |
         id: "layout.split-right",
         title: "Split Pane Right",
         section: "Layout",
-        shortcut: ["⌘", "D"],
+        shortcut: splitRightShortcut,
         icon: createElement(HugeiconsIcon, {
           icon: ArrowRight01Icon,
           strokeWidth: 2,
@@ -104,7 +110,7 @@ export function useLayoutCommands(cb: RegistryCallbacks, activeTabKind: string |
         id: "layout.split-down",
         title: "Split Pane Down",
         section: "Layout",
-        shortcut: ["⌘", "⇧", "D"],
+        shortcut: splitDownShortcut,
         icon: createElement(HugeiconsIcon, {
           icon: ArrowDown01Icon,
           strokeWidth: 2,
@@ -116,7 +122,7 @@ export function useLayoutCommands(cb: RegistryCallbacks, activeTabKind: string |
         id: "layout.close-pane",
         title: "Close Active Pane",
         section: "Layout",
-        shortcut: ["⌘", "⇧", "W"],
+        shortcut: closePaneShortcut,
         icon: createElement(HugeiconsIcon, {
           icon: Cancel01Icon,
           strokeWidth: 2,

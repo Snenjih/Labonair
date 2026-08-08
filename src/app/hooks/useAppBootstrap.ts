@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import { useEffect, useRef, useState } from "react";
 import { handleApiError } from "@/lib/errors";
@@ -19,7 +20,7 @@ import {
   bootstrapTransferListeners,
   bootstrapTransferSettingsSync,
 } from "@/modules/sftp/store/transferStore";
-import { useKeybindsStore } from "@/modules/shortcuts";
+import { buildMenuSyncPayload, useKeybindsStore } from "@/modules/shortcuts";
 import { useCommandSnippetsStore } from "@/modules/snippets";
 
 export interface AppBootstrapReturn {
@@ -40,6 +41,8 @@ export function useAppBootstrap(): AppBootstrapReturn {
 
   const initPrefs = usePreferencesStore((s) => s.init);
   const initKeybinds = useKeybindsStore((s) => s.init);
+  const keybindOverrides = useKeybindsStore((s) => s.overrides);
+  const keybindsHydrated = useKeybindsStore((s) => s.hydrated);
 
   const [keysLoaded, setKeysLoaded] = useState(false);
   const [home, setHome] = useState<string | null>(null);
@@ -78,6 +81,20 @@ export function useAppBootstrap(): AppBootstrapReturn {
   useEffect(() => {
     void initKeybinds();
   }, [initKeybinds]);
+
+  // Sync native OS menu accelerators whenever a keybind is overridden/reset,
+  // so rebinding in Settings also updates the native menu path instead of
+  // only the in-app listener. Waits for `hydrated` so first paint doesn't
+  // briefly push an all-defaults payload before real overrides finish
+  // loading from disk.
+  useEffect(() => {
+    if (!keybindsHydrated) return;
+    void invoke("menu_sync_accelerators", { updates: buildMenuSyncPayload(keybindOverrides) }).catch(
+      (err) => {
+        console.error("[menu-sync] failed to sync native menu accelerators", err);
+      },
+    );
+  }, [keybindsHydrated, keybindOverrides]);
 
   // Theme engine (owns its own effects internally)
   useThemeEngine();

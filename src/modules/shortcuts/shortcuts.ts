@@ -41,7 +41,7 @@ export type Shortcut = {
   match: (e: KeyboardEvent) => boolean;
 };
 
-const isMod = (e: KeyboardEvent) => e.metaKey || e.ctrlKey;
+export const isMod = (e: KeyboardEvent) => e.metaKey || e.ctrlKey;
 // Split shortcuts are macOS-only (Cmd key) — Ctrl+D must not trigger them.
 const isMeta = (e: KeyboardEvent) => e.metaKey && !e.ctrlKey;
 
@@ -49,11 +49,9 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "command.palette",
     label: "Open command palette",
-    keys: ["⌘", "K"],
+    keys: ["⌘", "P"],
     group: "General",
-    match: (e) =>
-      (isMod(e) && !e.shiftKey && e.key.toLowerCase() === "k") ||
-      (isMod(e) && e.shiftKey && e.key.toLowerCase() === "p"),
+    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "p",
   },
   {
     id: "shortcuts.open",
@@ -72,9 +70,9 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "tab.newPreview",
     label: "New preview tab",
-    keys: ["⌘", "P"],
+    keys: ["⌘", "⇧", "P"],
     group: "Tabs",
-    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "p",
+    match: (e) => isMod(e) && e.shiftKey && e.key.toLowerCase() === "p",
   },
   {
     id: "tab.newEditor",

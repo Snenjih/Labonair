@@ -218,7 +218,9 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     Ok(())
 }
 
-fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
+fn build_menu(
+    app: &tauri::App,
+) -> tauri::Result<(Menu<tauri::Wry>, std::collections::HashMap<String, MenuItem<tauri::Wry>>)> {
     // ── Labonair app menu ─────────────────────────────────────────────────────
     let about_meta = AboutMetadata {
         version: Some(env!("CARGO_PKG_VERSION").to_string()),
@@ -245,7 +247,7 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
     let new_terminal = MenuItem::with_id(app, "new_terminal_tab", "New Terminal Tab", true, Some("CmdOrCtrl+T"))?;
     let new_ssh_tab  = MenuItem::with_id(app, "new_ssh_tab",      "New SSH Tab",      true, None::<&str>)?;
     let new_sftp_tab = MenuItem::with_id(app, "new_sftp_tab",     "New SFTP Tab",     true, None::<&str>)?;
-    let new_preview  = MenuItem::with_id(app, "new_preview_tab",  "New Preview Tab",  true, Some("CmdOrCtrl+P"))?;
+    let new_preview  = MenuItem::with_id(app, "new_preview_tab",  "New Preview Tab",  true, Some("CmdOrCtrl+Shift+P"))?;
     let new_editor   = MenuItem::with_id(app, "new_editor_tab",   "New Editor Tab",   true, Some("CmdOrCtrl+E"))?;
     let close_tab    = MenuItem::with_id(app, "close_tab",        "Close Tab",        true, Some("CmdOrCtrl+W"))?;
     let close_pane   = MenuItem::with_id(app, "close_pane",       "Close Pane",       true, Some("CmdOrCtrl+Shift+W"))?;
@@ -330,10 +332,33 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
         &next_tab, &prev_tab,
     ])?;
 
-    Menu::with_items(app, &[
+    // Handles for the items that mirror a customizable frontend shortcut
+    // (see MIRRORED_MENU_ITEMS in nativeMenuSync.ts) — cloning is cheap,
+    // MenuItem<R> is an Arc-backed handle (Clone + Send + Sync).
+    let mut mirrored = std::collections::HashMap::new();
+    mirrored.insert("new_terminal_tab".to_string(), new_terminal.clone());
+    mirrored.insert("new_preview_tab".to_string(), new_preview.clone());
+    mirrored.insert("new_editor_tab".to_string(), new_editor.clone());
+    mirrored.insert("close_tab".to_string(), close_tab.clone());
+    mirrored.insert("close_pane".to_string(), close_pane.clone());
+    mirrored.insert("toggle_sidebar".to_string(), toggle_sidebar.clone());
+    mirrored.insert("toggle_ai".to_string(), toggle_ai.clone());
+    mirrored.insert("toggle_ai_2".to_string(), toggle_ai_2.clone());
+    mirrored.insert("zoom_in".to_string(), zoom_in.clone());
+    mirrored.insert("zoom_out".to_string(), zoom_out.clone());
+    mirrored.insert("zoom_reset".to_string(), zoom_reset.clone());
+    mirrored.insert("split_pane_right".to_string(), split_right.clone());
+    mirrored.insert("split_pane_down".to_string(), split_down.clone());
+    mirrored.insert("find".to_string(), find.clone());
+    mirrored.insert("next_tab".to_string(), next_tab.clone());
+    mirrored.insert("prev_tab".to_string(), prev_tab.clone());
+    mirrored.insert("ask_selection".to_string(), ask_select.clone());
+
+    let menu = Menu::with_items(app, &[
         &app_menu, &file_menu, &edit_menu, &view_menu,
         &term_menu, &conn_menu, &ai_menu, &win_menu,
-    ])
+    ])?;
+    Ok((menu, mirrored))
 }
 
 
@@ -475,8 +500,9 @@ pub fn run() {
             });
 
             // Build and set the native macOS (and cross-platform) menu bar.
-            let menu = build_menu(app)?;
+            let (menu, menu_registry) = build_menu(app)?;
             app.set_menu(menu)?;
+            app.manage(modules::menu_sync::MenuItemRegistry(menu_registry));
 
             #[cfg(target_os = "macos")]
             modules::dock_menu::setup(app.app_handle());
@@ -553,6 +579,7 @@ pub fn run() {
             quit_app,
             show_main_window,
             open_settings_window,
+            modules::menu_sync::menu_sync_accelerators,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,

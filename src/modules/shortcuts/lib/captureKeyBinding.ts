@@ -8,6 +8,7 @@ export function eventToBinding(e: KeyboardEvent): KeyBinding | null {
   if (!e.metaKey && !e.ctrlKey && !e.altKey) return null;
   return {
     key: e.key,
+    code: e.code,
     meta: e.metaKey,
     ctrl: e.ctrlKey,
     shift: e.shiftKey,

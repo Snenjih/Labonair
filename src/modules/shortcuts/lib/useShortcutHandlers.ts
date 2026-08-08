@@ -124,7 +124,14 @@ export function useShortcutHandlers(opts: UseShortcutHandlersOptions): void {
         else if (kind === "sftp") void setSftpFontSize(DEFAULT_PREFERENCES.sftpFontSize);
       },
       "bookmarks.open": () => {
-        if (!usePreferencesStore.getState().bookmarksEnabled) return;
+        const prefs = usePreferencesStore.getState();
+        // Deliberate exception to the general "hidden never disables the
+        // shortcut" bar-item convention (see BarItemPlacement.hidden in
+        // settings/lib/barItems.ts) — this shortcut has no effect without
+        // the popover that only the visible BookmarksDropdown renders, so
+        // treat "badge hidden" the same as "feature disabled" rather than
+        // dispatching into a void with no listener.
+        if (!prefs.bookmarksEnabled || prefs.barItemPlacements.bookmarks.hidden) return;
         // BookmarksDropdown listens for this to open the same popover the
         // titlebar icon opens — see comment there for why a CustomEvent
         // instead of a threaded `open` prop.

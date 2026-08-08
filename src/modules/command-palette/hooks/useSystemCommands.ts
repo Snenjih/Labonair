@@ -1,10 +1,14 @@
+import { CheckListIcon, Key01Icon, Settings01Icon, SparklesIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Settings01Icon, CheckListIcon, SparklesIcon, Key01Icon } from "@hugeicons/core-free-icons";
 import { createElement } from "react";
-import type { CommandPage } from "../types";
-import type { RegistryCallbacks } from "../types";
+import { useShortcutHint } from "@/modules/shortcuts";
+import type { CommandPage, RegistryCallbacks } from "../types";
 
 export function useSystemCommands(cb: RegistryCallbacks): CommandPage {
+  const shortcutsHintKeys = useShortcutHint("shortcuts.open");
+  const aiToggleShortcut = useShortcutHint("ai.toggle");
+  const aiAskShortcut = useShortcutHint("ai.askSelection");
+
   return {
     id: "system",
     searchPlaceholder: "Search commands...",
@@ -24,7 +28,7 @@ export function useSystemCommands(cb: RegistryCallbacks): CommandPage {
         id: "system.shortcuts",
         title: "Keyboard Shortcuts",
         section: "Application",
-        shortcut: ["⌘", "?"],
+        shortcut: shortcutsHintKeys,
         icon: createElement(HugeiconsIcon, {
           icon: CheckListIcon,
           strokeWidth: 2,
@@ -36,7 +40,7 @@ export function useSystemCommands(cb: RegistryCallbacks): CommandPage {
         id: "system.ai-toggle",
         title: "Toggle AI Panel",
         section: "Application",
-        shortcut: ["⌘", "I"],
+        shortcut: aiToggleShortcut,
         icon: createElement(HugeiconsIcon, {
           icon: SparklesIcon,
           strokeWidth: 2,
@@ -48,7 +52,7 @@ export function useSystemCommands(cb: RegistryCallbacks): CommandPage {
         id: "system.ai-ask",
         title: "Ask AI About Selection",
         section: "Application",
-        shortcut: ["⌘", "L"],
+        shortcut: aiAskShortcut,
         icon: createElement(HugeiconsIcon, {
           icon: SparklesIcon,
           strokeWidth: 2,

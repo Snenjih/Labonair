@@ -1,17 +1,17 @@
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  TerminalIcon,
+  Cancel01Icon,
   File02Icon,
   Folder01Icon,
   Globe02Icon,
   SparklesIcon,
-  Cancel01Icon,
+  TerminalIcon,
 } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { createElement } from "react";
-import { useTabsStore } from "@/modules/tabs/store/tabsStore";
 import { useShallow } from "zustand/react/shallow";
-import type { CommandAction, CommandPage } from "../types";
-import type { RegistryCallbacks } from "../types";
+import { useShortcutHint } from "@/modules/shortcuts";
+import { useTabsStore } from "@/modules/tabs/store/tabsStore";
+import type { CommandAction, CommandPage, RegistryCallbacks } from "../types";
 
 export function useTabCommands(cb: RegistryCallbacks): {
   rootAction: CommandAction;
@@ -20,6 +20,7 @@ export function useTabCommands(cb: RegistryCallbacks): {
   const tabs = useTabsStore(useShallow((s) => s.tabs));
   const activeTabId = useTabsStore((s) => s.activeId);
   const { switchTab } = cb;
+  const closeTabShortcut = useShortcutHint("tab.close");
 
   function iconForKind(kind: string) {
     switch (kind) {
@@ -56,7 +57,7 @@ export function useTabCommands(cb: RegistryCallbacks): {
     id: "tab.close-current",
     title: "Close Current Tab",
     section: "Tab Actions",
-    shortcut: ["⌘", "W"],
+    shortcut: closeTabShortcut,
     icon: createElement(HugeiconsIcon, { icon: Cancel01Icon, strokeWidth: 2, className: "size-4" }),
     perform: () => cb.closeCurrentTab(),
   };

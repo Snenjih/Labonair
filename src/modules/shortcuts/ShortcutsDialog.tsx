@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { SHORTCUTS, SHORTCUT_GROUPS } from "./shortcuts";
 import { useKeybindsStore } from "./lib/useKeybindsStore";
+import { SHORTCUT_GROUPS, SHORTCUTS } from "./shortcuts";
 
 type Props = {
   open: boolean;

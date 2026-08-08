@@ -7,6 +7,7 @@ pub mod fs;
 pub mod git;
 pub mod hosts;
 pub mod mcp;
+pub mod menu_sync;
 pub mod pty;
 pub mod secrets;
 pub mod settings;

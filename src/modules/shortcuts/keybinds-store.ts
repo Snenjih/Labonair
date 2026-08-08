@@ -49,15 +49,6 @@ export async function resetAllKeybinds(): Promise<void> {
   await emitKeybindsChanged();
 }
 
-export async function onKeybindsChange(
-  cb: (id: string, binding: KeyBindingOrDisabled) => void,
-): Promise<UnlistenFn> {
-  const store = await getStore();
-  return store.onChange<KeyBindingOrDisabled>((key, value) => {
-    cb(key, value ?? null);
-  });
-}
-
 const KEYBINDS_CHANGED_EVENT = "labonair://keybinds-changed";
 
 export async function emitKeybindsChanged(): Promise<void> {

@@ -1,13 +1,14 @@
+import { ArrowDown01Icon, ArrowUp01Icon, Refresh01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowUp01Icon, ArrowDown01Icon, Refresh01Icon } from "@hugeicons/core-free-icons";
 import { createElement } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
-  setTerminalFontSize,
+  DEFAULT_PREFERENCES,
   setEditorFontSize,
   setSftpFontSize,
-  DEFAULT_PREFERENCES,
+  setTerminalFontSize,
 } from "@/modules/settings/store";
+import { useShortcutHint } from "@/modules/shortcuts";
 import type { CommandAction, CommandPage } from "../types";
 
 export function useZoomCommands(activeTabKind: string | undefined): {
@@ -17,6 +18,10 @@ export function useZoomCommands(activeTabKind: string | undefined): {
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const editorFontSize = usePreferencesStore((s) => s.editorFontSize);
   const sftpFontSize = usePreferencesStore((s) => s.sftpFontSize);
+
+  const zoomInShortcut = useShortcutHint("view.zoomIn");
+  const zoomOutShortcut = useShortcutHint("view.zoomOut");
+  const zoomResetShortcut = useShortcutHint("view.zoomReset");
 
   const isTerminal = activeTabKind === "workspace";
   const isEditor = activeTabKind === "editor";
@@ -61,7 +66,7 @@ export function useZoomCommands(activeTabKind: string | undefined): {
             title: "Increase Font Size",
             subtitle: sizeLabel,
             section: "Font Size",
-            shortcut: ["⌘", "+"],
+            shortcut: zoomInShortcut,
             icon: createElement(HugeiconsIcon, { icon: ArrowUp01Icon, strokeWidth: 2, className: "size-4" }),
             perform: increase,
           },
@@ -70,7 +75,7 @@ export function useZoomCommands(activeTabKind: string | undefined): {
             title: "Decrease Font Size",
             subtitle: sizeLabel,
             section: "Font Size",
-            shortcut: ["⌘", "−"],
+            shortcut: zoomOutShortcut,
             icon: createElement(HugeiconsIcon, {
               icon: ArrowDown01Icon,
               strokeWidth: 2,
@@ -83,7 +88,7 @@ export function useZoomCommands(activeTabKind: string | undefined): {
             title: "Reset Font Size",
             subtitle: sizeLabel,
             section: "Font Size",
-            shortcut: ["⌘", "0"],
+            shortcut: zoomResetShortcut,
             icon: createElement(HugeiconsIcon, { icon: Refresh01Icon, strokeWidth: 2, className: "size-4" }),
             perform: reset,
           },

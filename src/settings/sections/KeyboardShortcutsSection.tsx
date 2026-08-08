@@ -1,20 +1,21 @@
+import { AlertCircleIcon, Cancel01Icon, Edit02Icon, RotateClockwiseIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
-import { findConflict } from "@/modules/shortcuts/lib/conflictDetector";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   buildDisplayKeysFromBinding,
   eventToBinding,
   getLiveModifierDisplay,
 } from "@/modules/shortcuts/lib/captureKeyBinding";
+import { type ConflictResult, findConflict } from "@/modules/shortcuts/lib/conflictDetector";
 import { useKeybindsStore } from "@/modules/shortcuts/lib/useKeybindsStore";
-import { SHORTCUT_GROUPS, SHORTCUTS, type Shortcut, type ShortcutId } from "@/modules/shortcuts/shortcuts";
+import { SHORTCUT_GROUPS, SHORTCUTS, type Shortcut } from "@/modules/shortcuts/shortcuts";
 import type { KeyBinding, KeyBindingOrDisabled } from "@/modules/shortcuts/types";
-import { AlertCircleIcon, Cancel01Icon, Edit02Icon, RotateClockwiseIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -22,7 +23,7 @@ import { SectionHeader } from "../components/SectionHeader";
 type RowState =
   | { kind: "idle" }
   | { kind: "capturing"; liveModifiers: string[] }
-  | { kind: "conflict"; captured: KeyBinding; conflictId: ShortcutId; conflictLabel: string };
+  | { kind: "conflict"; captured: KeyBinding; conflict: Exclude<ConflictResult, null> };
 
 // ─── Main Section ─────────────────────────────────────────────────────────────
 
@@ -117,10 +118,18 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
   const isDisabled = hasOverride && overrideValue === null;
   const effectiveKeys = getEffectiveDisplayKeys(shortcut.id, shortcut.keys);
 
+  // One-off exception: the bookmarks shortcut is a no-op when the badge is
+  // hidden or the feature is off (see useShortcutHandlers.ts), so grey out
+  // its row here rather than let it look editable but silently dead.
+  const bookmarksEnabled = usePreferencesStore((s) => s.bookmarksEnabled);
+  const bookmarksHidden = usePreferencesStore((s) => s.barItemPlacements.bookmarks.hidden);
+  const bookmarksRowDisabled = shortcut.id === "bookmarks.open" && (!bookmarksEnabled || bookmarksHidden);
+
   const startCapture = useCallback(() => {
+    if (bookmarksRowDisabled) return;
     setRowState({ kind: "capturing", liveModifiers: [] });
     setTimeout(() => captureRef.current?.focus(), 0);
-  }, []);
+  }, [bookmarksRowDisabled]);
 
   const cancelCapture = useCallback(() => {
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
@@ -136,9 +145,9 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
   );
 
   const handleOverride = useCallback(async () => {
-    if (rowState.kind !== "conflict") return;
+    if (rowState.kind !== "conflict" || rowState.conflict.kind !== "shortcut") return;
     // disable the conflicting shortcut, then set ours
-    await setKeybind(rowState.conflictId, null);
+    await setKeybind(rowState.conflict.id, null);
     await setKeybind(shortcut.id, rowState.captured);
     setRowState({ kind: "idle" });
   }, [rowState, shortcut.id, setKeybind]);
@@ -169,15 +178,9 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
       }
 
       // Check for conflicts
-      const conflictId = findConflict(binding, shortcut.id, SHORTCUTS, overrides);
-      if (conflictId) {
-        const conflictShortcut = SHORTCUTS.find((s) => s.id === conflictId);
-        setRowState({
-          kind: "conflict",
-          captured: binding,
-          conflictId,
-          conflictLabel: conflictShortcut?.label ?? conflictId,
-        });
+      const conflict = findConflict(binding, shortcut.id, SHORTCUTS, overrides);
+      if (conflict) {
+        setRowState({ kind: "conflict", captured: binding, conflict });
         return;
       }
 
@@ -212,6 +215,7 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
       className={cn(
         "group relative flex min-h-[38px] items-start gap-3 px-3 py-2.5 transition-colors",
         rowState.kind !== "idle" && "bg-accent/20",
+        bookmarksRowDisabled && "opacity-50",
       )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -263,17 +267,27 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
               >
                 <button
                   type="button"
-                  onClick={startCapture}
-                  className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  title="Edit shortcut"
+                  onClick={bookmarksRowDisabled ? undefined : startCapture}
+                  disabled={bookmarksRowDisabled}
+                  aria-disabled={bookmarksRowDisabled}
+                  className={cn(
+                    "flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                    bookmarksRowDisabled && "pointer-events-none opacity-40",
+                  )}
+                  title={bookmarksRowDisabled ? "Bookmarks is disabled or hidden" : "Edit shortcut"}
                 >
                   <HugeiconsIcon icon={Edit02Icon} size={11} strokeWidth={2} />
                 </button>
                 {hasOverride && (
                   <button
                     type="button"
-                    onClick={() => void doResetKeybind(shortcut.id)}
-                    className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    onClick={bookmarksRowDisabled ? undefined : () => void doResetKeybind(shortcut.id)}
+                    disabled={bookmarksRowDisabled}
+                    aria-disabled={bookmarksRowDisabled}
+                    className={cn(
+                      "flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                      bookmarksRowDisabled && "pointer-events-none opacity-40",
+                    )}
                     title="Reset to default"
                   >
                     <HugeiconsIcon icon={RotateClockwiseIcon} size={11} strokeWidth={2} />
@@ -351,19 +365,23 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
               <div className="flex items-center gap-1.5">
                 <HugeiconsIcon icon={AlertCircleIcon} size={10} strokeWidth={2} className="text-warning/80" />
                 <span className="text-[10.5px] text-warning/80">
-                  Used by &ldquo;{rowState.conflictLabel}&rdquo;
+                  {rowState.conflict.kind === "reserved"
+                    ? `Reserved by the "${rowState.conflict.label}" menu item`
+                    : `Used by “${rowState.conflict.label}”`}
                 </span>
               </div>
 
               {/* Override / Cancel */}
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => void handleOverride()}
-                  className="rounded px-1.5 py-0.5 text-[10.5px] text-warning/80 transition-colors hover:bg-warning/10 hover:text-warning"
-                >
-                  Override
-                </button>
+                {rowState.conflict.kind === "shortcut" && (
+                  <button
+                    type="button"
+                    onClick={() => void handleOverride()}
+                    className="rounded px-1.5 py-0.5 text-[10.5px] text-warning/80 transition-colors hover:bg-warning/10 hover:text-warning"
+                  >
+                    Override
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={cancelCapture}
