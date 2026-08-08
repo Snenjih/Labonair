@@ -14,7 +14,15 @@ export type ShortcutId =
   | "tab.close"
   | "tab.next"
   | "tab.prev"
-  | "tab.selectByIndex"
+  | "tab.selectTab1"
+  | "tab.selectTab2"
+  | "tab.selectTab3"
+  | "tab.selectTab4"
+  | "tab.selectTab5"
+  | "tab.selectTab6"
+  | "tab.selectTab7"
+  | "tab.selectTab8"
+  | "tab.selectTab9"
   | "pane.splitRight"
   | "pane.splitDown"
   | "pane.close"
@@ -103,12 +111,71 @@ export const SHORTCUTS: Shortcut[] = [
     group: "Tabs",
     match: (e) => e.ctrlKey && e.shiftKey && e.key === "Tab",
   },
+  // Nine separate entries, not one range match — each must be independently
+  // rebindable/disableable via the exact-single-key capture UI in
+  // KeyboardShortcutsSection, which cannot represent a "1-9" range as one binding.
   {
-    id: "tab.selectByIndex",
-    label: "Jump to tab 1–9",
-    keys: ["⌘", "1…9"],
+    id: "tab.selectTab1",
+    label: "Jump to tab 1",
+    keys: ["⌘", "1"],
     group: "Tabs",
-    match: (e) => isMod(e) && /^[1-9]$/.test(e.key),
+    match: (e) => isMod(e) && e.key === "1",
+  },
+  {
+    id: "tab.selectTab2",
+    label: "Jump to tab 2",
+    keys: ["⌘", "2"],
+    group: "Tabs",
+    match: (e) => isMod(e) && e.key === "2",
+  },
+  {
+    id: "tab.selectTab3",
+    label: "Jump to tab 3",
+    keys: ["⌘", "3"],
+    group: "Tabs",
+    match: (e) => isMod(e) && e.key === "3",
+  },
+  {
+    id: "tab.selectTab4",
+    label: "Jump to tab 4",
+    keys: ["⌘", "4"],
+    group: "Tabs",
+    match: (e) => isMod(e) && e.key === "4",
+  },
+  {
+    id: "tab.selectTab5",
+    label: "Jump to tab 5",
+    keys: ["⌘", "5"],
+    group: "Tabs",
+    match: (e) => isMod(e) && e.key === "5",
+  },
+  {
+    id: "tab.selectTab6",
+    label: "Jump to tab 6",
+    keys: ["⌘", "6"],
+    group: "Tabs",
+    match: (e) => isMod(e) && e.key === "6",
+  },
+  {
+    id: "tab.selectTab7",
+    label: "Jump to tab 7",
+    keys: ["⌘", "7"],
+    group: "Tabs",
+    match: (e) => isMod(e) && e.key === "7",
+  },
+  {
+    id: "tab.selectTab8",
+    label: "Jump to tab 8",
+    keys: ["⌘", "8"],
+    group: "Tabs",
+    match: (e) => isMod(e) && e.key === "8",
+  },
+  {
+    id: "tab.selectTab9",
+    label: "Jump to tab 9",
+    keys: ["⌘", "9"],
+    group: "Tabs",
+    match: (e) => isMod(e) && e.key === "9",
   },
   {
     id: "pane.splitRight",

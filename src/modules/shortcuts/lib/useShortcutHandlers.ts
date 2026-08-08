@@ -58,7 +58,15 @@ export function useShortcutHandlers(opts: UseShortcutHandlersOptions): void {
       "tab.close": () => handleClose(useTabsStore.getState().activeId),
       "tab.next": () => cycleTab(1),
       "tab.prev": () => cycleTab(-1),
-      "tab.selectByIndex": (e: KeyboardEvent) => selectByIndex(parseInt(e.key, 10) - 1),
+      "tab.selectTab1": () => selectByIndex(0),
+      "tab.selectTab2": () => selectByIndex(1),
+      "tab.selectTab3": () => selectByIndex(2),
+      "tab.selectTab4": () => selectByIndex(3),
+      "tab.selectTab5": () => selectByIndex(4),
+      "tab.selectTab6": () => selectByIndex(5),
+      "tab.selectTab7": () => selectByIndex(6),
+      "tab.selectTab8": () => selectByIndex(7),
+      "tab.selectTab9": () => selectByIndex(8),
       "search.focus": () => {
         const kind = selectActiveTabKind(useTabsStore.getState());
         const { activeId: aid } = useTabsStore.getState();
