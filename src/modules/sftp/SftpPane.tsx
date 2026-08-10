@@ -13,7 +13,7 @@ import { SftpToolbar } from "./components/SftpToolbar";
 import { VirtualizedFileList } from "./components/VirtualizedFileList";
 import { useSftpStore } from "./store/sftpStore";
 import { useTransferStore } from "./store/transferStore";
-import type { FileNode } from "./types";
+import type { FileNode, SearchHit } from "./types";
 import {
   blurActiveInput,
   buildSyntheticEntry,
@@ -126,6 +126,10 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
   const [deepSearchResults, setDeepSearchResults] = useState<string[] | null>(null);
   const [isDeepSearching, setIsDeepSearching] = useState(false);
 
+  // Local search state
+  const [localSearchResults, setLocalSearchResults] = useState<SearchHit[] | null>(null);
+  const [isLocalSearching, setIsLocalSearching] = useState(false);
+
   useEffect(() => {
     if (!isConnected) return;
     const initialPath = tab.initialRemotePath ?? host?.default_path_sftp ?? "/";
@@ -218,6 +222,7 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
    *  the remote pane, matching what's actually visible/counted in the UI. */
   function handleSelectAll(side: "local" | "remote") {
     if (side === "remote" && deepSearchResults !== null) return; // no bulk selection over search results
+    if (side === "local" && localSearchResults !== null) return; // no bulk selection over search results
     const files = side === "local" ? displayedLocalFiles : displayedRemoteFiles;
     const paths = new Set(files.filter((f) => f.name !== ".." && !isSyntheticEntry(f)).map((f) => f.path));
     if (side === "local") {
@@ -495,6 +500,32 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
     }
   }
 
+  async function handleLocalSearch(query: string) {
+    if (!query) {
+      setLocalSearchResults(null);
+      return;
+    }
+    // The search-results overlay unmounts the local VirtualizedFileList
+    // without changing localPath, so the path-keyed cancel effects below
+    // wouldn't otherwise catch a rename/create left in-flight on that side.
+    if (renamingSide === "local") cancelRename();
+    if (creatingEntry?.side === "local") cancelCreatingEntry();
+    setIsLocalSearching(true);
+    try {
+      const results = await invoke<SearchHit[]>("fs_search", {
+        root: tabState?.localPath ?? "~",
+        query,
+        showHidden: sftpShowHiddenFiles,
+      });
+      setLocalSearchResults(results);
+    } catch (e) {
+      handleApiError(e, "Deep search failed", "SFTP");
+      setLocalSearchResults([]);
+    } finally {
+      setIsLocalSearching(false);
+    }
+  }
+
   async function handleDeepSearch(query: string) {
     if (!query) {
       setDeepSearchResults(null);
@@ -683,61 +714,123 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
             onPointerDown={() => setActivePane("local")}
           >
             <PaneLabel
-              label="LOCAL"
-              count={displayedLocalFiles.filter((f) => !isSyntheticEntry(f)).length}
+              label={localSearchResults !== null ? `SEARCH RESULTS (${localSearchResults.length})` : "LOCAL"}
+              count={
+                localSearchResults !== null
+                  ? localSearchResults.length
+                  : displayedLocalFiles.filter((f) => !isSyntheticEntry(f)).length
+              }
               selected={tabState?.selectedLocalPaths.size}
             />
             <SftpToolbar
+              key={`toolbar-local-${localPath}`}
               path={localPath}
-              onNavigate={(p) => loadLocalDir(tabId, p)}
+              onNavigate={(p) => {
+                setLocalSearchResults(null);
+                loadLocalDir(tabId, p);
+              }}
               showHidden={sftpShowHiddenFiles}
               onToggleHidden={toggleSftpHiddenFiles}
+              onDeepSearch={handleLocalSearch}
+              isSearching={isLocalSearching}
             />
-            <div className="flex-1 min-h-0">
-              <SftpContextMenu
-                tabId={tabId}
-                hostId={tab.hostId}
-                side="local"
-                selectedPaths={tabState?.selectedLocalPaths ?? new Set()}
-                currentPath={localPath}
-                files={displayedLocalFiles}
-                onRefresh={() => loadLocalDir(tabId, localPath)}
-                onStartRename={(path) => startRename(path, "local")}
-                onStartNewFolder={() => startCreatingEntry("local", "folder")}
-                onStartNewFile={() => startCreatingEntry("local", "file")}
-                onOpenRemoteEditor={onOpenRemoteEditor}
-              >
-                <div className="h-full">
-                  <VirtualizedFileList
-                    files={displayedLocalFiles}
-                    selectedPaths={tabState?.selectedLocalPaths ?? new Set()}
-                    onSelect={handleLocalSelect}
-                    onDoubleClick={handleLocalDoubleClick}
-                    isLoading={tabState?.isLoadingLocal}
-                    onMarqueeSelect={(paths, additive) => {
-                      const base = additive ? new Set(tabState?.selectedLocalPaths) : new Set<string>();
-                      paths.forEach((p) => base.add(p));
-                      selectLocalPaths(base);
-                    }}
-                    draggable
-                    onDragStart={(paths) => startDrag("local", paths)}
-                    dropDirection={activeDragSource === "remote" ? "download" : undefined}
-                    isDropHovered={dropHoveredPane === "local"}
-                    renamingPath={renamingSide === "local" ? renamingPath : null}
-                    renameValue={renameValue}
-                    onRenameChange={setEditSlotValue}
-                    onRenameCommit={commitRename}
-                    onRenameCancel={cancelRename}
-                    creatingEntryValue={creatingEntryName}
-                    onCreatingEntryChange={setEditSlotValue}
-                    onCreatingEntryCommit={commitCreatingEntry}
-                    onCreatingEntryCancel={cancelCreatingEntry}
-                    hasMore={tabState?.localHasMore}
-                    onLoadMore={() => loadMoreLocalDir(tabId)}
-                  />
+            {/* Local search results overlay or normal file list */}
+            {localSearchResults !== null ? (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <div className="h-7 shrink-0 px-3 flex items-center gap-2 border-b border-border bg-warning/5">
+                  <span className="text-[10px] text-warning/80 flex-1 truncate">
+                    Results in {localPath} — click to navigate to parent folder
+                  </span>
+                  <button
+                    onClick={() => setLocalSearchResults(null)}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    ✕
+                  </button>
                 </div>
-              </SftpContextMenu>
-            </div>
+                <div className="flex-1 overflow-auto min-h-0">
+                  {isLocalSearching ? (
+                    <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
+                      Searching…
+                    </div>
+                  ) : localSearchResults.length === 0 ? (
+                    <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
+                      No results found
+                    </div>
+                  ) : (
+                    localSearchResults.map((hit) => {
+                      const dir = hit.path.substring(0, hit.path.lastIndexOf("/")) || "/";
+                      return (
+                        <button
+                          key={hit.path}
+                          onClick={() => {
+                            setLocalSearchResults(null);
+                            loadLocalDir(tabId, dir);
+                          }}
+                          className={cn(
+                            "w-full flex flex-col px-3 py-1.5 text-left",
+                            "hover:bg-accent/50 focus:bg-accent/30 transition-colors",
+                            "border-b border-border/30 focus:outline-none",
+                          )}
+                          tabIndex={0}
+                        >
+                          <span className="text-xs font-medium text-foreground truncate">{hit.name}</span>
+                          <span className="text-[10px] font-mono text-muted-foreground/60 truncate">
+                            {hit.rel}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0">
+                <SftpContextMenu
+                  tabId={tabId}
+                  hostId={tab.hostId}
+                  side="local"
+                  selectedPaths={tabState?.selectedLocalPaths ?? new Set()}
+                  currentPath={localPath}
+                  files={displayedLocalFiles}
+                  onRefresh={() => loadLocalDir(tabId, localPath)}
+                  onStartRename={(path) => startRename(path, "local")}
+                  onStartNewFolder={() => startCreatingEntry("local", "folder")}
+                  onStartNewFile={() => startCreatingEntry("local", "file")}
+                  onOpenRemoteEditor={onOpenRemoteEditor}
+                >
+                  <div className="h-full">
+                    <VirtualizedFileList
+                      files={displayedLocalFiles}
+                      selectedPaths={tabState?.selectedLocalPaths ?? new Set()}
+                      onSelect={handleLocalSelect}
+                      onDoubleClick={handleLocalDoubleClick}
+                      isLoading={tabState?.isLoadingLocal}
+                      onMarqueeSelect={(paths, additive) => {
+                        const base = additive ? new Set(tabState?.selectedLocalPaths) : new Set<string>();
+                        paths.forEach((p) => base.add(p));
+                        selectLocalPaths(base);
+                      }}
+                      draggable
+                      onDragStart={(paths) => startDrag("local", paths)}
+                      dropDirection={activeDragSource === "remote" ? "download" : undefined}
+                      isDropHovered={dropHoveredPane === "local"}
+                      renamingPath={renamingSide === "local" ? renamingPath : null}
+                      renameValue={renameValue}
+                      onRenameChange={setEditSlotValue}
+                      onRenameCommit={commitRename}
+                      onRenameCancel={cancelRename}
+                      creatingEntryValue={creatingEntryName}
+                      onCreatingEntryChange={setEditSlotValue}
+                      onCreatingEntryCommit={commitCreatingEntry}
+                      onCreatingEntryCancel={cancelCreatingEntry}
+                      hasMore={tabState?.localHasMore}
+                      onLoadMore={() => loadMoreLocalDir(tabId)}
+                    />
+                  </div>
+                </SftpContextMenu>
+              </div>
+            )}
           </div>
         </ResizablePanel>
 

@@ -10,3 +10,10 @@ export interface FileNode {
 }
 
 export type TransferDirection = "upload" | "download";
+
+export interface SearchHit {
+  path: string;
+  rel: string;
+  name: string;
+  is_dir: boolean;
+}

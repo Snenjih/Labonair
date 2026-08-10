@@ -13,7 +13,7 @@ interface SftpToolbarProps {
   onOpenTerminal?: () => void;
   showHidden?: boolean;
   onToggleHidden?: () => void;
-  // Deep search (remote only)
+  // Deep/local file search
   onDeepSearch?: (query: string) => void;
   isSearching?: boolean;
 }
@@ -117,7 +117,7 @@ export function SftpToolbar({
         />
       )}
 
-      {/* Search toggle (remote pane only) */}
+      {/* Search toggle */}
       {onDeepSearch && (
         <Button
           variant="ghost"
