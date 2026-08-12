@@ -57,13 +57,6 @@ import type { Group, Host } from "../types";
 type LayoutMode = "grid" | "list";
 type SortMode = "last_connected" | "a_z" | "z_a";
 
-// Mirrors the Rust `TestConnectionResult` enum's `#[serde(tag = "status")]`
-// shape (src-tauri/src/modules/ssh/client.rs).
-type TestConnectionResult =
-  | { status: "success" }
-  | { status: "unknown_host_key"; fingerprint: string }
-  | { status: "host_key_changed"; fingerprint: string };
-
 function applySorting<T extends { name: string; last_connected_at?: number; created_at: number }>(
   items: T[],
   mode: SortMode,
@@ -371,39 +364,6 @@ export function HomeDashboard({
     }
   };
 
-  const handleTestConnection = async () => {
-    if (!selectedHostId) return;
-    const host = hosts.find((h) => h.id === selectedHostId);
-    const hostLabel = host ? `"${host.name}"` : "the selected host";
-    try {
-      const result = await invoke<TestConnectionResult>("ssh_test_connection", { hostId: selectedHostId });
-      if (result.status === "success") {
-        useNotificationStore.getState().addNotification({
-          type: "success",
-          title: "Connection successful",
-          message: `Connected to ${hostLabel} successfully.`,
-          source: "Hosts",
-        });
-      } else if (result.status === "unknown_host_key") {
-        useNotificationStore.getState().addNotification({
-          type: "info",
-          title: "Unknown host key",
-          message: `${hostLabel}'s key isn't trusted yet (fingerprint: ${result.fingerprint}). Open a terminal tab to this host to verify and trust it.`,
-          source: "Hosts",
-        });
-      } else {
-        useNotificationStore.getState().addNotification({
-          type: "warning",
-          title: "Host key changed",
-          message: `${hostLabel}'s key differs from the one in known_hosts (fingerprint: ${result.fingerprint}) — verify before connecting.`,
-          source: "Hosts",
-        });
-      }
-    } catch (e) {
-      handleApiError(e, "Connection test failed", "Hosts");
-    }
-  };
-
   const handleExportSshConfig = async () => {
     // Respects whatever group filter / search is currently active, not the
     // entire DB — `sortedHosts` is the same list rendered in the pane.
@@ -572,13 +532,6 @@ export function HomeDashboard({
                   onClick={() => setShowImportDialog(true)}
                 >
                   Import SSH Config
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={viewMode === "credentials" || !selectedHostId}
-                  title={viewMode === "hosts" && !selectedHostId ? "Select a host first" : undefined}
-                  onClick={() => void handleTestConnection()}
-                >
-                  Test Connection
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={viewMode === "credentials" || sortedHosts.length === 0}

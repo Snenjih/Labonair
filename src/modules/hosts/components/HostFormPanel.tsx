@@ -27,6 +27,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useHostsStore } from "../store/hostsStore";
 import { useCredentialsStore } from "../store/credentialsStore";
 import { useCommandSnippetsStore } from "@/modules/snippets/store/commandSnippetsStore";
+import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import type { CreateHostPayload, Host, TunnelConfig, UpdateHostPayload } from "../types";
 import { HostIconPicker } from "./HostIconPicker";
 
@@ -41,6 +42,13 @@ interface Props {
 
 type AuthMethod = "password" | "key" | "credential" | "none";
 type SaveResult = "success" | "error" | null;
+
+// Mirrors the Rust `TestConnectionResult` enum's `#[serde(tag = "status")]`
+// shape (src-tauri/src/modules/ssh/client.rs).
+type TestConnectionResult =
+  | { status: "success" }
+  | { status: "unknown_host_key"; fingerprint: string }
+  | { status: "host_key_changed"; fingerprint: string };
 
 /** Minimum time the saving spinner stays visible, so a fast save doesn't just flicker. */
 const MIN_SAVING_DISPLAY_MS = 700;
@@ -238,6 +246,7 @@ export function HostFormPanel({ hostId, onClose, newSshTab, newSftpTab, onNaviga
   const [error, setError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [tunnels, setTunnels] = useState<TunnelConfig[]>(() => parseTunnels(host?.tunnels));
+  const [testingConnection, setTestingConnection] = useState(false);
 
   const isMountedRef = useRef(true);
   const skipNextSaveRef = useRef(true);
@@ -401,6 +410,51 @@ export function HostFormPanel({ hostId, onClose, newSshTab, newSftpTab, onNaviga
     }
   }, [host, duplicateHost, setSelectedHost]);
 
+  const handleTestConnection = useCallback(async () => {
+    if (!host || testingConnection) return;
+    // Flush unsaved edits first — ssh_test_connection reads the host row
+    // straight from SQLite, so a still-pending debounced autosave would test
+    // stale data instead of what's currently typed (address/port/username/
+    // password/auth method/credential/jump host/keepalive).
+    if (pendingSaveRef.current) {
+      pendingSaveRef.current = false;
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      await latestSaveRef.current();
+    }
+    if (!isMountedRef.current) return;
+    setTestingConnection(true);
+    const hostLabel = `"${form.name}"`;
+    try {
+      const result = await invoke<TestConnectionResult>("ssh_test_connection", { hostId: host.id });
+      if (result.status === "success") {
+        useNotificationStore.getState().addNotification({
+          type: "success",
+          title: "Connection successful",
+          message: `Connected to ${hostLabel} successfully.`,
+          source: "Hosts",
+        });
+      } else if (result.status === "unknown_host_key") {
+        useNotificationStore.getState().addNotification({
+          type: "info",
+          title: "Unknown host key",
+          message: `${hostLabel}'s key isn't trusted yet (fingerprint: ${result.fingerprint}). Open a terminal tab to this host to verify and trust it.`,
+          source: "Hosts",
+        });
+      } else {
+        useNotificationStore.getState().addNotification({
+          type: "warning",
+          title: "Host key changed",
+          message: `${hostLabel}'s key differs from the one in known_hosts (fingerprint: ${result.fingerprint}) — verify before connecting.`,
+          source: "Hosts",
+        });
+      }
+    } catch (e) {
+      handleApiError(e, "Connection test failed", "Hosts");
+    } finally {
+      if (isMountedRef.current) setTestingConnection(false);
+    }
+  }, [host, testingConnection, form.name]);
+
   const f = (label: string, key: keyof FormState, type = "text", placeholder = "") => (
     <div className="space-y-1.5">
       <Label className="text-xs text-muted-foreground">{label}</Label>
@@ -463,6 +517,10 @@ export function HostFormPanel({ hostId, onClose, newSshTab, newSftpTab, onNaviga
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem onClick={() => newSshTab(host.id, form.name)}>Connect SSH</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => newSftpTab(host.id, form.name)}>Open SFTP</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={testingConnection} onClick={() => void handleTestConnection()}>
+                  {testingConnection ? "Testing…" : "Test Connection"}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => void handleDuplicate()}>Duplicate</DropdownMenuItem>
                 <DropdownMenuSeparator />
