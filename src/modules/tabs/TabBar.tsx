@@ -188,7 +188,11 @@ export function TabBar({
                         isActive
                           ? "text-foreground dark:text-foreground"
                           : "text-muted-foreground hover:text-foreground/80",
-                        compact ? "px-1.5!" : tabs.length === 1 ? "px-2!" : "ps-2! pe-1!",
+                        compact
+                          ? "px-1.5!"
+                          : tabs.length === 1 || t.kind === "home"
+                            ? "px-2!"
+                            : "ps-2! pe-1!",
                       )}
                     >
                       <span
