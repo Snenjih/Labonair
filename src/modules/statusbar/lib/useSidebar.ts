@@ -47,9 +47,6 @@ export interface SidebarReturn {
   /** Move `panel` from one slot to the other (closes it in the old slot,
    *  opens it in the new one, displacing whatever was already there). */
   movePanel: (panel: SidebarPanel, fromSide: SidebarSide, toSide: SidebarSide) => void;
-  /** Collapses/expands the primary (pre-dual-dock) slot — kept for the
-   *  existing global "toggle sidebar" shortcut/menu item. */
-  toggleSidebar: () => void;
   /** Wire to the main ResizablePanelGroup's onLayoutChanged — notifies both
    *  slots to (debounced-)persist their current width if open. */
   onLayoutChanged: () => void;
@@ -376,13 +373,6 @@ export function useSidebar(): SidebarReturn {
     [slotForSide],
   );
 
-  const toggleSidebar = useCallback(() => {
-    const p = primary.ref.current;
-    if (!p) return;
-    if (p.getSize().asPercentage <= 0) primary.expand();
-    else p.collapse();
-  }, [primary]);
-
   const onLayoutChanged = useCallback(() => {
     primary.notifyLayoutSettled();
     secondary.notifyLayoutSettled();
@@ -394,7 +384,6 @@ export function useSidebar(): SidebarReturn {
     handlePanelToggle,
     openPanel,
     movePanel,
-    toggleSidebar,
     onLayoutChanged,
   };
 }

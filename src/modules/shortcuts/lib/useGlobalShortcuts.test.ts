@@ -34,4 +34,15 @@ describe("isPlainTextInputFocused", () => {
     const button = document.createElement("button");
     expect(isPlainTextInputFocused(button)).toBe(false);
   });
+
+  // xterm.js keeps a hidden <textarea class="xterm-helper-textarea"> focused
+  // offscreen whenever a terminal pane has focus (its mechanism for
+  // capturing raw keyboard/IME input) — without this exclusion, every global
+  // shortcut (including tab switching) would silently stop matching the
+  // moment a terminal is focused, since it's a real HTMLTextAreaElement.
+  it("is false for xterm's hidden helper textarea", () => {
+    const textarea = document.createElement("textarea");
+    textarea.classList.add("xterm-helper-textarea");
+    expect(isPlainTextInputFocused(textarea)).toBe(false);
+  });
 });

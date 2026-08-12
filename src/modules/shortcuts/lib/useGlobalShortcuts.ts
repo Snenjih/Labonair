@@ -16,8 +16,16 @@ export type UseGlobalShortcutsOptions = {
  *  the cursor is in the code editor. Every entry in `SHORTCUTS` requires a
  *  modifier key (none bind a bare key or Escape), so restricting this guard
  *  to literal text inputs can't accidentally block a shortcut that's meant
- *  to work while the user is typing plain text. */
+ *  to work while the user is typing plain text.
+ *
+ *  Explicitly excludes xterm.js's hidden `.xterm-helper-textarea` — a real
+ *  `<textarea>` xterm keeps focused offscreen to capture raw keyboard/IME
+ *  input whenever a terminal pane has focus. Without this exclusion every
+ *  global shortcut (tab switching included) would silently stop matching
+ *  the moment a terminal is focused, since the naive `HTMLTextAreaElement`
+ *  check can't tell it apart from a real text field. */
 export function isPlainTextInputFocused(el: Element | null): boolean {
+  if (el instanceof HTMLTextAreaElement && el.classList.contains("xterm-helper-textarea")) return false;
   return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
 }
 
