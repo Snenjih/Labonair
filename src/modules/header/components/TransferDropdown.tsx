@@ -166,7 +166,7 @@ function FailedBadge({ message }: { message: string }) {
             }}
             className={cn(
               "min-w-[200px] max-w-[280px]",
-              "bg-popover border border-border rounded-lg shadow-xl px-3 py-2.5",
+              "bg-popover border border-border rounded-lg shadow-popover px-3 py-2.5",
               "flex flex-col gap-1.5 pointer-events-none",
             )}
           >

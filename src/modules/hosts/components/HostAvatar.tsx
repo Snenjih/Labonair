@@ -8,7 +8,7 @@ type PingStatus = "online" | "offline" | "checking";
 
 const SIZE_MAP = {
   md: {
-    box: "size-10 shadow-sm",
+    box: "size-10 shadow-row",
     text: "text-sm",
     star: "text-[10px]",
     dot: "size-2.5",

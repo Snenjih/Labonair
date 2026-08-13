@@ -138,7 +138,7 @@ export function AiMiniWindow() {
       className={cn(
         "no-scrollbar-deep fixed z-40 flex h-[42rem] w-[34rem] flex-col overflow-hidden",
         horizontalClass,
-        "rounded-2xl border border-border/40 bg-card shadow-2xl ring-1 ring-black/5 dark:ring-white/5",
+        "rounded-2xl border border-border/40 bg-card shadow-modal ring-1 ring-black/5 dark:ring-white/5",
         "text-[12px]",
       )}
     >

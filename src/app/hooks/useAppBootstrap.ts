@@ -99,7 +99,7 @@ export function useAppBootstrap(): AppBootstrapReturn {
   // Theme engine (owns its own effects internally)
   useThemeEngine();
 
-  // Layout engine — applies --radius and density class to <html>
+  // Layout engine — applies --radius to <html>
   useLayoutEngine();
 
   // Typography engine — applies --app-font-family/-size/-line-height to <html>

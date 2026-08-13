@@ -103,7 +103,7 @@ function Toolbar({ sessionId, block }: { sessionId: string; block: PositionedBlo
   const duration = block.running ? null : formatDuration(block.startedAt, block.finishedAt);
   const running = isCommandRunning(sessionId);
   return (
-    <div className="pointer-events-auto flex items-center gap-1 rounded-[7px] border border-border/60 bg-popover/95 px-1 py-0.5 shadow-sm">
+    <div className="pointer-events-auto flex items-center gap-1 rounded-[7px] border border-border/60 bg-popover/95 px-1 py-0.5 shadow-row">
       {failed && (
         <span className="px-1 text-[10px] tabular-nums text-destructive">exit {block.exitCode}</span>
       )}

@@ -169,7 +169,7 @@ export function GeneralSection() {
   const buildString = build ? `${build} · v${version || "—"}` : `v${version || "—"}`;
 
   return (
-    <div className="flex flex-col gap-[var(--ui-section-gap)]">
+    <div className="flex flex-col gap-6">
       <SectionHeader title="General" description="Editor, startup, and security." />
 
       {/* About hero */}

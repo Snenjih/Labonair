@@ -71,7 +71,7 @@ export function SnippetItem({ snippet, hostName, groupColor, onRun, onEdit, onDu
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="@container relative cursor-default rounded-md border border-border bg-card shadow-sm transition-colors hover:bg-accent/40">
+        <div className="@container relative cursor-default rounded-md border border-border bg-card shadow-row transition-colors hover:bg-accent/40">
           <div className="flex flex-col gap-2 px-2.5 py-2.5">
             {/* Title row */}
             <div className="flex items-center gap-2">

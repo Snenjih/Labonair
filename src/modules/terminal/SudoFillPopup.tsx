@@ -48,7 +48,7 @@ export function SudoFillPopup({ x, y, onFill, onDismiss }: Props) {
           if (timerRef.current) clearTimeout(timerRef.current);
           onFill();
         }}
-        className="flex h-7 w-full items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs shadow-lg hover:border-border hover:bg-accent"
+        className="flex h-7 w-full items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs shadow-popover hover:border-border hover:bg-accent"
       >
         <HugeiconsIcon icon={LockPasswordIcon} size={12} className="shrink-0 text-muted-foreground" />
         <span>Fill sudo</span>

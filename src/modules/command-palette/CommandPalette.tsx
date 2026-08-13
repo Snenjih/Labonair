@@ -245,7 +245,7 @@ export function CommandPalette({
         <DialogPrimitive.Content
           onKeyDown={handleKeyDown}
           aria-describedby={undefined}
-          className="fixed left-1/2 z-[101] w-full max-w-[640px] overflow-hidden rounded-2xl border border-border/60 shadow-2xl outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+          className="fixed left-1/2 z-[101] w-full max-w-[640px] overflow-hidden rounded-2xl border border-border/60 shadow-modal outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
           style={{
             ...positionStyle,
             backgroundColor: contentBg,

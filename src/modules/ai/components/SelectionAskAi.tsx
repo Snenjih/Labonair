@@ -40,7 +40,7 @@ export function SelectionAskAi({ x, y, onAsk, onDismiss }: Props) {
           e.stopPropagation();
           onAsk();
         }}
-        className="flex h-7 w-full items-center justify-between gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs shadow-lg hover:border-border hover:bg-accent"
+        className="flex h-7 w-full items-center justify-between gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs shadow-popover hover:border-border hover:bg-accent"
       >
         <span>Ask Labonair</span>
         <KbdGroup>

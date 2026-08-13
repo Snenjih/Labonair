@@ -271,7 +271,7 @@ export function SshLoadingScreen({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             style={{ willChange: "transform, opacity" }}
-            className="flex w-[400px] flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-lg"
+            className="flex w-[400px] flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-modal"
           >
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium text-foreground">Connect to host</p>
@@ -381,7 +381,7 @@ export function SshLoadingScreen({
             exit={{ opacity: 0, scale: 0.96 }}
             style={{ willChange: "transform, opacity" }}
             className={cn(
-              "flex w-[480px] flex-col gap-4 rounded-xl border bg-card p-6 shadow-lg",
+              "flex w-[480px] flex-col gap-4 rounded-xl border bg-card p-6 shadow-modal",
               isMismatch ? "border-destructive/40" : "border-border",
             )}
           >
@@ -439,7 +439,7 @@ export function SshLoadingScreen({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             style={{ willChange: "transform, opacity" }}
-            className="flex w-[400px] flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-lg"
+            className="flex w-[400px] flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-modal"
           >
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium text-foreground">Authentication required</p>
@@ -484,7 +484,7 @@ export function SshLoadingScreen({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             style={{ willChange: "transform, opacity" }}
-            className="flex w-[400px] flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-lg"
+            className="flex w-[400px] flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-modal"
           >
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium text-foreground">Key passphrase required</p>
@@ -537,7 +537,7 @@ export function SshLoadingScreen({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             style={{ willChange: "transform, opacity" }}
-            className="flex w-[420px] flex-col gap-4 rounded-xl border border-destructive/40 bg-card p-6 shadow-lg"
+            className="flex w-[420px] flex-col gap-4 rounded-xl border border-destructive/40 bg-card p-6 shadow-modal"
           >
             <p className="text-sm font-medium text-destructive">Connection failed</p>
             <p className="break-all text-xs text-muted-foreground">{errorMessage}</p>

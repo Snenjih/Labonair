@@ -174,18 +174,6 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     category: "Appearance & Layout",
     controlType: "NumberInput",
   },
-  {
-    id: "appDensity",
-    label: "Density",
-    description: "Adjust the vertical spacing of UI elements.",
-    category: "Appearance & Layout",
-    controlType: "Select",
-    options: [
-      { value: "compact", label: "Compact" },
-      { value: "default", label: "Default" },
-      { value: "relaxed", label: "Relaxed" },
-    ],
-  },
 
   // --- Command Palette ---
   {

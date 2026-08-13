@@ -172,7 +172,7 @@ export function HostCard({
             className={cn(
               "group relative flex flex-col justify-between rounded-xl border transition-all select-none",
               highlighted
-                ? "border-accent ring-1 ring-accent bg-card/60 shadow-sm"
+                ? "border-accent ring-1 ring-accent bg-card/60 shadow-row"
                 : "border-border/60 bg-card/40 hover:border-foreground/30 hover:bg-card",
             )}
           >

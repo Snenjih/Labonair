@@ -318,7 +318,7 @@ export function VirtualizedFileList({
           />
           <div
             className={cn(
-              "relative flex flex-col items-center gap-2 px-6 py-4 rounded-xl bg-card border shadow-lg transition-all duration-150",
+              "relative flex flex-col items-center gap-2 px-6 py-4 rounded-xl bg-card border shadow-popover transition-all duration-150",
               isDropHovered
                 ? dropDirection === "upload"
                   ? "bg-background/90 border-info/50 scale-105"

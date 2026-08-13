@@ -88,7 +88,6 @@ export type Preferences = {
   backgroundTintColor: string;
   backgroundTintOpacity: number;
   appCornerRadius: number;
-  appDensity: "compact" | "default" | "relaxed";
 
   // --- Terminal ---
   terminalShell: string;
@@ -306,7 +305,6 @@ const KEY_BG_BLUR = "backgroundBlur";
 const KEY_BG_TINT_COLOR = "backgroundTintColor";
 const KEY_BG_TINT_OPACITY = "backgroundTintOpacity";
 const KEY_APP_CORNER_RADIUS = "appCornerRadius";
-const KEY_APP_DENSITY = "appDensity";
 const KEY_STARTUP_TERMINAL_COUNT = "startupTerminalCount";
 
 const KEY_TERMINAL_SHELL = "terminalShell";
@@ -486,7 +484,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
   backgroundTintColor: "#000000",
   backgroundTintOpacity: 0,
   appCornerRadius: 5,
-  appDensity: "default",
 
   terminalShell: "",
   terminalDefaultPath: "",
@@ -722,10 +719,6 @@ export async function loadPreferences(): Promise<Preferences> {
     backgroundTintColor: get<string>(KEY_BG_TINT_COLOR) ?? DEFAULT_PREFERENCES.backgroundTintColor,
     backgroundTintOpacity: Math.min(100, Math.max(0, get<number>(KEY_BG_TINT_OPACITY) ?? 0)),
     appCornerRadius: Math.min(20, Math.max(0, get<number>(KEY_APP_CORNER_RADIUS) ?? 5)),
-    appDensity: ((): "compact" | "default" | "relaxed" => {
-      const v = get<string>(KEY_APP_DENSITY);
-      return v === "compact" || v === "relaxed" ? v : "default";
-    })(),
 
     terminalShell: get<string>(KEY_TERMINAL_SHELL) ?? DEFAULT_PREFERENCES.terminalShell,
     terminalDefaultPath: get<string>(KEY_TERMINAL_DEFAULT_PATH) ?? DEFAULT_PREFERENCES.terminalDefaultPath,
@@ -1214,11 +1207,6 @@ export async function setBackgroundTintOpacity(value: number): Promise<void> {
 
 export async function setAppCornerRadius(value: number): Promise<void> {
   await (await getStore()).set(KEY_APP_CORNER_RADIUS, Math.min(20, Math.max(0, value)));
-  await (await getStore()).save();
-}
-
-export async function setAppDensity(value: "compact" | "default" | "relaxed"): Promise<void> {
-  await (await getStore()).set(KEY_APP_DENSITY, value);
   await (await getStore()).save();
 }
 
@@ -1946,7 +1934,6 @@ export async function onPreferencesChange(cb: (key: PrefKey, value: unknown) => 
     [KEY_BG_TINT_COLOR]: "backgroundTintColor",
     [KEY_BG_TINT_OPACITY]: "backgroundTintOpacity",
     [KEY_APP_CORNER_RADIUS]: "appCornerRadius",
-    [KEY_APP_DENSITY]: "appDensity",
 
     [KEY_GIT_STATUS_POLL_INTERVAL_MS]: "gitStatusPollIntervalMs",
     [KEY_TERMINAL_SHELL]: "terminalShell",

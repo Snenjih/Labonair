@@ -59,7 +59,7 @@ export function HostIconPicker({ value, onChange, name }: HostIconPickerProps) {
         align="start"
         sideOffset={6}
         onOpenAutoFocus={(e) => e.preventDefault()}
-        className="w-72 overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-xl"
+        className="w-72 overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-popover"
       >
         <div className="border-b border-border/60 p-2">
           <Input

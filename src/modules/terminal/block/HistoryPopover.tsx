@@ -36,7 +36,7 @@ export function HistoryPopover({ items, selectedIndex, onHover, onSelect }: Prop
       onOpenAutoFocus={(e) => e.preventDefault()}
       onCloseAutoFocus={(e) => e.preventDefault()}
       onMouseDown={(e) => e.preventDefault()}
-      className="w-96 max-w-[90vw] overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-xl"
+      className="w-96 max-w-[90vw] overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-popover"
     >
       {items.length === 0 ? (
         <div className="px-3 py-2.5 text-[11px] text-muted-foreground">No command history yet.</div>

@@ -154,7 +154,7 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
         className={cn(
           "flex h-6 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors",
           mode === "ai"
-            ? "bg-background shadow-sm text-foreground"
+            ? "bg-background shadow-row text-foreground"
             : "text-muted-foreground hover:text-foreground",
           !canUseAiMode && "opacity-50 cursor-not-allowed hover:text-muted-foreground",
         )}
@@ -170,7 +170,7 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
         className={cn(
           "flex h-6 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors",
           mode === "command"
-            ? "bg-background shadow-sm text-foreground"
+            ? "bg-background shadow-row text-foreground"
             : "text-muted-foreground hover:text-foreground",
         )}
       >

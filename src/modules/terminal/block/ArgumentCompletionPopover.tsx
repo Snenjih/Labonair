@@ -33,7 +33,7 @@ export function ArgumentCompletionPopover({ candidates, selectedIndex, onHover, 
       onOpenAutoFocus={(e) => e.preventDefault()}
       onCloseAutoFocus={(e) => e.preventDefault()}
       onMouseDown={(e) => e.preventDefault()}
-      className="w-72 max-w-[90vw] overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-xl"
+      className="w-72 max-w-[90vw] overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-popover"
     >
       <ul ref={listRef} className="max-h-64 overflow-y-auto py-1">
         {candidates.map((value, i) => (

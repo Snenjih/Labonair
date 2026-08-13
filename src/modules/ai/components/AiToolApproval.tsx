@@ -46,7 +46,7 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
   return (
     <div
       className={cn(
-        "rounded-lg border bg-card shadow-sm",
+        "rounded-lg border bg-card shadow-row",
         destructiveWarning ? "border-warning/60" : "border-border",
       )}
     >

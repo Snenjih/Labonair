@@ -28,7 +28,7 @@ export function DirectivePickerContent({ items, activeIndex, onPick, onHover }: 
       onOpenAutoFocus={(e) => e.preventDefault()}
       onCloseAutoFocus={(e) => e.preventDefault()}
       onMouseDown={(e) => e.preventDefault()}
-      className="w-72 overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-xl"
+      className="w-72 overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-popover"
     >
       {items.length === 0 ? (
         <div className="px-3 py-2.5 text-[11px] text-muted-foreground">

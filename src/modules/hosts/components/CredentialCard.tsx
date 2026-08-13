@@ -79,7 +79,7 @@ export function CredentialCard({ credential, hostsCount, isSelected, onClick, on
         className={cn(
           "group relative flex flex-col justify-between rounded-xl border transition-all select-none",
           isSelected
-            ? "border-accent ring-1 ring-accent bg-card/60 shadow-sm"
+            ? "border-accent ring-1 ring-accent bg-card/60 shadow-row"
             : "border-border/60 bg-card/40 hover:border-foreground/30 hover:bg-card",
         )}
       >
@@ -93,7 +93,7 @@ export function CredentialCard({ credential, hostsCount, isSelected, onClick, on
           className="flex flex-1 items-start gap-3 p-3.5 text-left outline-none"
         >
           {/* Avatar */}
-          <div className="relative flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/40 text-sm font-semibold text-muted-foreground shadow-sm">
+          <div className="relative flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/40 text-sm font-semibold text-muted-foreground shadow-row">
             {initials(credential.name) || "?"}
             {/* Secret stored dot */}
             {credential.has_secret && (

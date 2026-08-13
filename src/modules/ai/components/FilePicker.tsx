@@ -29,7 +29,7 @@ export function FilePickerContent({ hits, loading, query, activeIndex, onPick, o
       onOpenAutoFocus={(e) => e.preventDefault()}
       onCloseAutoFocus={(e) => e.preventDefault()}
       onMouseDown={(e) => e.preventDefault()}
-      className="w-80 overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-xl"
+      className="w-80 overflow-hidden rounded-lg border border-border/60 bg-popover p-0 shadow-popover"
     >
       {loading ? (
         <div className="flex items-center gap-2 px-3 py-2.5 text-[11px] text-muted-foreground">

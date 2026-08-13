@@ -32,7 +32,6 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
 import {
   setAppCornerRadius,
-  setAppDensity,
   setAppFontFamily,
   setAppFontSize,
   setAppLineHeight,
@@ -83,7 +82,6 @@ export function AppearanceSection() {
   const backgroundTintColor = usePreferencesStore((s) => s.backgroundTintColor);
   const backgroundTintOpacity = usePreferencesStore((s) => s.backgroundTintOpacity);
   const appCornerRadius = usePreferencesStore((s) => s.appCornerRadius);
-  const appDensity = usePreferencesStore((s) => s.appDensity);
   const hmCardScale = usePreferencesStore((s) => s.hmCardScale);
 
   const addNotification = useNotificationStore((s) => s.addNotification);
@@ -197,7 +195,7 @@ export function AppearanceSection() {
   }
 
   return (
-    <div className="flex flex-col gap-[var(--ui-section-gap)]">
+    <div className="flex flex-col gap-6">
       <SectionHeader title="Appearance" description="Color theme, background, typography, and layout." />
 
       <div className="flex flex-col gap-2">
@@ -312,7 +310,7 @@ export function AppearanceSection() {
                           void handleDelete(bg.filename);
                         }}
                         className={cn(
-                          "absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border/60 bg-background/90 text-muted-foreground shadow-sm transition-all hover:bg-destructive/90 hover:text-white",
+                          "absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border/60 bg-background/90 text-muted-foreground shadow-row transition-all hover:bg-destructive/90 hover:text-white",
                           hoveredFilename === bg.filename ? "opacity-100 scale-100" : "opacity-0 scale-75",
                         )}
                         title={`Delete ${bg.filename}`}
@@ -436,29 +434,6 @@ export function AppearanceSection() {
       <div className="flex flex-col gap-2">
         <Label>Interface</Label>
         <div className="flex flex-col gap-4 rounded-lg border border-border/50 bg-card/40 px-4 py-3.5">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[12px] font-medium">Density</span>
-              <span className="text-[10px] text-muted-foreground">Vertical spacing of UI elements</span>
-            </div>
-            <div className="flex gap-1">
-              {(["compact", "default", "relaxed"] as const).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => void setAppDensity(d)}
-                  className={cn(
-                    "h-7 rounded-md border px-3 text-[11px] capitalize transition-colors",
-                    appDensity === d
-                      ? "border-border bg-accent text-foreground"
-                      : "border-border/40 bg-transparent text-muted-foreground hover:bg-accent/50",
-                  )}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          </div>
           <SliderControl
             label="Corner radius"
             description="Border radius for buttons, cards, and inputs"
@@ -580,7 +555,7 @@ function TileWrapper({ label, children }: { label: string; children: React.React
 
 function SelectedBadge() {
   return (
-    <div className="absolute bottom-1.5 right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-foreground shadow-sm">
+    <div className="absolute bottom-1.5 right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-foreground shadow-row">
       <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden>
         <path
           d="M1.5 4.5L3.5 6.5L7.5 2.5"
