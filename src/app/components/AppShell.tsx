@@ -10,6 +10,7 @@ import { CommandPalette, useCommandStore } from "@/modules/command-palette";
 import type { ExplorerTarget } from "@/modules/explorer/lib/useExplorerTarget";
 import { Header } from "@/modules/header";
 import { BackgroundImageLayer } from "@/modules/settings/BackgroundImageLayer";
+import { useReduceMotionAttribute } from "@/modules/settings/lib/useReduceMotionAttribute";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { ShortcutsDialog } from "@/modules/shortcuts";
@@ -214,6 +215,7 @@ export function AppShell({ actions, prefs, ctrl, tabs, sidebar, ai, palette }: A
   };
 
   useBarPanelSync(sidebar);
+  useReduceMotionAttribute(prefs.reduceMotion);
 
   const shell = (
     <MotionConfig reducedMotion={prefs.reduceMotion ? "always" : "user"}>

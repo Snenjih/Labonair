@@ -70,7 +70,7 @@ export function VirtualizedTreeList({
   }, [selectedPath, rows, virtualizer]);
 
   return (
-    <div ref={parentRef} className="h-full overflow-auto">
+    <div ref={parentRef} className="themed-scrollbar h-full overflow-auto">
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const row = rows[virtualRow.index];

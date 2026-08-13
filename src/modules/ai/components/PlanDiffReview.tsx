@@ -1,6 +1,3 @@
-import { Button } from "@/components/ui/button";
-import { handleApiError } from "@/lib/errors";
-import { cn } from "@/lib/utils";
 import {
   ArrowDown01Icon,
   Cancel01Icon,
@@ -11,7 +8,10 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
-import { usePlanStore, type QueuedEdit } from "../store/planStore";
+import { Button } from "@/components/ui/button";
+import { handleApiError } from "@/lib/errors";
+import { cn } from "@/lib/utils";
+import { type QueuedEdit, usePlanStore } from "../store/planStore";
 
 function basename(p: string): string {
   const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
@@ -86,7 +86,7 @@ export function PlanDiffReview() {
           </Button>
         </div>
       </div>
-      <ul className="flex flex-1 flex-col gap-1.5 overflow-auto p-3">
+      <ul className="flex flex-1 flex-col gap-1.5 overflow-auto p-3 themed-scrollbar">
         {queue.map((q) => (
           <PlanRow key={q.id} item={q} onReject={() => removeOne(q.id)} />
         ))}
@@ -188,7 +188,7 @@ function UnifiedDiffPreview({ original, proposed }: { original: string; proposed
 
   return (
     <div className="overflow-hidden rounded border border-border/40 font-mono text-[11px] leading-relaxed">
-      <div className="max-h-72 overflow-auto">
+      <div className="max-h-72 overflow-auto themed-scrollbar">
         {shown.map((l, i) => (
           <div
             key={i}

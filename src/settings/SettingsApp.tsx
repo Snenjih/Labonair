@@ -14,6 +14,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { MotionConfig } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { useCustomFontsStore, useSystemFontsStore } from "@/modules/fonts";
 import { BackgroundImageLayer } from "@/modules/settings/BackgroundImageLayer";
 import { SETTING_DEFINITIONS, type SettingCategory } from "@/modules/settings/definitions";
+import { useReduceMotionAttribute } from "@/modules/settings/lib/useReduceMotionAttribute";
 import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore, usePreferencesStore as usePrefs } from "@/modules/settings/preferences";
 import type { PrefKey } from "@/modules/settings/store";
@@ -87,7 +89,9 @@ export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const [searchQuery, setSearchQuery] = useState("");
   const init = usePreferencesStore((s) => s.init);
+  const reduceMotion = usePreferencesStore((s) => s.reduceMotion);
   const initKeybinds = useKeybindsStore((s) => s.init);
+  useReduceMotionAttribute(reduceMotion);
 
   useEffect(() => {
     void init();
@@ -148,97 +152,99 @@ export function SettingsApp() {
     : [];
 
   return (
-    <div className="relative z-[1] flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
-      <BackgroundImageLayer />
-      {/* Titlebar */}
-      <header
-        data-tauri-drag-region
-        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
-          IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
-        }`}
-      >
-        <span className="flex-1 text-center text-[12.5px] font-medium" data-tauri-drag-region>
-          Settings
-        </span>
-        {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls />}
-      </header>
+    <MotionConfig reducedMotion={reduceMotion ? "always" : "user"}>
+      <div className="relative z-[1] flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
+        <BackgroundImageLayer />
+        {/* Titlebar */}
+        <header
+          data-tauri-drag-region
+          className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
+            IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
+          }`}
+        >
+          <span className="flex-1 text-center text-[12.5px] font-medium" data-tauri-drag-region>
+            Settings
+          </span>
+          {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls />}
+        </header>
 
-      {/* Body */}
-      <div className="flex min-h-0 flex-1">
-        {/* Left Sidebar */}
-        <aside className="flex w-52 shrink-0 flex-col gap-1 border-r border-border/60 bg-card/30 p-2">
-          <div className="mb-1 px-1">
-            <Input
-              type="search"
-              placeholder="Search settings…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-7 text-[11.5px]"
-            />
-          </div>
-          <nav className="flex flex-col gap-0.5">
-            {SIDEBAR_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setActive(item.id);
-                  setSearchQuery("");
-                }}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12px] transition-colors",
-                  active === item.id && !isSearching
-                    ? "bg-accent/50 text-foreground"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                )}
-              >
-                <HugeiconsIcon icon={item.icon} size={13} strokeWidth={1.75} />
-                {item.label}
-              </button>
-            ))}
-          </nav>
-          <div className="mt-auto border-t border-border/60 pt-2">
-            <button
-              type="button"
-              onClick={() => void handleOpenInEditor()}
-              className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-            >
-              <HugeiconsIcon icon={File01Icon} size={12} strokeWidth={1.75} />
-              Open settings.json
-            </button>
-          </div>
-        </aside>
-
-        {/* Right content */}
-        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto px-8 pt-6 pb-7">
-          <div className={cn("mx-auto w-full", active === "themes" ? "max-w-[680px]" : "max-w-[580px]")}>
-            {isSearching ? (
-              <SearchResults
-                query={trimmed}
-                results={searchResults}
-                onNavigateToTab={(tab) => {
-                  setActive(tab);
-                  setSearchQuery("");
-                }}
+        {/* Body */}
+        <div className="flex min-h-0 flex-1">
+          {/* Left Sidebar */}
+          <aside className="flex w-52 shrink-0 flex-col gap-1 border-r border-border/60 bg-card/30 p-2">
+            <div className="mb-1 px-1">
+              <Input
+                type="search"
+                placeholder="Search settings…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-7 text-[11.5px]"
               />
-            ) : (
-              <>
-                {active === "general" && <GeneralSection />}
-                {active === "appearance" && <AppearanceSection />}
-                {active === "themes" && <ThemeMarketplace />}
-                {active === "terminal" && <TerminalSection />}
-                {active === "editor" && <EditorSection />}
-                {active === "file-manager" && <FileManagerSection />}
-                {active === "remote-connections" && <ConnectionsSection />}
-                {active === "workspace" && <WorkspaceSection />}
-                {active === "shortcuts" && <KeyboardShortcutsSection />}
-                {active === "ai" && <AiSection />}
-              </>
-            )}
-          </div>
-        </main>
+            </div>
+            <nav className="flex flex-col gap-0.5">
+              {SIDEBAR_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setActive(item.id);
+                    setSearchQuery("");
+                  }}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12px] transition-colors",
+                    active === item.id && !isSearching
+                      ? "bg-accent/50 text-foreground"
+                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  )}
+                >
+                  <HugeiconsIcon icon={item.icon} size={13} strokeWidth={1.75} />
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+            <div className="mt-auto border-t border-border/60 pt-2">
+              <button
+                type="button"
+                onClick={() => void handleOpenInEditor()}
+                className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              >
+                <HugeiconsIcon icon={File01Icon} size={12} strokeWidth={1.75} />
+                Open settings.json
+              </button>
+            </div>
+          </aside>
+
+          {/* Right content */}
+          <main className="flex min-w-0 flex-1 flex-col overflow-y-auto px-8 pt-6 pb-7 themed-scrollbar">
+            <div className={cn("mx-auto w-full", active === "themes" ? "max-w-[680px]" : "max-w-[580px]")}>
+              {isSearching ? (
+                <SearchResults
+                  query={trimmed}
+                  results={searchResults}
+                  onNavigateToTab={(tab) => {
+                    setActive(tab);
+                    setSearchQuery("");
+                  }}
+                />
+              ) : (
+                <>
+                  {active === "general" && <GeneralSection />}
+                  {active === "appearance" && <AppearanceSection />}
+                  {active === "themes" && <ThemeMarketplace />}
+                  {active === "terminal" && <TerminalSection />}
+                  {active === "editor" && <EditorSection />}
+                  {active === "file-manager" && <FileManagerSection />}
+                  {active === "remote-connections" && <ConnectionsSection />}
+                  {active === "workspace" && <WorkspaceSection />}
+                  {active === "shortcuts" && <KeyboardShortcutsSection />}
+                  {active === "ai" && <AiSection />}
+                </>
+              )}
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    </MotionConfig>
   );
 }
 

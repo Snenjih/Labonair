@@ -1,7 +1,3 @@
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
   AiChipIcon,
   AiNetworkIcon,
@@ -30,19 +26,24 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DURATION, SPRING_SNAPPY } from "@/lib/motion";
+import { cn } from "@/lib/utils";
+import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
-  MODELS,
-  PROVIDERS,
-  providerNeedsKey,
   type DynamicModelInfo,
+  MODELS,
   type ModelId,
   type ModelInfo,
+  PROVIDERS,
   type ProviderId,
+  providerNeedsKey,
 } from "../config";
-import { useChatStore } from "../store/chatStore";
-import { useProvidersStore } from "../store/providersStore";
-import { useModelCacheStore } from "../store/modelCacheStore";
 import { makeModelRef, parseModelRef } from "../lib/modelRef";
+import { useChatStore } from "../store/chatStore";
+import { useModelCacheStore } from "../store/modelCacheStore";
+import { useProvidersStore } from "../store/providersStore";
 
 const PROVIDER_ICON: Record<ProviderId, typeof ChatGptIcon> = {
   openai: ChatGptIcon,
@@ -144,7 +145,7 @@ function ProviderButton({
         <motion.span
           layoutId="picker-provider-indicator"
           className="absolute -left-1 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-r bg-foreground/80"
-          transition={{ type: "spring", stiffness: 450, damping: 32 }}
+          transition={SPRING_SNAPPY}
         />
       )}
       <HugeiconsIcon icon={icon} size={14} strokeWidth={1.5} />
@@ -190,7 +191,7 @@ function ModelRow({
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ delay: Math.min(index * 0.012, 0.12), duration: 0.1 }}
+      transition={{ delay: Math.min(index * 0.012, 0.12), duration: DURATION.fast }}
     >
       <button
         type="button"
@@ -576,7 +577,7 @@ export function ModelPicker({ grouped }: { grouped?: boolean } = {}) {
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
-                transition={{ duration: 0.1 }}
+                transition={{ duration: DURATION.fast }}
                 onClick={() => setSearch("")}
                 className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
               >
@@ -629,7 +630,7 @@ export function ModelPicker({ grouped }: { grouped?: boolean } = {}) {
         {/* Body */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Provider Sidebar */}
-          <div className="flex flex-col gap-0.5 border-r border-border/50 py-1.5 w-[44px] shrink-0 overflow-y-auto">
+          <div className="flex flex-col gap-0.5 border-r border-border/50 py-1.5 w-[44px] shrink-0 overflow-y-auto themed-scrollbar">
             <ProviderButton
               icon={GridViewIcon}
               active={activeProvider === null}
@@ -657,7 +658,7 @@ export function ModelPicker({ grouped }: { grouped?: boolean } = {}) {
           </div>
 
           {/* Model List */}
-          <div className="flex-1 overflow-y-auto py-1">
+          <div className="flex-1 overflow-y-auto py-1 themed-scrollbar">
             {instances.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center">
                 <span className="text-[12px] text-muted-foreground/60">No providers configured</span>

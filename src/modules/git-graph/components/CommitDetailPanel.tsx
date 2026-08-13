@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { DURATION, EASE_PREMIUM } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { fileIconUrl, folderIconUrl } from "@/modules/explorer/lib/iconResolver";
 import { git } from "@/modules/source-control/lib/gitInvoke";
@@ -336,7 +337,7 @@ export function CommitDetailPanel({
       initial={{ x: 320, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 320, opacity: 0 }}
-      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: DURATION.base, ease: EASE_PREMIUM }}
       className="flex h-full w-[320px] shrink-0 flex-col border-l border-border bg-background"
     >
       {/* ── Author header ─────────────────────────────────────────────── */}

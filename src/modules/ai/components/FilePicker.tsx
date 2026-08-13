@@ -1,8 +1,8 @@
+import { ArrowRight01Icon, Folder01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { PopoverContent } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { ArrowRight01Icon, Folder01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 
 export type FileSearchHit = {
   path: string;
@@ -41,7 +41,7 @@ export function FilePickerContent({ hits, loading, query, activeIndex, onPick, o
           {query ? `No files matching "@${query}"` : "Type a filename to search"}
         </div>
       ) : (
-        <ul className="max-h-64 overflow-y-auto py-1">
+        <ul className="max-h-64 overflow-y-auto py-1 themed-scrollbar">
           {hits.map((hit, i) => (
             <li key={hit.path}>
               <button

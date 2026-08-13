@@ -1,9 +1,23 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  rectSortingStrategy,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { invoke } from "@tauri-apps/api/core";
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
-import { handleApiError } from "@/lib/errors";
-import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,6 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,38 +36,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { handleApiError } from "@/lib/errors";
+import { DURATION, SPRING_SOFT } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import {
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  rectSortingStrategy,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { GroupCard } from "./GroupCard";
-import { HostCard } from "./HostCard";
-import { HostListItem } from "./HostListItem";
-import { HostFormPanel } from "./HostFormPanel";
-import { CredentialFormPanel } from "./CredentialFormPanel";
-import { CredentialListItem } from "./CredentialListItem";
-import { CredentialCard } from "./CredentialCard";
-import { SshConfigImportDialog } from "./SshConfigImportDialog";
-import { useHostsStore } from "../store/hostsStore";
-import { useCredentialsStore } from "../store/credentialsStore";
+import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { setHmLayout, setHmSort } from "@/modules/settings/store";
+import { useCredentialsStore } from "../store/credentialsStore";
+import { useHostsStore } from "../store/hostsStore";
 import type { Group, Host } from "../types";
+import { CredentialCard } from "./CredentialCard";
+import { CredentialFormPanel } from "./CredentialFormPanel";
+import { CredentialListItem } from "./CredentialListItem";
+import { GroupCard } from "./GroupCard";
+import { HostCard } from "./HostCard";
+import { HostFormPanel } from "./HostFormPanel";
+import { HostListItem } from "./HostListItem";
+import { SshConfigImportDialog } from "./SshConfigImportDialog";
 
 type LayoutMode = "grid" | "list";
 type SortMode = "last_connected" | "a_z" | "z_a";
@@ -182,7 +183,7 @@ function SortableHostCard({
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={style} className="motion-preserve">
       {layoutMode === "list" ? (
         <HostListItem
           host={host}
@@ -935,8 +936,8 @@ export function HomeDashboard({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{
-              layout: { type: "spring", stiffness: 300, damping: 30 },
-              opacity: { duration: 0.15 },
+              layout: SPRING_SOFT,
+              opacity: { duration: DURATION.fast },
             }}
             className="w-[340px] shrink-0 border-l border-border overflow-hidden bg-background flex flex-col"
           >

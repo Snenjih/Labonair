@@ -1,20 +1,21 @@
-import React from "react";
 import { motion } from "motion/react";
+import React from "react";
+import { DURATION, EASE_PREMIUM } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { AiInputBar } from "@/modules/ai";
 import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
-import { AiDiffStack, EditorStack, GitDiffStack } from "@/modules/editor";
 import type { EditorPaneHandle } from "@/modules/editor";
+import { AiDiffStack, EditorStack, GitDiffStack } from "@/modules/editor";
+import { CommitDiffStack, GitGraphStack } from "@/modules/git-graph";
 import { HomeDashboard } from "@/modules/hosts";
-import { PreviewStack } from "@/modules/preview";
 import type { PreviewPaneHandle } from "@/modules/preview";
+import { PreviewStack } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { SftpStack } from "@/modules/sftp/SftpStack";
-import { GitGraphStack, CommitDiffStack } from "@/modules/git-graph";
-import { useTabsStore, selectActiveTabKind } from "@/modules/tabs";
+import { selectActiveTabKind, useTabsStore } from "@/modules/tabs";
+import type { TerminalPaneHandle, WorkspacePaneHandle } from "@/modules/terminal";
 import { WorkspaceStack } from "@/modules/terminal/WorkspaceStack";
-import type { WorkspacePaneHandle, TerminalPaneHandle } from "@/modules/terminal";
 
 export interface WorkspaceAreaProps {
   workspacePaneRefs: React.MutableRefObject<Map<number, WorkspacePaneHandle>>;
@@ -171,7 +172,7 @@ export const WorkspaceArea = React.memo(function WorkspaceArea({
             height: panelOpen ? "auto" : 0,
             opacity: panelOpen ? 1 : 0,
           }}
-          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: DURATION.base, ease: EASE_PREMIUM }}
           className="overflow-hidden"
           aria-hidden={!panelOpen}
         >

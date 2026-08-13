@@ -1,8 +1,8 @@
+import { HugeiconsIcon } from "@hugeicons/react";
 import { PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { HugeiconsIcon } from "@hugeicons/react";
-import type { SlashCommandMeta } from "../lib/slashCommands";
 import type { Directive } from "../lib/directives";
+import type { SlashCommandMeta } from "../lib/slashCommands";
 
 export type PickerItem =
   | { kind: "directive"; directive: Directive }
@@ -35,7 +35,7 @@ export function DirectivePickerContent({ items, activeIndex, onPick, onHover }: 
           No matches. Add directives in Settings → Agents.
         </div>
       ) : (
-        <div className="max-h-64 overflow-y-auto py-1">
+        <div className="max-h-64 overflow-y-auto py-1 themed-scrollbar">
           {commands.length > 0 && (
             <>
               <SectionHeader label="Pre-built commands" />

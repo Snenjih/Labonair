@@ -1,3 +1,7 @@
+import { ArrowDown01Icon, ArrowUp01Icon, Mic01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -6,10 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { ArrowDown01Icon, ArrowUp01Icon, Mic01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { DURATION, EASE_SOFT } from "@/lib/motion";
 
 const MODELS = [
   { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
@@ -34,7 +35,7 @@ export function AiTools({ aiOpen, canSubmit, onOpenAi, onSubmit }: Props) {
           initial={{ opacity: 0, y: 2 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -2 }}
-          transition={{ duration: 0.12, ease: "easeOut" }}
+          transition={{ duration: DURATION.fast, ease: EASE_SOFT }}
           style={{ willChange: "transform, opacity" }}
           className="flex items-center gap-0.5"
         >
@@ -52,7 +53,7 @@ export function AiTools({ aiOpen, canSubmit, onOpenAi, onSubmit }: Props) {
           initial={{ opacity: 0, y: 2 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -2 }}
-          transition={{ duration: 0.12, ease: "easeOut" }}
+          transition={{ duration: DURATION.fast, ease: EASE_SOFT }}
           style={{ willChange: "transform, opacity" }}
           onClick={onOpenAi}
           className="flex h-7 items-center gap-2 rounded-md border border-border/60 bg-card px-2 text-xs text-muted-foreground hover:text-foreground"

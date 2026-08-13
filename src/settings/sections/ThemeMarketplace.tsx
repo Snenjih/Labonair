@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/lib/errors";
+import { DURATION } from "@/lib/motion";
 import type { ThemeMeta } from "@/lib/useThemeEngine";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -199,7 +200,7 @@ export function ThemeMarketplace() {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.08 }}
+            transition={{ duration: DURATION.fast }}
             className="overflow-hidden"
           >
             <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-accent/30 px-3 py-2">

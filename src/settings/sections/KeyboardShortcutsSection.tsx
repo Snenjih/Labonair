@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { DURATION } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -239,7 +240,7 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.1 }}
+              transition={{ duration: DURATION.fast }}
               className="flex items-center gap-2"
             >
               {/* Binding display */}
@@ -303,7 +304,7 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
               initial={{ opacity: 0, scale: 0.97 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.1 }}
+              transition={{ duration: DURATION.fast }}
               className="flex flex-col items-end gap-1.5"
             >
               <div className="flex items-center gap-2">
@@ -349,7 +350,7 @@ function ShortcutRow({ shortcut }: { shortcut: Shortcut }) {
               initial={{ opacity: 0, scale: 0.97 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.1 }}
+              transition={{ duration: DURATION.fast }}
               className="flex flex-col items-end gap-1.5"
             >
               {/* Show the captured binding */}

@@ -748,7 +748,7 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
                     ✕
                   </button>
                 </div>
-                <div className="flex-1 overflow-auto min-h-0">
+                <div className="flex-1 overflow-auto min-h-0 themed-scrollbar">
                   {isLocalSearching ? (
                     <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
                       Searching…
@@ -880,7 +880,7 @@ export function SftpPane({ tab, onOpenSshTerminal, onOpenRemoteEditor, onPathsCh
                     ✕
                   </button>
                 </div>
-                <div className="flex-1 overflow-auto min-h-0">
+                <div className="flex-1 overflow-auto min-h-0 themed-scrollbar">
                   {isDeepSearching ? (
                     <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
                       Searching…

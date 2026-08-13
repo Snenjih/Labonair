@@ -1,4 +1,16 @@
 import {
+  Add01Icon,
+  Add02Icon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
+  Cancel01Icon,
+  CommandIcon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -19,24 +31,13 @@ import {
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DURATION, EASE_SOFT } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import {
-  Add01Icon,
-  Add02Icon,
-  ArrowDown01Icon,
-  ArrowRight01Icon,
-  Cancel01Icon,
-  Search01Icon,
-  CommandIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
 import { useHostsStore } from "@/modules/hosts/store/hostsStore";
 import { useCommandSnippetsStore } from "../store/commandSnippetsStore";
+import type { CommandSnippet, SnippetExecMode, SnippetGroup } from "../types";
 import { SnippetFormPanel } from "./SnippetFormPanel";
 import { SnippetItem } from "./SnippetItem";
-import type { CommandSnippet, SnippetExecMode, SnippetGroup } from "../types";
 
 interface Props {
   onRun: (snippet: CommandSnippet, mode?: SnippetExecMode) => void;
@@ -176,7 +177,7 @@ export function SnippetsPanel({ onRun }: Props) {
             initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 10 }}
-            transition={{ duration: 0.13, ease: "easeOut" }}
+            transition={{ duration: DURATION.fast, ease: EASE_SOFT }}
             className="flex h-full flex-col"
           >
             <SnippetFormPanel
@@ -190,7 +191,7 @@ export function SnippetsPanel({ onRun }: Props) {
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -10 }}
-            transition={{ duration: 0.13, ease: "easeOut" }}
+            transition={{ duration: DURATION.fast, ease: EASE_SOFT }}
             className="flex h-full flex-col"
           >
             {/* Toolbar header */}
@@ -226,7 +227,7 @@ export function SnippetsPanel({ onRun }: Props) {
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.08 }}
+                  transition={{ duration: DURATION.fast }}
                   className="overflow-hidden border-b border-border/60"
                 >
                   <div className="relative px-2 py-1.5">

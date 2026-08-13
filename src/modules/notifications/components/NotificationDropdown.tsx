@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DURATION } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
   type AppNotification,
@@ -53,7 +54,7 @@ function NotificationItem({ notif, onDismiss }: { notif: AppNotification; onDism
     <motion.div
       initial={{ opacity: 1 }}
       exit={{ opacity: 0, height: 0, overflow: "hidden", paddingTop: 0, paddingBottom: 0 }}
-      transition={{ duration: 0.08 }}
+      transition={{ duration: DURATION.fast }}
       className="flex flex-col gap-1 px-3 py-2.5"
     >
       <div className="flex min-w-0 items-start gap-2">

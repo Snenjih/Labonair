@@ -294,6 +294,12 @@
     }
     html {
         @apply font-sans;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    ::selection {
+        background-color: var(--selection);
+        color: inherit;
     }
 }
 
@@ -384,6 +390,30 @@ html[data-chrome="borderless"] #settings-root {
     display: none !important;
 }
 
+/* Themed thin scrollbar for panels that keep a visible scrollbar (Explorer,
+ * SFTP, AI pickers, Settings, Snippets) — colors derive from --foreground so
+ * it tracks light/dark and user-imported themes without extra tokens. */
+.themed-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 22%, transparent) transparent;
+}
+.themed-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.themed-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.themed-scrollbar::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--foreground) 22%, transparent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+.themed-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--foreground) 34%, transparent);
+}
+
 @keyframes labonair-tab-in {
     from { opacity: 0; transform: scale(0.86); }
     to   { opacity: 1; transform: scale(1);    }
@@ -391,4 +421,38 @@ html[data-chrome="borderless"] #settings-root {
 
 .labonair-tab-in {
     animation: labonair-tab-in var(--dur-base) var(--ease-premium);
+}
+
+/*
+ * Reduce-motion reset. Covers what <MotionConfig> structurally can't reach:
+ * Tailwind/Radix `animate-in`/`animate-out` open-close animations, plain
+ * `transition-*` utilities, and custom @keyframes. Duration is forced to
+ * 0.01ms (not 0/none) so transitionend/animationend listeners that some
+ * Radix/shadcn components rely on to unmount still fire.
+ *
+ * Exemptions:
+ * - .animate-spin (loading spinners) — functional status, must keep spinning.
+ * - .motion-preserve (dnd-kit sortable drag wrappers) — direct-manipulation
+ *   movement follows the user's own gesture, so it's kept even when reduced.
+ *
+ * Two triggers: the OS-level `prefers-reduced-motion` media query (respected
+ * even if the user never opens Settings), and the in-app "Reduce motion"
+ * toggle via `data-reduce-motion` on <html> (set in both the main and
+ * settings windows). The media-query block backs off if the in-app setting
+ * explicitly overrides the OS default back to "off".
+ */
+@media (prefers-reduced-motion: reduce) {
+    html:not([data-reduce-motion="false"])
+        :where(*):not(.motion-preserve, .motion-preserve *, .animate-spin, .animate-spin *) {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+html[data-reduce-motion="true"]
+    :where(*):not(.motion-preserve, .motion-preserve *, .animate-spin, .animate-spin *) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
 }

@@ -1,6 +1,7 @@
-import { AnimatePresence, motion } from "motion/react";
 import { Cancel01Icon, Clock01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { AnimatePresence, motion } from "motion/react";
+import { DURATION } from "@/lib/motion";
 import { useChatStore } from "../store/chatStore";
 
 type Props = { sessionId: string | null };
@@ -29,7 +30,7 @@ export function QueueStrip({ sessionId }: Props) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.1 }}
+              transition={{ duration: DURATION.fast }}
               className="group flex items-center gap-2 rounded px-1.5 py-0.5"
             >
               <span className="w-3 shrink-0 text-[10px] tabular-nums text-muted-foreground/50">

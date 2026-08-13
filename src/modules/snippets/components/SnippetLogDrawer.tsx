@@ -1,17 +1,18 @@
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
 import {
-  Cancel01Icon,
-  Delete02Icon,
-  CheckmarkCircle02Icon,
   Alert02Icon,
+  Cancel01Icon,
+  CheckmarkCircle02Icon,
+  Delete02Icon,
   Loading03Icon,
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { DURATION, EASE_SOFT } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { useCommandSnippetsStore } from "../store/commandSnippetsStore";
 import type { SnippetRunLog } from "../types";
 
@@ -42,7 +43,7 @@ export function SnippetLogDrawer({ open, onClose, onCancelRun }: Props) {
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 260, opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.15, ease: "easeOut" }}
+          transition={{ duration: DURATION.fast, ease: EASE_SOFT }}
           style={{ willChange: "height, opacity" }}
           className="overflow-hidden border-t border-border/60 bg-card"
         >
@@ -75,7 +76,7 @@ export function SnippetLogDrawer({ open, onClose, onCancelRun }: Props) {
             ) : (
               <div className="flex min-h-0 flex-1">
                 {/* Run list */}
-                <div className="flex w-44 shrink-0 flex-col gap-px overflow-y-auto border-r border-border/60 p-1">
+                <div className="flex w-44 shrink-0 flex-col gap-px overflow-y-auto border-r border-border/60 p-1 themed-scrollbar">
                   {runLogs.map((log) => (
                     <RunTab
                       key={log.runId}

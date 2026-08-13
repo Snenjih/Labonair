@@ -1,3 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
+import { domAnimation, LazyMotion, m } from "motion/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,14 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/lib/errors";
+import { DURATION } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import { invoke } from "@tauri-apps/api/core";
-import { domAnimation, LazyMotion, m } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useHostsStore } from "../store/hostsStore";
-import { useCredentialsStore } from "../store/credentialsStore";
-import { useCommandSnippetsStore } from "@/modules/snippets/store/commandSnippetsStore";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
+import { useCommandSnippetsStore } from "@/modules/snippets/store/commandSnippetsStore";
+import { useCredentialsStore } from "../store/credentialsStore";
+import { useHostsStore } from "../store/hostsStore";
 import type { CreateHostPayload, Host, TunnelConfig, UpdateHostPayload } from "../types";
 import { HostIconPicker } from "./HostIconPicker";
 
@@ -200,7 +201,7 @@ function SaveStatusIcon({ saving, result }: { saving: boolean; result: SaveResul
         key={result ?? "idle"}
         initial={result ? { scale: 1 } : false}
         animate={result ? { scale: [1, 1.3, 1] } : {}}
-        transition={{ duration: 0.35 }}
+        transition={{ duration: DURATION.slow }}
         title={result === "error" ? "Save failed" : result === "success" ? "Saved" : undefined}
         className={cn("shrink-0 rounded-md p-1 transition-colors", color)}
       >

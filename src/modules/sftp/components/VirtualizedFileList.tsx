@@ -382,7 +382,7 @@ export function VirtualizedFileList({
       {/* Scrollable virtual list */}
       <div
         ref={parentRef}
-        className="flex-1 min-h-0 overflow-auto"
+        className="flex-1 min-h-0 overflow-auto themed-scrollbar"
         onPointerDown={handleScrollAreaPointerDown}
       >
         {isLoading ? (

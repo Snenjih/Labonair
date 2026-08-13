@@ -1,4 +1,16 @@
 import {
+  ArrowLeft01Icon,
+  ComputerIcon,
+  Copy01Icon,
+  Delete02Icon,
+  Logout01Icon,
+  MoreHorizontalIcon,
+  ServerStack01Icon,
+  SlidersHorizontalIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useState } from "react";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -21,18 +33,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import {
-  ArrowLeft01Icon,
-  Copy01Icon,
-  ComputerIcon,
-  Delete02Icon,
-  Logout01Icon,
-  MoreHorizontalIcon,
-  ServerStack01Icon,
-  SlidersHorizontalIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useState } from "react";
 import { useHostsStore } from "@/modules/hosts/store/hostsStore";
 import { useCommandSnippetsStore } from "../store/commandSnippetsStore";
 import type { CommandSnippet, SnippetExecMode, SnippetTarget } from "../types";
@@ -234,7 +234,7 @@ export function SnippetFormPanel({ snippetId, onClose }: Props) {
       </div>
 
       {/* Scrollable form body */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto themed-scrollbar">
         <div className="space-y-4 px-3 py-3">
           {/* ── General ── */}
           <FormSection title="General">

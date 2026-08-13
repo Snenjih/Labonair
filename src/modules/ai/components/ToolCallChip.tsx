@@ -1,4 +1,3 @@
-import { cn } from "@/lib/utils";
 import {
   ArrowDown01Icon,
   Cancel01Icon,
@@ -13,6 +12,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 
 const TOOL_META: Record<string, { label: string; icon: typeof ToolsIcon }> = {
   write_file: { label: "Write file", icon: FilePlusIcon },
@@ -127,7 +127,7 @@ function ExpandedDetail({
   if (errorText) {
     return (
       <div className="pt-2.5">
-        <pre className="overflow-auto rounded bg-destructive/5 p-2 font-mono text-[10.5px] leading-relaxed text-destructive/80">
+        <pre className="overflow-auto rounded bg-destructive/5 p-2 font-mono text-[10.5px] leading-relaxed text-destructive/80 themed-scrollbar">
           {errorText}
         </pre>
       </div>
@@ -145,12 +145,12 @@ function ExpandedDetail({
       <div className="space-y-1.5 pt-2.5">
         {cwdAfter && <div className="font-mono text-[10px] text-muted-foreground">{String(cwdAfter)}</div>}
         {stdout && (
-          <pre className="max-h-48 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10.5px] leading-relaxed">
+          <pre className="max-h-48 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10.5px] leading-relaxed themed-scrollbar">
             {stdout}
           </pre>
         )}
         {stderr && (
-          <pre className="max-h-32 overflow-auto rounded bg-destructive/5 p-2 font-mono text-[10.5px] leading-relaxed text-destructive/80">
+          <pre className="max-h-32 overflow-auto rounded bg-destructive/5 p-2 font-mono text-[10.5px] leading-relaxed text-destructive/80 themed-scrollbar">
             {stderr}
           </pre>
         )}
@@ -180,7 +180,7 @@ function ExpandedDetail({
     const extra = lines.length - 30;
     return (
       <div className="pt-2.5">
-        <pre className="max-h-48 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10.5px] leading-relaxed">
+        <pre className="max-h-48 overflow-auto rounded bg-muted/50 p-2 font-mono text-[10.5px] leading-relaxed themed-scrollbar">
           {preview}
           {extra > 0 ? `\n… (+${extra} lines)` : ""}
         </pre>
@@ -191,7 +191,7 @@ function ExpandedDetail({
   if (toolName === "list_directory") {
     const entries = Array.isArray(out) ? (out as Array<{ name: string; kind: string }>) : [];
     return (
-      <div className="max-h-48 overflow-auto pt-2.5">
+      <div className="max-h-48 overflow-auto pt-2.5 themed-scrollbar">
         {entries.slice(0, 40).map((e) => (
           <div key={e.name} className="flex gap-2 font-mono text-[10px]">
             <span className="w-3 shrink-0 text-muted-foreground">{e.kind === "dir" ? "d" : "f"}</span>
@@ -211,7 +211,7 @@ function ExpandedDetail({
     const hits = outObj?.hits ?? [];
     const shown = hits.slice(0, 25);
     return (
-      <div className="max-h-48 overflow-auto space-y-0.5 pt-2.5">
+      <div className="max-h-48 overflow-auto space-y-0.5 pt-2.5 themed-scrollbar">
         {shown.map((hit, i) => (
           <div
             key={`${hit.rel ?? hit.path ?? ""}:${hit.line ?? i}`}
@@ -236,7 +236,7 @@ function ExpandedDetail({
     const outObj = out as { hits?: GlobHit[]; truncated?: boolean } | null;
     const hits = outObj?.hits ?? [];
     return (
-      <div className="max-h-48 overflow-auto space-y-0.5 pt-2.5">
+      <div className="max-h-48 overflow-auto space-y-0.5 pt-2.5 themed-scrollbar">
         {hits.slice(0, 30).map((hit) => (
           <div key={hit.rel ?? hit.path} className="font-mono text-[10px] text-foreground/80">
             {hit.rel ?? hit.path ?? ""}

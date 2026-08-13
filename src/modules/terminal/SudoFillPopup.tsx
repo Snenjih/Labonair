@@ -2,6 +2,7 @@ import { LockPasswordIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { useEffect, useRef } from "react";
+import { DURATION, EASE_SOFT } from "@/lib/motion";
 
 type Props = {
   x: number;
@@ -37,7 +38,7 @@ export function SudoFillPopup({ x, y, onFill, onDismiss }: Props) {
       initial={{ opacity: 0, y: 4, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 4, scale: 0.95 }}
-      transition={{ duration: 0.12, ease: "easeOut" }}
+      transition={{ duration: DURATION.fast, ease: EASE_SOFT }}
       style={{ top, left, width: W, willChange: "transform, opacity" }}
       className="fixed z-50"
     >

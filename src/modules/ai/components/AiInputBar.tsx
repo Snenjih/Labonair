@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
+import { DURATION } from "@/lib/motion";
 import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useLocalExplorerStore } from "@/modules/explorer/lib/useLocalExplorerStore";
@@ -545,7 +546,7 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.08 }}
+                  transition={{ duration: DURATION.fast }}
                   className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground"
                 >
                   {c.voice.recording ? (
@@ -562,7 +563,7 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.08 }}
+                  transition={{ duration: DURATION.fast }}
                   className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground/60"
                 >
                   <span>{IS_MAC ? "⌘↵" : "Ctrl+↵"} to queue a follow-up</span>
@@ -652,7 +653,7 @@ function ChipsRow({
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.92 }}
-            transition={{ duration: 0.12 }}
+            transition={{ duration: DURATION.fast }}
             className="group flex items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[11px]"
             title={cmd.label}
           >
@@ -675,7 +676,7 @@ function ChipsRow({
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.92 }}
-            transition={{ duration: 0.12 }}
+            transition={{ duration: DURATION.fast }}
             className="group flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-foreground dark:text-primary"
             title={d.description || d.name}
           >
@@ -698,7 +699,7 @@ function ChipsRow({
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.92 }}
-            transition={{ duration: 0.12 }}
+            transition={{ duration: DURATION.fast }}
             className="group flex items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[11px]"
             title={f.kind === "ref" ? f.path : undefined}
           >

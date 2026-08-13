@@ -1,6 +1,3 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Toggle } from "@/components/ui/toggle";
 import {
   findNext,
   findPrevious,
@@ -15,6 +12,10 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Toggle } from "@/components/ui/toggle";
+import { SPRING_SNAPPY } from "@/lib/motion";
 
 function resolveThemeColor(cssVar: string, fallback: string): string {
   try {
@@ -290,7 +291,7 @@ export function FindWidget({ isOpen, onClose, searchAddon, editorView, showRepla
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: "auto", opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 400, damping: 36 }}
+          transition={SPRING_SNAPPY}
           className="overflow-hidden"
         >
           <div className="border-b border-border bg-card px-2 py-1">
@@ -435,7 +436,7 @@ export function FindWidget({ isOpen, onClose, searchAddon, editorView, showRepla
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 38 }}
+                  transition={SPRING_SNAPPY}
                   className="overflow-hidden"
                 >
                   <div className="flex items-center gap-1 pt-1">
