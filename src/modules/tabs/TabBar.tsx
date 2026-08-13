@@ -319,7 +319,7 @@ function SortableTabWrapper({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn("motion-preserve", isDragging && "relative z-50 opacity-50")}
+      className={isDragging ? "relative z-50 opacity-50" : undefined}
       {...attributes}
       {...listeners}
     >

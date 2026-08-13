@@ -424,34 +424,34 @@ html[data-chrome="borderless"] #settings-root {
 }
 
 /*
- * Reduce-motion reset. Covers what <MotionConfig> structurally can't reach:
- * Tailwind/Radix `animate-in`/`animate-out` open-close animations, plain
- * `transition-*` utilities, and custom @keyframes. Duration is forced to
- * 0.01ms (not 0/none) so transitionend/animationend listeners that some
- * Radix/shadcn components rely on to unmount still fire.
+ * Reduce-motion reset for Tailwind/Radix `animate-in`/`animate-out` open-
+ * close animations and the custom tab-entrance keyframe — the two things
+ * <MotionConfig> structurally can't reach (it only gates motion/react).
  *
- * Exemptions:
- * - .animate-spin (loading spinners) — functional status, must keep spinning.
- * - .motion-preserve (dnd-kit sortable drag wrappers) — direct-manipulation
- *   movement follows the user's own gesture, so it's kept even when reduced.
+ * Deliberately allowlist-based (targets elements that actually carry an
+ * animation class) rather than a universal `*`/`:where(*)` selector — an
+ * earlier `:where(*):not(...)` version of this rule broke terminal
+ * rendering entirely (blank canvas) on at least one machine, almost
+ * certainly a WebKit compositing bug triggered by forcing animation/
+ * transition timing on every DOM node, including xterm's internal canvas
+ * layers. Do not widen this back to a universal selector.
  *
- * Two triggers: the OS-level `prefers-reduced-motion` media query (respected
- * even if the user never opens Settings), and the in-app "Reduce motion"
- * toggle via `data-reduce-motion` on <html> (set in both the main and
- * settings windows). The media-query block backs off if the in-app setting
- * explicitly overrides the OS default back to "off".
+ * Duration is forced to 0.01ms (not 0/none) so transitionend/animationend
+ * listeners some Radix/shadcn components rely on to unmount still fire.
  */
 @media (prefers-reduced-motion: reduce) {
-    html:not([data-reduce-motion="false"])
-        :where(*):not(.motion-preserve, .motion-preserve *, .animate-spin, .animate-spin *) {
+    html:not([data-reduce-motion="false"]) [class*="animate-in"],
+    html:not([data-reduce-motion="false"]) [class*="animate-out"],
+    html:not([data-reduce-motion="false"]) .labonair-tab-in {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
     }
 }
 
-html[data-reduce-motion="true"]
-    :where(*):not(.motion-preserve, .motion-preserve *, .animate-spin, .animate-spin *) {
+html[data-reduce-motion="true"] [class*="animate-in"],
+html[data-reduce-motion="true"] [class*="animate-out"],
+html[data-reduce-motion="true"] .labonair-tab-in {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

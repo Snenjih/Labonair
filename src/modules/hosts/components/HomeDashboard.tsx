@@ -183,7 +183,7 @@ function SortableHostCard({
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} className="motion-preserve">
+    <div ref={setNodeRef} style={style}>
       {layoutMode === "list" ? (
         <HostListItem
           host={host}
