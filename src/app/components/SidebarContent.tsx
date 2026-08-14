@@ -112,8 +112,8 @@ export const SidebarContent = React.memo(function SidebarContent({
     >
       <div
         className={cn(
-          "h-full bg-card",
-          side === "left" ? "border-r border-border/60" : "border-l border-border/60",
+          "h-full bg-sidebar",
+          side === "left" ? "border-r border-sidebar-border/60" : "border-l border-sidebar-border/60",
         )}
       >
         {activePanel === "tabs" ? (
