@@ -280,7 +280,7 @@ export function HostCard({
                 </span>
                 <span className="mt-1.5 text-muted-foreground/70" style={{ fontSize: scalePx(10) }}>
                   {host.last_connected_at
-                    ? `Last seen: ${relativeTime(host.last_connected_at)}`
+                    ? `Last connected: ${relativeTime(host.last_connected_at)}`
                     : "Never connected"}
                 </span>
               </div>
