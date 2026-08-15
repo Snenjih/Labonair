@@ -155,6 +155,36 @@ function toRenderStableTab(t: Tab): Tab {
  *  instead of a plain `s.tabs` subscription. */
 export const selectRenderStableTabs = (s: TabsState): Tab[] => s.tabs.map(toRenderStableTab);
 
+// `workspaceTabs` in useTabManagement only feeds useSnippetExec's
+// findSshSessionForHost, which needs to know which sessions exist per pane
+// (id/kind/hostId) — not cwd, label, or dirty state. Fingerprinting on the
+// full sessions map (not just the active pane, unlike selectRenderStableTabs)
+// means split/close-pane still invalidates correctly while cwd-only churn
+// (the actual bug) doesn't. Separate cache from tabIdentityCache since the
+// two selectors have different invalidation semantics.
+function workspaceSessionsFingerprint(t: WorkspaceTab): string {
+  return Object.entries(t.sessions)
+    .map(([id, s]) => `${id}:${s.kind}:${s.kind === "ssh" ? s.hostId : ""}`)
+    .sort()
+    .join("|");
+}
+
+const workspaceSessionsCache = new Map<number, { fingerprint: string; tab: WorkspaceTab }>();
+
+function toSessionStableWorkspaceTab(t: WorkspaceTab): WorkspaceTab {
+  const fingerprint = workspaceSessionsFingerprint(t);
+  const cached = workspaceSessionsCache.get(t.id);
+  if (cached && cached.fingerprint === fingerprint) return cached.tab;
+  workspaceSessionsCache.set(t.id, { fingerprint, tab: t });
+  return t;
+}
+
+/** Workspace tabs projected for consumers that only care which sessions
+ *  exist per pane (id/kind/hostId) — e.g. useTabManagement's snippet host
+ *  lookup — so cwd churn from shell prompt hooks doesn't force a re-render. */
+export const selectSessionStableWorkspaceTabs = (s: TabsState): WorkspaceTab[] =>
+  s.tabs.filter((t): t is WorkspaceTab => t.kind === "workspace").map(toSessionStableWorkspaceTab);
+
 // ─── Shared remote-file staging ────────────────────────────────────────────────
 
 /** Downloads a remote file into the local `prepare_remote_edit` temp dir,
@@ -482,6 +512,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const newActiveId = id === activeId ? next[Math.max(0, idx - 1)].id : activeId;
     set({ tabs: next, activeId: newActiveId });
     tabIdentityCache.delete(id);
+    workspaceSessionsCache.delete(id);
     // A closed tab can no longer honor an MCP agent-access grant — revoke it
     // both locally and on the Rust side so list_sessions/the header badge
     // don't keep showing a tab that no longer exists.
@@ -786,6 +817,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       const next = tabs.filter((x) => x.id !== tabId);
       const newActiveId = activeId === tabId ? next[Math.max(0, tabIdx - 1)].id : activeId;
       set({ tabs: next, activeId: newActiveId });
+      tabIdentityCache.delete(tabId);
+      workspaceSessionsCache.delete(tabId);
       return;
     }
 

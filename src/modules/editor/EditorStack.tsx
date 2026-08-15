@@ -78,6 +78,16 @@ export function EditorStack({ onDirtyChange, registerHandle, onCloseTab, onSaveA
     return cb;
   };
 
+  const languageChangeCallbacks = useRef(new Map<number, (lang: string | undefined) => void>());
+  const getLanguageChangeCallback = (id: number) => {
+    let cb = languageChangeCallbacks.current.get(id);
+    if (!cb) {
+      cb = (lang) => useTabsStore.getState().updateTab(id, { languageOverride: lang ?? null });
+      languageChangeCallbacks.current.set(id, cb);
+    }
+    return cb;
+  };
+
   const getSaveAsCallback = (t: EditorTab) => {
     if (!t.isUntitled) return undefined;
     let cb = saveAsCallbacks.current.get(t.id);
@@ -176,6 +186,9 @@ export function EditorStack({ onDirtyChange, registerHandle, onCloseTab, onSaveA
     for (const id of saveAsCallbacks.current.keys()) {
       if (!live.has(id)) saveAsCallbacks.current.delete(id);
     }
+    for (const id of languageChangeCallbacks.current.keys()) {
+      if (!live.has(id)) languageChangeCallbacks.current.delete(id);
+    }
   }, [editors]);
 
   if (editors.length === 0) return null;
@@ -206,9 +219,7 @@ export function EditorStack({ onDirtyChange, registerHandle, onCloseTab, onSaveA
                 onClose={getCloseCallback(t.id)}
                 onSaved={getSavedCallback(t)}
                 onSaveAs={getSaveAsCallback(t)}
-                onLanguageChange={(lang) =>
-                  useTabsStore.getState().updateTab(t.id, { languageOverride: lang ?? null })
-                }
+                onLanguageChange={getLanguageChangeCallback(t.id)}
               />
             </Suspense>
           </div>

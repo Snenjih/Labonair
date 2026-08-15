@@ -7,6 +7,7 @@ import { vim } from "@replit/codemirror-vim";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
   forwardRef,
+  memo,
   startTransition,
   useCallback,
   useEffect,
@@ -91,7 +92,7 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
+const EditorPaneImpl = forwardRef<EditorPaneHandle, Props>(function EditorPane(
   {
     path,
     isUntitled,
@@ -703,3 +704,5 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPan
     </div>
   );
 });
+
+export const EditorPane = memo(EditorPaneImpl);

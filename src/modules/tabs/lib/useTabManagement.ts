@@ -9,7 +9,12 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import { type CommandSnippet, type SnippetExecMode, useSnippetExec } from "@/modules/snippets";
 import type { TerminalPaneHandle, WorkspacePaneHandle } from "@/modules/terminal";
 import { disposeSession } from "@/modules/terminal/lib/terminalSessionRegistry";
-import { selectActivePaneId, selectActiveTabKind, useTabsStore } from "../store/tabsStore";
+import {
+  selectActivePaneId,
+  selectActiveTabKind,
+  selectSessionStableWorkspaceTabs,
+  useTabsStore,
+} from "../store/tabsStore";
 import type { AiDiffTab, Tab, WorkspaceTab } from "../types";
 import type { PendingConfirmation } from "./closeConfirmation";
 import { resolveCloseAction } from "./closeConfirmation";
@@ -98,9 +103,7 @@ export function useTabManagement({
   const activeId = useTabsStore((s) => s.activeId);
   const activePaneId = useTabsStore(selectActivePaneId);
 
-  const workspaceTabs = useTabsStore(
-    useShallow((s) => s.tabs.filter((t): t is WorkspaceTab => t.kind === "workspace")),
-  );
+  const workspaceTabs = useTabsStore(useShallow(selectSessionStableWorkspaceTabs));
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const workspacePaneRefs = useRef<Map<number, WorkspacePaneHandle>>(new Map());
