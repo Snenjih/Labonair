@@ -162,142 +162,132 @@ export function CommitForm({ repoRoot, onRefresh, onOpenGitGraph }: CommitFormPr
 
   return (
     <div className="shrink-0 border-t border-border/50">
-      {/* No staged hint */}
-      {status &&
-        status.staged.length === 0 &&
-        (status.unstaged.length > 0 || status.untracked.length > 0) && (
-          <p className="px-2.5 pt-2 text-[10px] text-muted-foreground/60">
-            Stage files above to enable commit.
-          </p>
-        )}
+      {/* Commit message box: full-width, borderless — just a hairline
+       *  divider between the textarea and the action row below. */}
+      <div className="relative">
+        <Textarea
+          ref={textareaRef}
+          value={commitMessage}
+          onChange={(e) => setCommitMessage(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              void handleCommit();
+            }
+          }}
+          placeholder="Enter commit message"
+          rows={isExpanded ? 14 : 6}
+          className={cn(
+            "resize-none rounded-none border-0 bg-transparent px-2.5 text-[11px] leading-relaxed placeholder:text-muted-foreground/35 focus-visible:ring-0",
+            isExpanded ? "min-h-[260px]" : "min-h-[112px]",
+          )}
+        />
+        <button
+          type="button"
+          onClick={() => setIsExpanded((v) => !v)}
+          className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 outline-none transition-colors hover:bg-foreground/6 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
+          title={isExpanded ? "Collapse" : "Expand"}
+        >
+          <HugeiconsIcon icon={isExpanded ? Minimize01Icon : Maximize01Icon} size={11} strokeWidth={2} />
+        </button>
+      </div>
 
-      {/* Commit message box: textarea + action row share one bordered frame */}
-      <div className="mx-2.5 mt-2 rounded-md border border-border/40">
-        <div className="relative">
-          <Textarea
-            ref={textareaRef}
-            value={commitMessage}
-            onChange={(e) => setCommitMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                e.preventDefault();
-                void handleCommit();
-              }
-            }}
-            placeholder="Enter commit message"
-            rows={isExpanded ? 12 : 4}
-            className={cn(
-              "resize-y rounded-none border-0 bg-transparent text-[11px] leading-relaxed placeholder:text-muted-foreground/35 focus-visible:ring-0",
-              isExpanded ? "min-h-[220px]" : "min-h-[72px]",
-            )}
-          />
+      {/* Action row: Generate (left) + Commit split button (right) */}
+      <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1.5">
+        {/* AI Generate */}
+        <button
+          type="button"
+          disabled={isGenerating}
+          onClick={async () => {
+            try {
+              const msg = await generateAiMessage();
+              if (msg) setCommitMessage(msg);
+            } catch (e) {
+              useNotificationStore.getState().addActionResultNotification({
+                type: "error",
+                title: "AI Commit Message Failed",
+                message: String(e),
+              });
+            }
+          }}
+          className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40"
+          title="Generate commit message with AI"
+        >
+          {isGenerating ? (
+            <Spinner className="size-3" />
+          ) : (
+            <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />
+          )}
+        </button>
+
+        {/* Commit split button */}
+        <div
+          className={cn(
+            "flex h-[26px] shrink-0 items-stretch overflow-hidden rounded border text-[11px] transition-all",
+            canCommit ? "border-primary/50 bg-primary/10" : "border-muted-foreground/20 opacity-50",
+          )}
+        >
           <button
             type="button"
-            onClick={() => setIsExpanded((v) => !v)}
-            className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground/60 outline-none transition-colors hover:bg-foreground/6 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
-            title={isExpanded ? "Collapse" : "Expand"}
+            onClick={() => void handleCommit()}
+            disabled={!canCommit}
+            className="flex items-center gap-1.5 border-r border-muted-foreground/20 px-2.5 font-medium text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
+            title="Commit staged changes (⌘↵)"
           >
-            <HugeiconsIcon icon={isExpanded ? Minimize01Icon : Maximize01Icon} size={11} strokeWidth={2} />
-          </button>
-        </div>
-
-        {/* Action row: Generate (left) + Commit split button (right) */}
-        <div className="flex items-center justify-between gap-2 border-t border-border/40 px-2 py-1.5">
-          {/* AI Generate */}
-          <button
-            type="button"
-            disabled={isGenerating}
-            onClick={async () => {
-              try {
-                const msg = await generateAiMessage();
-                if (msg) setCommitMessage(msg);
-              } catch (e) {
-                useNotificationStore.getState().addActionResultNotification({
-                  type: "error",
-                  title: "AI Commit Message Failed",
-                  message: String(e),
-                });
-              }
-            }}
-            className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Generate commit message with AI"
-          >
-            {isGenerating ? (
-              <Spinner className="size-3" />
+            {operationInProgress === "commit" ? (
+              <Spinner className="size-2.5" />
             ) : (
-              <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />
+              <HugeiconsIcon icon={GitCommitIcon} size={10} strokeWidth={2.5} />
             )}
+            Commit Tracked
           </button>
 
-          {/* Commit split button */}
-          <div
-            className={cn(
-              "flex h-[26px] shrink-0 items-stretch overflow-hidden rounded border text-[11px] transition-all",
-              canCommit ? "border-primary/50 bg-primary/10" : "border-muted-foreground/20 opacity-50",
-            )}
-          >
-            <button
-              type="button"
-              onClick={() => void handleCommit()}
-              disabled={!canCommit}
-              className="flex items-center gap-1.5 border-r border-muted-foreground/20 px-2.5 font-medium text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
-              title="Commit staged changes (⌘↵)"
-            >
-              {operationInProgress === "commit" ? (
-                <Spinner className="size-2.5" />
-              ) : (
-                <HugeiconsIcon icon={GitCommitIcon} size={10} strokeWidth={2.5} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                disabled={operationInProgress !== null}
+                className="flex w-6 items-center justify-center text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
+              >
+                <HugeiconsIcon icon={ArrowDown01Icon} size={9} strokeWidth={2.5} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem
+                onClick={() => void handleAmend()}
+                disabled={!commitMessage.trim()}
+                className="text-xs"
+              >
+                <HugeiconsIcon
+                  icon={GitCommitIcon}
+                  size={11}
+                  strokeWidth={2}
+                  className="mr-2 text-muted-foreground"
+                />
+                Amend Last Commit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSignOff} className="text-xs">
+                Sign-off
+              </DropdownMenuItem>
+              {inSpecialState && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => void handleContinue()} className="text-xs font-medium">
+                    <HugeiconsIcon icon={GitCommitIcon} size={11} strokeWidth={2} className="mr-2" />
+                    Continue
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => void handleAbort()}
+                    className="text-xs text-red-500 focus:text-red-500"
+                  >
+                    <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} className="mr-2" />
+                    Abort
+                  </DropdownMenuItem>
+                </>
               )}
-              Commit Tracked
-            </button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  disabled={operationInProgress !== null}
-                  className="flex w-6 items-center justify-center text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
-                >
-                  <HugeiconsIcon icon={ArrowDown01Icon} size={9} strokeWidth={2.5} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  onClick={() => void handleAmend()}
-                  disabled={!commitMessage.trim()}
-                  className="text-xs"
-                >
-                  <HugeiconsIcon
-                    icon={GitCommitIcon}
-                    size={11}
-                    strokeWidth={2}
-                    className="mr-2 text-muted-foreground"
-                  />
-                  Amend Last Commit
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOff} className="text-xs">
-                  Sign-off
-                </DropdownMenuItem>
-                {inSpecialState && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => void handleContinue()} className="text-xs font-medium">
-                      <HugeiconsIcon icon={GitCommitIcon} size={11} strokeWidth={2} className="mr-2" />
-                      Continue
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => void handleAbort()}
-                      className="text-xs text-red-500 focus:text-red-500"
-                    >
-                      <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} className="mr-2" />
-                      Abort
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

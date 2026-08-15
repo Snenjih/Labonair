@@ -88,6 +88,9 @@ pub struct Branch {
     pub upstream: Option<String>,
     pub ahead: u32,
     pub behind: u32,
+    pub author: Option<String>,
+    pub committed_relative: Option<String>,
+    pub subject: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -377,7 +380,10 @@ test -f "$GITDIR/MERGE_HEAD" && echo 1 || echo 0
 test -d "$GITDIR/rebase-merge" -o -d "$GITDIR/rebase-apply" && echo 1 || echo 0
 test -f "$GITDIR/CHERRY_PICK_HEAD" && echo 1 || echo 0"#;
 
-/// Parses `git branch -a --format=%(refname:short)|%(HEAD)|%(upstream:short)|%(upstream:track,nobracket)`.
+/// Parses `git branch -a --format=<BRANCH_FORMAT>`. Fields are NUL-separated
+/// (not `|`) because `%(subject)` is free text that can legitimately contain
+/// any character, including a literal `|` — matching the `%x00`-separator
+/// convention already used by `git_get_log`'s format below.
 fn parse_branches(output: &str) -> Vec<Branch> {
     let mut branches: Vec<Branch> = Vec::new();
 
@@ -385,7 +391,7 @@ fn parse_branches(output: &str) -> Vec<Branch> {
         if line.is_empty() {
             continue;
         }
-        let parts: Vec<&str> = line.splitn(4, '|').collect();
+        let parts: Vec<&str> = line.splitn(7, '\0').collect();
         if parts.is_empty() {
             continue;
         }
@@ -394,6 +400,9 @@ fn parse_branches(output: &str) -> Vec<Branch> {
         let is_current = parts.get(1).copied().unwrap_or("") == "*";
         let upstream_raw = parts.get(2).copied().unwrap_or("").to_string();
         let track_info = parts.get(3).copied().unwrap_or("");
+        let author_raw = parts.get(4).copied().unwrap_or("").to_string();
+        let committed_relative_raw = parts.get(5).copied().unwrap_or("").to_string();
+        let subject_raw = parts.get(6).copied().unwrap_or("").to_string();
 
         let mut ahead: u32 = 0;
         let mut behind: u32 = 0;
@@ -412,14 +421,30 @@ fn parse_branches(output: &str) -> Vec<Branch> {
 
         let is_remote = name.starts_with("remotes/");
         let upstream = if upstream_raw.is_empty() { None } else { Some(upstream_raw) };
+        // Branches with no commits yet (e.g. a freshly created orphan branch)
+        // resolve these `%(...)` atoms to empty strings, not an error.
+        let author = if author_raw.is_empty() { None } else { Some(author_raw) };
+        let committed_relative =
+            if committed_relative_raw.is_empty() { None } else { Some(committed_relative_raw) };
+        let subject = if subject_raw.is_empty() { None } else { Some(subject_raw) };
 
-        branches.push(Branch { name, is_current, is_remote, upstream, ahead, behind });
+        branches.push(Branch {
+            name,
+            is_current,
+            is_remote,
+            upstream,
+            ahead,
+            behind,
+            author,
+            committed_relative,
+            subject,
+        });
     }
 
     branches
 }
 
-const BRANCH_FORMAT: &str = "%(refname:short)|%(HEAD)|%(upstream:short)|%(upstream:track,nobracket)";
+const BRANCH_FORMAT: &str = "%(refname:short)%00%(HEAD)%00%(upstream:short)%00%(upstream:track,nobracket)%00%(authorname)%00%(committerdate:relative)%00%(subject)";
 
 /// Parses the `%gs` format field into (branch, message).
 fn parse_stash_gs(gs: &str) -> (String, String) {

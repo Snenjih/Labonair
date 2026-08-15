@@ -307,52 +307,61 @@ interface BranchRowProps {
 }
 
 function BranchRow({ branch, isCurrent, onCheckout, onDelete, isCheckingOut }: BranchRowProps) {
+  const metaLine = [branch.author, branch.committedRelative].filter(Boolean).join(" • ");
+
   return (
     <div
       className={cn(
-        "group/branch flex h-[22px] cursor-pointer items-center gap-1 rounded px-1.5 transition-colors",
+        "group/branch flex min-h-[42px] cursor-pointer items-start gap-1.5 rounded px-1.5 py-1.5 transition-colors",
         isCurrent ? "bg-accent/60" : "hover:bg-foreground/6",
       )}
       onClick={() => !isCurrent && onCheckout(branch.name)}
       title={branch.name}
     >
       {/* Checkmark for current branch */}
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
         {isCurrent && (
           <HugeiconsIcon icon={Tick02Icon} size={10} strokeWidth={2.5} className="text-success" />
         )}
       </span>
 
-      <span
-        className={cn(
-          "flex-1 truncate text-[11px]",
-          isCurrent ? "font-medium text-foreground" : "text-foreground/80",
-        )}
-      >
-        {branch.name}
-      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              "truncate text-[12px]",
+              isCurrent ? "font-medium text-foreground" : "text-foreground/85",
+            )}
+          >
+            {branch.name}
+          </span>
 
-      {/* Ahead/behind indicators */}
-      {branch.ahead > 0 && (
-        <span className="shrink-0 rounded-full bg-success/15 px-1 py-0.5 text-[9px] font-medium tabular-nums text-success">
-          ↑{branch.ahead}
-        </span>
-      )}
-      {branch.behind > 0 && (
-        <span className="shrink-0 rounded-full bg-error/15 px-1 py-0.5 text-[9px] font-medium tabular-nums text-error">
-          ↓{branch.behind}
-        </span>
-      )}
+          {/* Ahead/behind indicators */}
+          {branch.ahead > 0 && (
+            <span className="shrink-0 rounded-full bg-success/15 px-1 py-0.5 text-[9px] font-medium tabular-nums text-success">
+              ↑{branch.ahead}
+            </span>
+          )}
+          {branch.behind > 0 && (
+            <span className="shrink-0 rounded-full bg-error/15 px-1 py-0.5 text-[9px] font-medium tabular-nums text-error">
+              ↓{branch.behind}
+            </span>
+          )}
+        </div>
+
+        {metaLine && <p className="truncate text-[10px] text-muted-foreground/60">{metaLine}</p>}
+        {branch.subject && <p className="truncate text-[10px] text-muted-foreground/45">{branch.subject}</p>}
+      </div>
 
       {/* Spinner when checking out this branch */}
-      {isCheckingOut && <Spinner className="size-3 shrink-0 text-muted-foreground" />}
+      {isCheckingOut && <Spinner className="mt-0.5 size-3 shrink-0 text-muted-foreground" />}
 
       {/* Delete button */}
       {!isCheckingOut && (
         <button
           type="button"
           className={cn(
-            "flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 outline-none transition-opacity group-hover/branch:opacity-100 focus-visible:ring-1 focus-visible:ring-error/50",
+            "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 outline-none transition-opacity group-hover/branch:opacity-100 focus-visible:ring-1 focus-visible:ring-error/50",
             isCurrent
               ? "cursor-not-allowed text-muted-foreground/30"
               : "text-muted-foreground hover:bg-error/20 hover:text-error",
@@ -467,7 +476,7 @@ export function BranchDropdown({
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
         <PopoverContent
-          className="flex w-64 max-h-[min(520px,70vh)] flex-col overflow-hidden p-0 shadow-lg shadow-black/20"
+          className="flex w-[360px] max-h-[min(520px,70vh)] flex-col overflow-hidden p-0 shadow-lg shadow-black/20"
           align="start"
           style={{ borderColor: "hsl(var(--border) / 0.8)" }}
         >
@@ -478,7 +487,7 @@ export function BranchDropdown({
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter branches…"
-              className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/50"
+              className="w-full rounded-md border border-border/50 bg-foreground/[0.03] px-2.5 py-1.5 text-[12px] text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-ring/50"
             />
           </div>
 
@@ -500,7 +509,7 @@ export function BranchDropdown({
           <button
             type="button"
             onClick={handleOpenNewBranch}
-            className="flex h-7 w-full items-center gap-1.5 border-b border-border/40 px-2.5 text-[11px] text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
+            className="flex h-8 w-full items-center gap-1.5 border-b border-border/40 px-3 text-[12px] text-muted-foreground outline-none transition-colors hover:text-foreground hover:bg-foreground/6 focus-visible:ring-1 focus-visible:ring-ring/50"
           >
             <HugeiconsIcon icon={PlusSignIcon} size={10} strokeWidth={2} />
             New Branch…
@@ -516,12 +525,12 @@ export function BranchDropdown({
               <>
                 {/* Local branches */}
                 <div>
-                  <div className="px-2 pb-0.5 pt-1.5">
-                    <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/50">
-                      Local
+                  <div className="px-2.5 pb-1 pt-2">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+                      Local Branches
                     </span>
                   </div>
-                  <div className="px-1 pb-1">
+                  <div className="px-1 pb-1.5">
                     {filteredLocal.length === 0 ? (
                       <p className="py-1 pl-2 text-[11px] text-muted-foreground/50">
                         {filter ? "No matching branches" : "No local branches"}
@@ -545,7 +554,7 @@ export function BranchDropdown({
                 {filteredRemote.length > 0 && (
                   <div className="border-t border-border/40">
                     <div
-                      className="flex h-6 cursor-pointer items-center gap-1 px-2 transition-colors hover:bg-foreground/6"
+                      className="flex h-7 cursor-pointer items-center gap-1 px-2.5 transition-colors hover:bg-foreground/6"
                       onClick={() => setRemotesCollapsed((c) => !c)}
                     >
                       <HugeiconsIcon
@@ -554,7 +563,7 @@ export function BranchDropdown({
                         strokeWidth={2.5}
                         className="shrink-0 text-muted-foreground"
                       />
-                      <span className="flex-1 text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+                      <span className="flex-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                         Remote ({filteredRemote.length})
                       </span>
                     </div>

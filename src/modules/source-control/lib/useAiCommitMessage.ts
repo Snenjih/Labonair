@@ -1,39 +1,16 @@
 import { generateText } from "ai";
 import { useState } from "react";
-import { type ProviderId, providerNeedsKey } from "@/modules/ai/config";
-import { buildLanguageModelFromInstance } from "@/modules/ai/lib/agent";
+import { buildModel } from "@/modules/ai/lib/agent";
+import { EMPTY_PROVIDER_KEYS } from "@/modules/ai/lib/keyring";
+import { useChatStore } from "@/modules/ai/store/chatStore";
 import { useProvidersStore } from "@/modules/ai/store/providersStore";
 import { git } from "./gitInvoke";
 
 const COMMIT_MSG_SYSTEM_PROMPT = `You are a git commit message generator. Given a unified diff, produce a single conventional commit message. Format: type(scope): subject. Subject must be under 72 characters. Types: feat, fix, docs, style, refactor, perf, test, chore, ci. Only output the commit message — no explanation, no markdown, no quotes.`;
 
-const PREFERRED_PROVIDERS: ProviderId[] = [
-  "openai",
-  "anthropic",
-  "google",
-  "xai",
-  "deepseek",
-  "mistral",
-  "groq",
-  "cerebras",
-  "openrouter",
-];
-
-/** Default cheap/fast model IDs per provider for commit message generation. */
-const DEFAULT_MODEL_FOR_PROVIDER: Partial<Record<ProviderId, string>> = {
-  openai: "gpt-4o-mini",
-  anthropic: "claude-haiku-4-5",
-  google: "gemini-2.0-flash",
-  xai: "grok-3-mini",
-  deepseek: "deepseek-chat",
-  mistral: "mistral-small-latest",
-  groq: "llama-3.3-70b-versatile",
-  cerebras: "llama3.1-8b",
-  openrouter: "openrouter/auto",
-};
-
 export function useAiCommitMessage(repoRoot: string | null, sessionId?: string) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const selectedModelId = useChatStore((s) => s.selectedModelId);
   const instances = useProvidersStore((s) => s.instances);
   const instanceKeys = useProvidersStore((s) => s.instanceKeys);
 
@@ -57,37 +34,13 @@ export function useAiCommitMessage(repoRoot: string | null, sessionId?: string) 
       }
       if (!diff.trim()) return null;
 
-      // 2. Pick the first cloud provider instance that has a key, in preference order
-      let selectedInstance = null;
-      let selectedModelId = "";
-
-      for (const providerId of PREFERRED_PROVIDERS) {
-        const inst = instances.find((i) => i.providerId === providerId);
-        if (!inst) continue;
-        if (providerNeedsKey(providerId) && !instanceKeys[inst.id]) continue;
-        selectedInstance = inst;
-        selectedModelId = DEFAULT_MODEL_FOR_PROVIDER[providerId] ?? "";
-        break;
-      }
-
-      // Fallback: any local provider (lmstudio, mlx, ollama, openai-compatible)
-      if (!selectedInstance) {
-        for (const inst of instances) {
-          if (!providerNeedsKey(inst.providerId)) {
-            selectedInstance = inst;
-            selectedModelId = inst.localModelId ?? "";
-            break;
-          }
-        }
-      }
-
-      if (!selectedInstance) {
+      // 2. Reuse whatever model the user currently has selected in the AI
+      // chat panel — same resolution path the chat agent itself uses, so the
+      // commit-message generator never silently picks a different provider.
+      if (instances.length === 0) {
         throw new Error("No AI provider configured. Add one in Settings → AI.");
       }
-
-      // 3. Build model and generate commit message
-      const key = instanceKeys[selectedInstance.id] ?? null;
-      const model = await buildLanguageModelFromInstance(selectedInstance, key, selectedModelId);
+      const model = await buildModel(selectedModelId, EMPTY_PROVIDER_KEYS, {}, instances, instanceKeys);
 
       const { text } = await generateText({
         model,

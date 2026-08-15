@@ -52,6 +52,9 @@ export interface Branch {
   upstream: string | null;
   ahead: number;
   behind: number;
+  author: string | null;
+  committedRelative: string | null;
+  subject: string | null;
 }
 
 export interface CommitInfo {
