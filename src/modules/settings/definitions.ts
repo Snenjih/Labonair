@@ -1,3 +1,5 @@
+import { MODIFIER_KEY_LABELS } from "@/lib/platform";
+
 import type { PrefKey } from "./store";
 
 export type SettingCategory =
@@ -615,9 +617,9 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     controlType: "Select",
     options: [
       { value: "none", label: "None" },
-      { value: "alt", label: "Alt" },
-      { value: "ctrl", label: "Ctrl" },
-      { value: "shift", label: "Shift" },
+      { value: "alt", label: MODIFIER_KEY_LABELS.alt },
+      { value: "ctrl", label: MODIFIER_KEY_LABELS.ctrl },
+      { value: "shift", label: MODIFIER_KEY_LABELS.shift },
     ],
   },
 

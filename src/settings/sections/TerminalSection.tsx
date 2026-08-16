@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { MODIFIER_KEY_LABELS } from "@/lib/platform";
 import { FontPicker } from "@/modules/fonts";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -414,13 +415,13 @@ export function TerminalSection() {
                 None
               </SelectItem>
               <SelectItem value="alt" className="text-[11.5px]">
-                Alt
+                {MODIFIER_KEY_LABELS.alt}
               </SelectItem>
               <SelectItem value="ctrl" className="text-[11.5px]">
-                Ctrl
+                {MODIFIER_KEY_LABELS.ctrl}
               </SelectItem>
               <SelectItem value="shift" className="text-[11.5px]">
-                Shift
+                {MODIFIER_KEY_LABELS.shift}
               </SelectItem>
             </SelectContent>
           </Select>

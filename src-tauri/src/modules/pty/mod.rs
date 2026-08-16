@@ -48,6 +48,16 @@ pub fn pty_open(
     Ok(id)
 }
 
+/// Basename of the shell `pty_open` falls back to when no per-session
+/// override is configured (i.e. the user's `$SHELL`) — used by the frontend
+/// to label "system default" terminal sessions with the actual shell name
+/// (zsh/bash/fish/...) instead of a generic placeholder.
+#[tauri::command]
+pub fn pty_default_shell_name() -> String {
+    let (_, path) = shell_init::Shell::detect();
+    path.rsplit('/').next().unwrap_or(&path).to_string()
+}
+
 #[tauri::command]
 pub fn pty_write(state: tauri::State<PtyState>, id: u32, data: String) -> Result<(), String> {
     let session = state

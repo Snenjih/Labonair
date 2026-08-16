@@ -582,6 +582,27 @@ export function AiInputBar({ aiEnabled, hasComposer }: AiInputBarModeProps) {
   );
 }
 
+// Cached across all ContextPillsRow instances — the system default shell
+// never changes within a running session, so one invoke() suffices for the
+// app's whole lifetime.
+let defaultShellNameCache: string | null = null;
+let defaultShellNamePromise: Promise<string> | null = null;
+
+/** Basename (zsh/bash/fish/...) of the shell new local sessions actually
+ *  launch when no explicit override is set in Settings → Terminal. */
+function useDefaultShellName(): string | null {
+  const [name, setName] = useState(defaultShellNameCache);
+  useEffect(() => {
+    if (defaultShellNameCache) return;
+    defaultShellNamePromise ??= invoke<string>("pty_default_shell_name").catch(() => "shell");
+    defaultShellNamePromise.then((resolved) => {
+      defaultShellNameCache = resolved;
+      setName(resolved);
+    });
+  }, []);
+  return name;
+}
+
 function shortCwd(cwd: string): string {
   const parts = cwd.split("/").filter(Boolean);
   if (parts.length === 0) return "~";
@@ -600,7 +621,8 @@ const contextPillClass =
  *  composer's cramped footprint. */
 function ContextPillsRow({ session, branch }: { session: TerminalSessionData; branch: string }) {
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
-  const localShellLabel = terminalShell.split("/").filter(Boolean).pop() || "shell";
+  const defaultShellName = useDefaultShellName();
+  const localShellLabel = terminalShell.split("/").filter(Boolean).pop() || defaultShellName || "shell";
   return (
     <div className="flex flex-wrap items-center gap-1 px-1">
       <span className={contextPillClass}>

@@ -544,6 +544,7 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_close,
             pty::pty_has_foreground_job,
+            pty::pty_default_shell_name,
             terminal_exec_run_command,
             terminal_exec_peek_output,
             terminal_exec_send_keys,
