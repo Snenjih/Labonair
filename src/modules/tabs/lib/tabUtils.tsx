@@ -1,5 +1,9 @@
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import type { ConnectionEntry, ConnectionStatus } from "@/modules/hosts/store/connectionStatusStore";
 import { useHostsStore } from "@/modules/hosts/store/hostsStore";
+import type { Host } from "@/modules/hosts/types";
+import type { SidebarTabInfoType } from "@/modules/settings/store";
+import type { TransferJob } from "@/modules/sftp/store/transferStore";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -48,6 +52,146 @@ export function labelFor(t: Tab): string {
     return parts.length ? parts[parts.length - 1] : "/";
   }
   return wt.title;
+}
+
+// --- Sidebar tab info line ---
+
+export type SidebarInfoSegment =
+  | { type: "path" | "host" | "uptime" | "transfer"; text: string }
+  | { type: "connection"; text: string; status: ConnectionStatus }
+  | { type: "busy"; text: string };
+
+const CONNECTION_STATUS_LABELS: Record<ConnectionStatus, string> = {
+  connecting: "Connecting…",
+  connected: "Connected",
+  error: "Error",
+};
+
+function hostLabelFor(hostId: string, hosts: Host[]): string {
+  return hosts.find((h) => h.id === hostId)?.name ?? hostId;
+}
+
+/** Resolves the remote host label for a tab, if it's backed by one — shared
+ *  by the info-line's "Host" segment and the folder-grouping "Remote" badge.
+ *  Prefers a live `ConnectionEntry.hostLabel` (snapshotted at connect time,
+ *  survives host deletion) over a fresh `hosts` lookup, matching each
+ *  kind's existing connection-store key (`activePaneId` for workspace
+ *  panes, `String(tab.id)` for SFTP tabs). Returns `undefined` for local
+ *  tabs and kinds with no host concept at all (`ai-diff`, `home`). */
+export function remoteHostLabelFor(
+  t: Tab,
+  hosts: Host[],
+  connections: Record<string, ConnectionEntry>,
+): string | undefined {
+  if (t.kind === "workspace") {
+    const wt = t as WorkspaceTab;
+    const activeSession = wt.sessions[wt.activePaneId];
+    const entry = connections[wt.activePaneId];
+    if (entry) return entry.hostLabel;
+    if (activeSession?.quickConnect) {
+      return `${activeSession.quickConnect.username}@${activeSession.quickConnect.hostAddress}`;
+    }
+    return undefined;
+  }
+  if (t.kind === "editor" || t.kind === "preview") {
+    return t.remoteHostId ? hostLabelFor(t.remoteHostId, hosts) : undefined;
+  }
+  if (t.kind === "sftp") {
+    const entry = connections[String(t.id)];
+    return entry ? entry.hostLabel : hostLabelFor(t.hostId, hosts);
+  }
+  if (t.kind === "git-graph" || t.kind === "git-diff" || t.kind === "commit-diff") {
+    return t.hostId ? hostLabelFor(t.hostId, hosts) : undefined;
+  }
+  return undefined;
+}
+
+/** Compact "connected for" duration, e.g. "just now" / "5m" / "1h 12m" —
+ *  granularity matches what's useful in a narrow sidebar row, not precise
+ *  uptime tracking. */
+function formatUptime(connectedAtMs: number, nowMs: number): string {
+  const elapsed = nowMs - connectedAtMs;
+  if (elapsed < 60_000) return "just now";
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m`;
+  const hours = Math.floor(elapsed / 3_600_000);
+  const mins = Math.floor((elapsed % 3_600_000) / 60_000);
+  return mins ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+/** Resolves the user-selected sidebar info types into displayable segments
+ *  for one tab. `hosts`/`connections`/`transferJobs`/`isBusy`/`nowMs` are
+ *  passed in (rather than read via hooks here) so this stays a plain
+ *  function — the calling component owns the store subscriptions and the
+ *  uptime ticker. Returns `[]` whenever a selected type doesn't apply to
+ *  this tab's kind/state, letting the caller silently omit the segment (or
+ *  the whole second line) with no placeholder. */
+export function sidebarInfoLineFor(
+  t: Tab,
+  selected: SidebarTabInfoType[],
+  hosts: Host[],
+  connections: Record<string, ConnectionEntry>,
+  transferJobs: TransferJob[],
+  isBusy: boolean,
+  nowMs: number,
+): SidebarInfoSegment[] {
+  if (selected.length === 0) return [];
+
+  const segments: SidebarInfoSegment[] = [];
+
+  const addPath = (text: string | undefined) => {
+    if (text) segments.push({ type: "path", text });
+  };
+  const addHost = (text: string | undefined) => {
+    if (text) segments.push({ type: "host", text });
+  };
+  const addConnection = (entry: ConnectionEntry | undefined) => {
+    if (entry) segments.push({ type: "connection", text: CONNECTION_STATUS_LABELS[entry.status], status: entry.status });
+  };
+  const addUptime = (entry: ConnectionEntry | undefined) => {
+    if (entry?.status === "connected") segments.push({ type: "uptime", text: formatUptime(entry.connectedAt, nowMs) });
+  };
+  const addTransfer = (sessionId: string) => {
+    const job = transferJobs.find((j) => j.session_id === sessionId && j.status === "running");
+    if (!job) return;
+    const pct = job.bytes_total > 0 ? Math.round((job.bytes_transferred / job.bytes_total) * 100) : 0;
+    segments.push({ type: "transfer", text: `${job.direction === "download" ? "⬇" : "⬆"} ${pct}%` });
+  };
+  const addBusy = () => {
+    if (isBusy) segments.push({ type: "busy", text: "Running…" });
+  };
+
+  for (const type of selected) {
+    if (type === "host") {
+      addHost(remoteHostLabelFor(t, hosts, connections));
+      continue;
+    }
+
+    if (t.kind === "workspace") {
+      const wt = t as WorkspaceTab;
+      const activeSession = wt.sessions[wt.activePaneId];
+      const entry = connections[wt.activePaneId];
+      if (type === "path") addPath(activeSession?.cwd);
+      else if (type === "connection") addConnection(entry);
+      else if (type === "uptime") addUptime(entry);
+      else if (type === "busy") addBusy();
+    } else if (t.kind === "editor") {
+      if (type === "path") addPath(t.remoteHostId ? (t.remotePath ?? t.path) : t.path);
+    } else if (t.kind === "ai-diff") {
+      if (type === "path") addPath(t.path);
+    } else if (t.kind === "sftp") {
+      const entry = connections[String(t.id)];
+      if (type === "path") addPath(t.remotePath);
+      else if (type === "connection") addConnection(entry);
+      else if (type === "uptime") addUptime(entry);
+      else if (type === "transfer") addTransfer(String(t.id));
+    } else if (t.kind === "git-graph" || t.kind === "git-diff" || t.kind === "commit-diff") {
+      if (type === "path") addPath(t.kind === "git-diff" ? t.repoRoot : t.repositoryPath);
+    }
+    // "preview"/"home" have no path segment to contribute; "host" is
+    // already handled above for every kind that supports it.
+  }
+
+  return segments;
 }
 
 // --- Shared plural kind label (for "Close all …" menu items) ---

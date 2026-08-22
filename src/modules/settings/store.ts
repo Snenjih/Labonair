@@ -20,6 +20,29 @@ import {
 
 export type ThemePref = "system" | "light" | "dark";
 
+// Deferred: "gitBranch" — add to this array + label map in a later phase,
+// once per-tab live git-branch tracking exists (today there's only a single
+// global git-status store for the explorer's focused repo).
+export const SIDEBAR_TAB_INFO_TYPES = [
+  "path",
+  "connection",
+  "host",
+  "uptime",
+  "transfer",
+  "busy",
+] as const;
+
+export type SidebarTabInfoType = (typeof SIDEBAR_TAB_INFO_TYPES)[number];
+
+export const SIDEBAR_TAB_INFO_TYPE_LABELS: Record<SidebarTabInfoType, string> = {
+  path: "Path",
+  connection: "Connection",
+  host: "Host",
+  uptime: "Uptime",
+  transfer: "Transfer",
+  busy: "Activity",
+};
+
 export const EDITOR_THEMES = [
   "atomone",
   "aura",
@@ -224,6 +247,8 @@ export type Preferences = {
 
   // --- Tabs ---
   tabsLocation: "titlebar" | "sidebar";
+  sidebarTabInfoLine: SidebarTabInfoType[];
+  sidebarGroupByFolder: boolean;
 
   // --- Zen Mode ---
   zenModeShowHeader: boolean;
@@ -408,6 +433,8 @@ const KEY_CONFIRM_CLOSE_TERMINAL_TAB = "confirmCloseTerminalTab";
 const KEY_CONFIRM_QUIT_WITH_SSH = "confirmQuitWithSsh";
 const KEY_TITLEBAR_ICONS_POSITION = "titlebarsIconsPosition";
 const KEY_TABS_LOCATION = "tabsLocation";
+const KEY_SIDEBAR_TAB_INFO_LINE = "sidebarTabInfoLine";
+const KEY_SIDEBAR_GROUP_BY_FOLDER = "sidebarGroupByFolder";
 const KEY_ZEN_MODE_SHOW_HEADER = "zenModeShowHeader";
 const KEY_ZEN_MODE_SHOW_STATUSBAR = "zenModeShowStatusbar";
 const KEY_SSH_AUTO_RECONNECT = "sshAutoReconnect";
@@ -592,6 +619,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   titlebarsIconsPosition: "auto",
 
   tabsLocation: "titlebar",
+  sidebarTabInfoLine: [],
+  sidebarGroupByFolder: false,
 
   zenModeShowHeader: true,
   zenModeShowStatusbar: true,
@@ -943,6 +972,10 @@ export async function loadPreferences(): Promise<Preferences> {
       DEFAULT_PREFERENCES.titlebarsIconsPosition,
 
     tabsLocation: get<"titlebar" | "sidebar">(KEY_TABS_LOCATION) ?? DEFAULT_PREFERENCES.tabsLocation,
+    sidebarTabInfoLine:
+      get<SidebarTabInfoType[]>(KEY_SIDEBAR_TAB_INFO_LINE) ?? DEFAULT_PREFERENCES.sidebarTabInfoLine,
+    sidebarGroupByFolder:
+      get<boolean>(KEY_SIDEBAR_GROUP_BY_FOLDER) ?? DEFAULT_PREFERENCES.sidebarGroupByFolder,
 
     zenModeShowHeader: get<boolean>(KEY_ZEN_MODE_SHOW_HEADER) ?? DEFAULT_PREFERENCES.zenModeShowHeader,
     zenModeShowStatusbar:
@@ -1822,6 +1855,17 @@ export async function setTabsLocation(value: "titlebar" | "sidebar"): Promise<vo
   await (await getStore()).save();
 }
 
+export async function setSidebarTabInfoLine(value: SidebarTabInfoType[]): Promise<void> {
+  const deduped = Array.from(new Set(value)).slice(0, 2);
+  await (await getStore()).set(KEY_SIDEBAR_TAB_INFO_LINE, deduped);
+  await (await getStore()).save();
+}
+
+export async function setSidebarGroupByFolder(value: boolean): Promise<void> {
+  await (await getStore()).set(KEY_SIDEBAR_GROUP_BY_FOLDER, value);
+  await (await getStore()).save();
+}
+
 export async function setStatusBarShowExplorerButton(value: boolean): Promise<void> {
   await (await getStore()).set(KEY_STATUSBAR_SHOW_EXPLORER_BUTTON, value);
   await (await getStore()).save();
@@ -2034,6 +2078,8 @@ export async function onPreferencesChange(cb: (key: PrefKey, value: unknown) => 
     [KEY_CONFIRM_QUIT_WITH_SSH]: "confirmQuitWithSsh",
     [KEY_TITLEBAR_ICONS_POSITION]: "titlebarsIconsPosition",
     [KEY_TABS_LOCATION]: "tabsLocation",
+    [KEY_SIDEBAR_TAB_INFO_LINE]: "sidebarTabInfoLine",
+    [KEY_SIDEBAR_GROUP_BY_FOLDER]: "sidebarGroupByFolder",
     [KEY_ZEN_MODE_SHOW_HEADER]: "zenModeShowHeader",
     [KEY_ZEN_MODE_SHOW_STATUSBAR]: "zenModeShowStatusbar",
     [KEY_SSH_AUTO_RECONNECT]: "sshAutoReconnect",

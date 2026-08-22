@@ -25,11 +25,12 @@ import {
 } from "@/components/ui/context-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { FontPicker } from "@/modules/fonts";
 import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { ThemePref } from "@/modules/settings/store";
+import type { SidebarTabInfoType, ThemePref } from "@/modules/settings/store";
 import {
   setAppCornerRadius,
   setAppFontFamily,
@@ -41,9 +42,13 @@ import {
   setBackgroundTintColor,
   setBackgroundTintOpacity,
   setHmCardScale,
+  setSidebarGroupByFolder,
+  setSidebarTabInfoLine,
   setTabsLocation,
   setZenModeShowHeader,
   setZenModeShowStatusbar,
+  SIDEBAR_TAB_INFO_TYPE_LABELS,
+  SIDEBAR_TAB_INFO_TYPES,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import { SectionHeader } from "../components/SectionHeader";
@@ -74,6 +79,8 @@ export function AppearanceSection() {
   const appFontSize = usePreferencesStore((s) => s.appFontSize);
   const appLineHeight = usePreferencesStore((s) => s.appLineHeight);
   const tabsLocation = usePreferencesStore((s) => s.tabsLocation);
+  const sidebarTabInfoLine = usePreferencesStore((s) => s.sidebarTabInfoLine);
+  const sidebarGroupByFolder = usePreferencesStore((s) => s.sidebarGroupByFolder);
   const zenModeShowHeader = usePreferencesStore((s) => s.zenModeShowHeader);
   const zenModeShowStatusbar = usePreferencesStore((s) => s.zenModeShowStatusbar);
   const backgroundImage = usePreferencesStore((s) => s.backgroundImage);
@@ -479,6 +486,42 @@ export function AppearanceSection() {
               </SelectItem>
             </SelectContent>
           </Select>
+        </SettingRow>
+        <SettingRow
+          title="Sidebar tab info line"
+          description="Show up to two of these as a second line under each sidebar tab."
+        >
+          <ToggleGroup
+            type="multiple"
+            variant="outline"
+            size="sm"
+            spacing={1}
+            className="max-w-[260px] flex-wrap justify-end"
+            value={sidebarTabInfoLine}
+            onValueChange={(next) => {
+              if (next.length <= 2) void setSidebarTabInfoLine(next as SidebarTabInfoType[]);
+            }}
+          >
+            {SIDEBAR_TAB_INFO_TYPES.map((type) => (
+              <ToggleGroupItem
+                key={type}
+                value={type}
+                disabled={sidebarTabInfoLine.length >= 2 && !sidebarTabInfoLine.includes(type)}
+                className="h-7 px-2.5 text-[11.5px]"
+              >
+                {SIDEBAR_TAB_INFO_TYPE_LABELS[type]}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </SettingRow>
+        <SettingRow
+          title="Group sidebar tabs by folder"
+          description="Cluster sidebar tabs that share the same working directory under a header, regardless of tab type."
+        >
+          <Switch
+            checked={sidebarGroupByFolder}
+            onCheckedChange={(v) => void setSidebarGroupByFolder(v)}
+          />
         </SettingRow>
         <SettingRow
           title="Show header bar"

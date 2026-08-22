@@ -354,6 +354,23 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
       { value: "sidebar", label: "Sidebar" },
     ],
   },
+  {
+    id: "sidebarTabInfoLine",
+    label: "Sidebar tab info line",
+    description: "Show up to two of Path, Connection, or Host as a second line under each sidebar tab.",
+    category: "Appearance & Layout",
+    controlType: "Custom",
+    targetTab: "appearance",
+    linkLabel: "Open Appearance",
+  },
+  {
+    id: "sidebarGroupByFolder",
+    label: "Group sidebar tabs by folder",
+    description:
+      "Cluster sidebar tabs that share the same working directory under a header, regardless of tab type.",
+    category: "Appearance & Layout",
+    controlType: "Switch",
+  },
 
   // --- Terminal ---
   {

@@ -439,6 +439,9 @@ function applySettingChange(id: PrefKey, value: unknown): void {
     case "zenModeShowHeader":
       void store.setZenModeShowHeader(value as boolean);
       break;
+    case "sidebarGroupByFolder":
+      void store.setSidebarGroupByFolder(value as boolean);
+      break;
     case "zenModeShowStatusbar":
       void store.setZenModeShowStatusbar(value as boolean);
       break;
