@@ -218,9 +218,9 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     Ok(())
 }
 
-fn build_menu(
-    app: &tauri::App,
-) -> tauri::Result<(Menu<tauri::Wry>, std::collections::HashMap<String, MenuItem<tauri::Wry>>)> {
+type MenuRegistry = std::collections::HashMap<String, MenuItem<tauri::Wry>>;
+
+fn build_menu(app: &tauri::App) -> tauri::Result<(Menu<tauri::Wry>, MenuRegistry)> {
     // ── Labonair app menu ─────────────────────────────────────────────────────
     let about_meta = AboutMetadata {
         version: Some(env!("CARGO_PKG_VERSION").to_string()),
