@@ -34,8 +34,8 @@ describe("pathKeyFor", () => {
     expect(pathKeyFor(makeWorkspaceTab(1, undefined))).toBeUndefined();
   });
 
-  it("reads the file path for an editor tab", () => {
-    expect(pathKeyFor(makeEditorTab(1, "/home/user/project/file.ts"))).toBe("/home/user/project/file.ts");
+  it("reads the containing folder for an editor tab, not the file itself", () => {
+    expect(pathKeyFor(makeEditorTab(1, "/home/user/project/file.ts"))).toBe("/home/user/project");
   });
 
   it("reads the remote path for an sftp tab", () => {
@@ -74,9 +74,9 @@ describe("buildGroupedRenderPlan", () => {
 
     expect(plan).toEqual([
       { kind: "header", key: "/repo", name: "repo" },
-      { kind: "tab", tab: tabs[0], groupKey: "/repo" },
-      { kind: "tab", tab: tabs[2], groupKey: "/repo" },
-      { kind: "tab", tab: tabs[1], groupKey: undefined },
+      { kind: "tab", tab: tabs[0], groupKey: "/repo", groupSize: 2 },
+      { kind: "tab", tab: tabs[2], groupKey: "/repo", groupSize: 2 },
+      { kind: "tab", tab: tabs[1], groupKey: undefined, groupSize: 0 },
     ]);
   });
 
@@ -85,8 +85,8 @@ describe("buildGroupedRenderPlan", () => {
     const pathKeys = new Map(tabs.map((t) => [t.id, pathKeyFor(t)]));
 
     expect(buildGroupedRenderPlan(tabs, pathKeys)).toEqual([
-      { kind: "tab", tab: tabs[0], groupKey: undefined },
-      { kind: "tab", tab: tabs[1], groupKey: undefined },
+      { kind: "tab", tab: tabs[0], groupKey: undefined, groupSize: 0 },
+      { kind: "tab", tab: tabs[1], groupKey: undefined, groupSize: 0 },
     ]);
   });
 
@@ -94,7 +94,55 @@ describe("buildGroupedRenderPlan", () => {
     const tabs: Tab[] = [makeHomeTab(1)];
     const pathKeys = new Map(tabs.map((t) => [t.id, pathKeyFor(t)]));
 
-    expect(buildGroupedRenderPlan(tabs, pathKeys)).toEqual([{ kind: "tab", tab: tabs[0], groupKey: undefined }]);
+    expect(buildGroupedRenderPlan(tabs, pathKeys)).toEqual([
+      { kind: "tab", tab: tabs[0], groupKey: undefined, groupSize: 0 },
+    ]);
+  });
+
+  it("groups even a single tab per folder when minGroupSize is 1", () => {
+    const tabs: Tab[] = [makeWorkspaceTab(1, "/a"), makeEditorTab(2, "/b/file.ts")];
+    const pathKeys = new Map(tabs.map((t) => [t.id, pathKeyFor(t)]));
+
+    expect(buildGroupedRenderPlan(tabs, pathKeys, 1)).toEqual([
+      { kind: "header", key: "/a", name: "a" },
+      { kind: "tab", tab: tabs[0], groupKey: "/a", groupSize: 1 },
+      { kind: "header", key: "/b", name: "b" },
+      { kind: "tab", tab: tabs[1], groupKey: "/b", groupSize: 1 },
+    ]);
+  });
+
+  it("climbs a nested editor file up into an already-open ancestor project folder", () => {
+    const tabs: Tab[] = [
+      makeWorkspaceTab(1, "/Users/niklas/Developer/active/Labonair/app"),
+      makeEditorTab(2, "/Users/niklas/Developer/active/Labonair/app/src/app/App.tsx"),
+    ];
+    const pathKeys = new Map(tabs.map((t) => [t.id, pathKeyFor(t)]));
+
+    expect(buildGroupedRenderPlan(tabs, pathKeys)).toEqual([
+      { kind: "header", key: "/Users/niklas/Developer/active/Labonair/app", name: "Labonair/app" },
+      {
+        kind: "tab",
+        tab: tabs[0],
+        groupKey: "/Users/niklas/Developer/active/Labonair/app",
+        groupSize: 2,
+      },
+      {
+        kind: "tab",
+        tab: tabs[1],
+        groupKey: "/Users/niklas/Developer/active/Labonair/app",
+        groupSize: 2,
+      },
+    ]);
+  });
+
+  it("does not let two nested workspace tabs merge — ancestor climbing is editor/AI-diff only", () => {
+    const tabs: Tab[] = [makeWorkspaceTab(1, "/repo"), makeWorkspaceTab(2, "/repo/sub")];
+    const pathKeys = new Map(tabs.map((t) => [t.id, pathKeyFor(t)]));
+
+    expect(buildGroupedRenderPlan(tabs, pathKeys)).toEqual([
+      { kind: "tab", tab: tabs[0], groupKey: undefined, groupSize: 0 },
+      { kind: "tab", tab: tabs[1], groupKey: undefined, groupSize: 0 },
+    ]);
   });
 });
 

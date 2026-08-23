@@ -32,6 +32,7 @@ type Options = {
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
   onDetectedLocalUrl?: (url: string) => void;
+  onProcessTitle?: (title: string) => void;
 };
 
 export function useTerminalSession({
@@ -44,17 +45,20 @@ export function useTerminalSession({
   onExit,
   onCwd,
   onDetectedLocalUrl,
+  onProcessTitle,
 }: Options) {
   const onDetectedRef = useRef(onDetectedLocalUrl);
   const onCwdRef = useRef(onCwd);
   const onExitRef = useRef(onExit);
   const onSearchReadyRef = useRef(onSearchReady);
+  const onProcessTitleRef = useRef(onProcessTitle);
   useEffect(() => {
     onDetectedRef.current = onDetectedLocalUrl;
     onCwdRef.current = onCwd;
     onExitRef.current = onExit;
     onSearchReadyRef.current = onSearchReady;
-  }, [onDetectedLocalUrl, onCwd, onExit, onSearchReady]);
+    onProcessTitleRef.current = onProcessTitle;
+  }, [onDetectedLocalUrl, onCwd, onExit, onSearchReady, onProcessTitle]);
 
   const ptyRef = useRef<PtySession | null>(null);
   const pendingInputRef = useRef("");
@@ -101,6 +105,7 @@ export function useTerminalSession({
         onExit: (c) => onExitRef.current?.(c),
         onCwd: (c) => onCwdRef.current?.(c),
         onDetectedLocalUrl: (u) => onDetectedRef.current?.(u),
+        onProcessTitle: (t) => onProcessTitleRef.current?.(t),
       },
       blocksBakedIn: blocksPref,
       checkForegroundJob: async () => {

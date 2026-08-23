@@ -30,6 +30,7 @@ interface Props {
   onSetActivePane: (paneId: string) => void;
   onRegisterHandle: (sessionId: string, handle: TerminalPaneHandle | null) => void;
   onCwd: (sessionId: string, cwd: string) => void;
+  onProcessTitle: (sessionId: string, title: string) => void;
   onClosePane: (paneId: string) => void;
   onDetectedLocalUrl?: (sessionId: string, url: string) => void;
 }
@@ -37,7 +38,16 @@ interface Props {
 type PaneRect = { x: number; y: number; w: number; h: number };
 
 export const WorkspacePane = forwardRef<WorkspacePaneHandle, Props>(function WorkspacePane(
-  { tab, tabVisible, onSetActivePane, onRegisterHandle, onCwd, onClosePane, onDetectedLocalUrl },
+  {
+    tab,
+    tabVisible,
+    onSetActivePane,
+    onRegisterHandle,
+    onCwd,
+    onProcessTitle,
+    onClosePane,
+    onDetectedLocalUrl,
+  },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -252,6 +262,7 @@ export const WorkspacePane = forwardRef<WorkspacePaneHandle, Props>(function Wor
                     ref={(h) => registerHandle(paneId, h)}
                     onSearchReady={(_, addon) => handleSearchReady(paneId, addon)}
                     onCwd={(_, cwd) => onCwd(paneId, cwd)}
+                    onProcessTitle={(_, title) => onProcessTitle(paneId, title)}
                     onDetectedLocalUrl={(_, url) => onDetectedLocalUrl?.(paneId, url)}
                   />
                 ) : (
@@ -265,6 +276,7 @@ export const WorkspacePane = forwardRef<WorkspacePaneHandle, Props>(function Wor
                     ref={(h) => registerHandle(paneId, h)}
                     onSearchReady={(addon) => handleSearchReady(paneId, addon)}
                     onCwd={(cwd) => onCwd(paneId, cwd)}
+                    onProcessTitle={(title) => onProcessTitle(paneId, title)}
                   />
                 )}
                 <BlockEmptyState sessionId={paneId} />

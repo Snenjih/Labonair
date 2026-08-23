@@ -47,6 +47,10 @@ if [ -z "$__LABONAIR_HOOKS_LOADED" ]; then
     local _labonair_ret=$?
     printf '\e]133;D;%s\e\\' "$_labonair_ret"
     printf '\e]7;file://%s%s\e\\' "${HOSTNAME:-$(uname -n 2>/dev/null)}" "$(_labonair_urlencode "$PWD")"
+    # Clear any title the previous foreground process set via OSC 0/1/2 (e.g.
+    # an AI CLI), so the host's tab falls back to its own cwd-derived title
+    # once the shell is back at an interactive prompt.
+    printf '\e]0;\a'
     if [ -n "$LABONAIR_BLOCKS" ]; then
       # Block mode: rebuilt every precmd (not one-shot like the plain-mode
       # branch below) — see zshrc.zsh's matching comment for why the shell

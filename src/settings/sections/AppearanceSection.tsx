@@ -32,6 +32,8 @@ import { useNotificationStore } from "@/modules/notifications/store/useNotificat
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SidebarTabInfoType, ThemePref } from "@/modules/settings/store";
 import {
+  SIDEBAR_TAB_INFO_TYPE_LABELS,
+  SIDEBAR_TAB_INFO_TYPES,
   setAppCornerRadius,
   setAppFontFamily,
   setAppFontSize,
@@ -43,12 +45,11 @@ import {
   setBackgroundTintOpacity,
   setHmCardScale,
   setSidebarGroupByFolder,
+  setSidebarGroupSingleTabs,
   setSidebarTabInfoLine,
   setTabsLocation,
   setZenModeShowHeader,
   setZenModeShowStatusbar,
-  SIDEBAR_TAB_INFO_TYPE_LABELS,
-  SIDEBAR_TAB_INFO_TYPES,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import { SectionHeader } from "../components/SectionHeader";
@@ -81,6 +82,7 @@ export function AppearanceSection() {
   const tabsLocation = usePreferencesStore((s) => s.tabsLocation);
   const sidebarTabInfoLine = usePreferencesStore((s) => s.sidebarTabInfoLine);
   const sidebarGroupByFolder = usePreferencesStore((s) => s.sidebarGroupByFolder);
+  const sidebarGroupSingleTabs = usePreferencesStore((s) => s.sidebarGroupSingleTabs);
   const zenModeShowHeader = usePreferencesStore((s) => s.zenModeShowHeader);
   const zenModeShowStatusbar = usePreferencesStore((s) => s.zenModeShowStatusbar);
   const backgroundImage = usePreferencesStore((s) => s.backgroundImage);
@@ -518,9 +520,16 @@ export function AppearanceSection() {
           title="Group sidebar tabs by folder"
           description="Cluster sidebar tabs that share the same working directory under a header, regardless of tab type."
         >
+          <Switch checked={sidebarGroupByFolder} onCheckedChange={(v) => void setSidebarGroupByFolder(v)} />
+        </SettingRow>
+        <SettingRow
+          title="Group single tabs too"
+          description="Give a tab its own folder header right away, instead of waiting for a second tab to land in the same folder."
+        >
           <Switch
-            checked={sidebarGroupByFolder}
-            onCheckedChange={(v) => void setSidebarGroupByFolder(v)}
+            checked={sidebarGroupSingleTabs}
+            disabled={!sidebarGroupByFolder}
+            onCheckedChange={(v) => void setSidebarGroupSingleTabs(v)}
           />
         </SettingRow>
         <SettingRow

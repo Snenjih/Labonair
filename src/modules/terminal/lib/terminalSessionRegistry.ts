@@ -10,6 +10,7 @@ import {
   registerPromptTracker,
   registerTerminalQueryHandlers,
   registerTerminalQuerySwallowHandlers,
+  registerTitleHandler,
   type ShellIntegrationState,
 } from "./osc-handlers";
 import {
@@ -42,6 +43,10 @@ export type SessionCallbacks = {
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
   onDetectedLocalUrl?: (url: string) => void;
+  /** Process-set terminal title (OSC 0/1/2) — fires with `""` when shell
+   *  integration resets the title back to the prompt, letting callers fall
+   *  back to the cwd-derived title. See `registerTitleHandler`. */
+  onProcessTitle?: (title: string) => void;
 };
 
 export type RegisterOptions = {
@@ -340,7 +345,8 @@ function bindLeafToSlot(sessionId: string, s: SessionRecord): void {
       const query = s.isRemote
         ? registerTerminalQuerySwallowHandlers(term)
         : registerTerminalQueryHandlers(term, (d) => s.bridge.writeToPty(d));
-      return [prompt.dispose, cwd, query];
+      const title = registerTitleHandler(term, (t) => s.callbacks.onProcessTitle?.(t));
+      return [prompt.dispose, cwd, query, title];
     },
     onSearchReady: (addon) => s.callbacks.onSearchReady?.(addon),
   });

@@ -9,16 +9,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useConnectionStatusStore, type ConnectionStatus } from "@/modules/hosts/store/connectionStatusStore";
+import { cn } from "@/lib/utils";
+import { type ConnectionStatus, useConnectionStatusStore } from "@/modules/hosts/store/connectionStatusStore";
 import { useHostsStore } from "@/modules/hosts/store/hostsStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useTransferStore } from "@/modules/sftp/store/transferStore";
 import { isCommandRunning, subscribeIntegrationState } from "@/modules/terminal/lib/terminalSessionRegistry";
-import { cn } from "@/lib/utils";
 import { NonWorkspaceTabContextMenuContent } from "./components/NonWorkspaceTabContextMenuContent";
 import { WorkspaceTabContextMenuContent } from "./components/WorkspaceTabContextMenuContent";
 import { buildGroupedRenderPlan, isBlockedCrossGroupDrag, pathKeyFor } from "./lib/tabGrouping";
-import { labelFor, NewTabDropdownItems, remoteHostLabelFor, sidebarInfoLineFor, TabIconFor } from "./lib/tabUtils";
+import {
+  labelFor,
+  NewTabDropdownItems,
+  remoteHostLabelFor,
+  sidebarInfoLineFor,
+  TabIconFor,
+} from "./lib/tabUtils";
 import { resolveDragReorder, shouldMiddleClickClose, useTabList } from "./lib/useTabList";
 import type { Tab, WorkspaceTab } from "./types";
 
@@ -59,6 +65,7 @@ export function SidebarTabList({
     useTabList();
   const scrollRef = useRef<HTMLDivElement>(null);
   const groupByFolder = usePreferencesStore((s) => s.sidebarGroupByFolder);
+  const groupSingleTabs = usePreferencesStore((s) => s.sidebarGroupSingleTabs);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -98,9 +105,9 @@ export function SidebarTabList({
   const renderPlan = useMemo(
     () =>
       groupByFolder
-        ? buildGroupedRenderPlan(tabs, debouncedPathKeys)
-        : tabs.map((t) => ({ kind: "tab" as const, tab: t, groupKey: undefined })),
-    [groupByFolder, tabs, debouncedPathKeys],
+        ? buildGroupedRenderPlan(tabs, debouncedPathKeys, groupSingleTabs ? 1 : 2)
+        : tabs.map((t) => ({ kind: "tab" as const, tab: t, groupKey: undefined, groupSize: 0 })),
+    [groupByFolder, groupSingleTabs, tabs, debouncedPathKeys],
   );
   const visualTabIds = useMemo(
     () => renderPlan.filter((e) => e.kind === "tab").map((e) => e.tab.id),
@@ -139,6 +146,7 @@ export function SidebarTabList({
                   key={entry.tab.id}
                   t={entry.tab}
                   groupKey={entry.groupKey}
+                  groupSize={entry.groupSize}
                   isActive={entry.tab.id === activeId}
                   isNew={isNewTab(entry.tab.id)}
                   isRenaming={editingId === entry.tab.id && entry.tab.kind === "workspace"}
@@ -214,6 +222,7 @@ function SidebarGroupHeader({ name }: { name: string }) {
 function SidebarTabRow({
   t,
   groupKey,
+  groupSize,
   isActive,
   isNew,
   isRenaming,
@@ -230,6 +239,7 @@ function SidebarTabRow({
 }: {
   t: Tab;
   groupKey: string | undefined;
+  groupSize: number;
   isActive: boolean;
   isNew: boolean;
   isRenaming: boolean;
@@ -247,9 +257,12 @@ function SidebarTabRow({
   const selectedInfoTypes = usePreferencesStore((s) => s.sidebarTabInfoLine);
   const hosts = useHostsStore((s) => s.hosts);
   const connections = useConnectionStatusStore((s) => s.connections);
-  // Only shown for tabs inside an actual rendered folder-group (≥2 members)
-  // — disambiguates a remote tab from local tabs sharing the same folder.
-  const remoteBadge = groupKey !== undefined ? remoteHostLabelFor(t, hosts, connections) : undefined;
+  // Only shown for tabs inside an actual multi-member folder-group — disambiguates
+  // a remote tab from local tabs sharing the same folder. A solo tab grouped alone
+  // (eager "group single tabs" mode) has nothing to disambiguate against, so it's
+  // skipped even though groupKey is set.
+  const remoteBadge =
+    groupKey !== undefined && groupSize >= 2 ? remoteHostLabelFor(t, hosts, connections) : undefined;
   const transferJobs = useTransferStore((s) => s.jobs);
 
   // "Busy" only makes sense for the active pane of a workspace tab — track
@@ -352,7 +365,13 @@ function SidebarTabRow({
         {hasInfoLine && (
           <span className="flex items-center gap-1 truncate text-[10px] text-muted-foreground">
             {infoSegments.map((seg, i) => (
-              <span key={seg.type} className="flex shrink-0 items-center gap-1">
+              <span
+                key={seg.type}
+                className={cn(
+                  "flex min-w-0 items-center gap-1",
+                  seg.type === "path" ? "shrink" : "shrink-0",
+                )}
+              >
                 {i > 0 && (
                   <span aria-hidden className="shrink-0 text-muted-foreground/50">
                     ·
@@ -364,7 +383,17 @@ function SidebarTabRow({
                 {seg.type === "busy" && (
                   <span className="size-1 shrink-0 animate-pulse rounded-full bg-foreground/60" />
                 )}
-                <span className="truncate">{seg.text}</span>
+                {seg.type === "path" ? (
+                  // Truncate from the front so the meaningful tail (the folder/file
+                  // itself) stays visible instead of the shared prefix — `dir="rtl"`
+                  // moves the ellipsis to the start while the LTR path text still
+                  // reads left-to-right.
+                  <span dir="rtl" className="min-w-0 truncate text-left">
+                    {seg.text}
+                  </span>
+                ) : (
+                  <span className="truncate">{seg.text}</span>
+                )}
               </span>
             ))}
           </span>

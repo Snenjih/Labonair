@@ -371,6 +371,14 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     category: "Appearance & Layout",
     controlType: "Switch",
   },
+  {
+    id: "sidebarGroupSingleTabs",
+    label: "Group single tabs too",
+    description:
+      "Give every tab its own folder header immediately, instead of only grouping once a second tab shares the same folder.",
+    category: "Appearance & Layout",
+    controlType: "Switch",
+  },
 
   // --- Terminal ---
   {

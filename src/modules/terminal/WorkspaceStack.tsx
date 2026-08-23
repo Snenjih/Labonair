@@ -69,6 +69,12 @@ function WorkspacePaneContainer({
     [tabId],
   );
 
+  const onProcessTitle = useCallback(
+    (sessionId: string, title: string) =>
+      useTabsStore.getState().updatePaneSessionProcessTitle(tabId, sessionId, title),
+    [tabId],
+  );
+
   const [pendingPaneClose, setPendingPaneClose] = useState<string | null>(null);
 
   const doClosePane = useCallback(
@@ -124,6 +130,7 @@ function WorkspacePaneContainer({
         onSetActivePane={onSetActivePane}
         onRegisterHandle={onRegisterHandle}
         onCwd={onCwd}
+        onProcessTitle={onProcessTitle}
         onClosePane={onClosePane}
         onDetectedLocalUrl={onDetectedLocalUrl}
       />

@@ -22,6 +22,11 @@ export type TerminalSessionData = {
   kind: "local" | "ssh";
   title: string;
   cwd?: string;
+  /** Live terminal title set by the running foreground process via OSC
+   *  0/1/2 (e.g. an AI CLI reflecting its session state), reset to
+   *  `undefined` when shell integration clears the title back at the next
+   *  prompt. Takes priority over the cwd-derived label in `labelFor`. */
+  processTitle?: string;
   hostId?: string;
   quickConnect?: QuickConnectParams;
   initialCommand?: string;

@@ -249,6 +249,7 @@ export type Preferences = {
   tabsLocation: "titlebar" | "sidebar";
   sidebarTabInfoLine: SidebarTabInfoType[];
   sidebarGroupByFolder: boolean;
+  sidebarGroupSingleTabs: boolean;
 
   // --- Zen Mode ---
   zenModeShowHeader: boolean;
@@ -435,6 +436,7 @@ const KEY_TITLEBAR_ICONS_POSITION = "titlebarsIconsPosition";
 const KEY_TABS_LOCATION = "tabsLocation";
 const KEY_SIDEBAR_TAB_INFO_LINE = "sidebarTabInfoLine";
 const KEY_SIDEBAR_GROUP_BY_FOLDER = "sidebarGroupByFolder";
+const KEY_SIDEBAR_GROUP_SINGLE_TABS = "sidebarGroupSingleTabs";
 const KEY_ZEN_MODE_SHOW_HEADER = "zenModeShowHeader";
 const KEY_ZEN_MODE_SHOW_STATUSBAR = "zenModeShowStatusbar";
 const KEY_SSH_AUTO_RECONNECT = "sshAutoReconnect";
@@ -621,6 +623,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   tabsLocation: "titlebar",
   sidebarTabInfoLine: [],
   sidebarGroupByFolder: false,
+  sidebarGroupSingleTabs: false,
 
   zenModeShowHeader: true,
   zenModeShowStatusbar: true,
@@ -976,6 +979,8 @@ export async function loadPreferences(): Promise<Preferences> {
       get<SidebarTabInfoType[]>(KEY_SIDEBAR_TAB_INFO_LINE) ?? DEFAULT_PREFERENCES.sidebarTabInfoLine,
     sidebarGroupByFolder:
       get<boolean>(KEY_SIDEBAR_GROUP_BY_FOLDER) ?? DEFAULT_PREFERENCES.sidebarGroupByFolder,
+    sidebarGroupSingleTabs:
+      get<boolean>(KEY_SIDEBAR_GROUP_SINGLE_TABS) ?? DEFAULT_PREFERENCES.sidebarGroupSingleTabs,
 
     zenModeShowHeader: get<boolean>(KEY_ZEN_MODE_SHOW_HEADER) ?? DEFAULT_PREFERENCES.zenModeShowHeader,
     zenModeShowStatusbar:
@@ -1866,6 +1871,11 @@ export async function setSidebarGroupByFolder(value: boolean): Promise<void> {
   await (await getStore()).save();
 }
 
+export async function setSidebarGroupSingleTabs(value: boolean): Promise<void> {
+  await (await getStore()).set(KEY_SIDEBAR_GROUP_SINGLE_TABS, value);
+  await (await getStore()).save();
+}
+
 export async function setStatusBarShowExplorerButton(value: boolean): Promise<void> {
   await (await getStore()).set(KEY_STATUSBAR_SHOW_EXPLORER_BUTTON, value);
   await (await getStore()).save();
@@ -2080,6 +2090,7 @@ export async function onPreferencesChange(cb: (key: PrefKey, value: unknown) => 
     [KEY_TABS_LOCATION]: "tabsLocation",
     [KEY_SIDEBAR_TAB_INFO_LINE]: "sidebarTabInfoLine",
     [KEY_SIDEBAR_GROUP_BY_FOLDER]: "sidebarGroupByFolder",
+    [KEY_SIDEBAR_GROUP_SINGLE_TABS]: "sidebarGroupSingleTabs",
     [KEY_ZEN_MODE_SHOW_HEADER]: "zenModeShowHeader",
     [KEY_ZEN_MODE_SHOW_STATUSBAR]: "zenModeShowStatusbar",
     [KEY_SSH_AUTO_RECONNECT]: "sshAutoReconnect",

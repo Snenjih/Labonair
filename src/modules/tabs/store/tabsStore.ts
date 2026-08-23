@@ -104,6 +104,7 @@ export type TabsState = {
   reorderTabs: (activeTabId: number, overTabId: number) => void;
   setActivePaneId: (tabId: number, paneId: string) => void;
   updatePaneSessionCwd: (tabId: number, sessionId: string, cwd: string) => void;
+  updatePaneSessionProcessTitle: (tabId: number, sessionId: string, title: string) => void;
   splitPane: (tabId: number, direction: PaneDirection) => void;
   closePane: (tabId: number, paneId: string) => void;
 };
@@ -763,6 +764,23 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           sessions: {
             ...t.sessions,
             [sessionId]: { ...session, cwd },
+          },
+        };
+      }),
+    }));
+  },
+
+  updatePaneSessionProcessTitle: (tabId, sessionId, title) => {
+    set((s) => ({
+      tabs: s.tabs.map((t) => {
+        if (t.kind !== "workspace" || t.id !== tabId) return t;
+        const session = t.sessions[sessionId];
+        if (!session) return t;
+        return {
+          ...t,
+          sessions: {
+            ...t.sessions,
+            [sessionId]: { ...session, processTitle: title || undefined },
           },
         };
       }),

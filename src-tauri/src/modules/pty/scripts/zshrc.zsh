@@ -45,6 +45,10 @@ if [[ -z "$__LABONAIR_HOOKS_LOADED" ]]; then
     local _labonair_ret=$?
     printf '\e]133;D;%s\e\\' "$_labonair_ret"
     printf '\e]7;file://%s%s\e\\' "${HOST}" "$(_labonair_urlencode "$PWD")"
+    # Clear any title the previous foreground process set via OSC 0/1/2 (e.g.
+    # an AI CLI), so the host's tab falls back to its own cwd-derived title
+    # once the shell is back at an interactive prompt.
+    printf '\e]0;\a'
     if [[ -n "$LABONAIR_BLOCKS" ]]; then
       # Block mode: the host renders its own floating header, so suppress the
       # visible prompt entirely (keep only the invisible OSC 133 B marker) and

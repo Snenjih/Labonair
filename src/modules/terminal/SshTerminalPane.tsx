@@ -81,10 +81,13 @@ interface Props {
    *  explorer / breadcrumb follow `cd` on a remote shell like they already
    *  do for local terminals. */
   onCwd?: (cwd: string) => void;
+  /** Process-set terminal title (OSC 0/1/2) from the remote shell — same
+   *  mechanism as `onCwd`, see `registerTitleHandler`. */
+  onProcessTitle?: (title: string) => void;
 }
 
 export const SshTerminalPane = forwardRef<TerminalPaneHandle, Props>(function SshTerminalPane(
-  { sessionId, tabId, session, isActive, tabVisible = true, onSearchReady, onCwd },
+  { sessionId, tabId, session, isActive, tabVisible = true, onSearchReady, onCwd, onProcessTitle },
   ref,
 ) {
   const [isConnected, setIsConnected] = useState(false);
@@ -114,6 +117,8 @@ export const SshTerminalPane = forwardRef<TerminalPaneHandle, Props>(function Ss
   onSearchReadyRef.current = onSearchReady;
   const onCwdRef = useRef(onCwd);
   onCwdRef.current = onCwd;
+  const onProcessTitleRef = useRef(onProcessTitle);
+  onProcessTitleRef.current = onProcessTitle;
   const sudoPasswordRef = useRef<string | null>(null);
   const sudoDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outputTailRef = useRef<string>("");
@@ -392,6 +397,7 @@ export const SshTerminalPane = forwardRef<TerminalPaneHandle, Props>(function Ss
       callbacks: {
         onSearchReady: (a) => onSearchReadyRef.current?.(a),
         onCwd: (c) => onCwdRef.current?.(c),
+        onProcessTitle: (t) => onProcessTitleRef.current?.(t),
       },
       // Mirrors the `blocks` flag SshLoadingScreen just sent to ssh_connect
       // (read fresh, same lifecycle moment — connect and this registration

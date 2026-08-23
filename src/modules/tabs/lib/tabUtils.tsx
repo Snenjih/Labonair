@@ -47,6 +47,7 @@ export function labelFor(t: Tab): string {
   const wt = t as WorkspaceTab;
   if (wt.customTitle) return wt.customTitle;
   const activeSession = wt.sessions[wt.activePaneId];
+  if (activeSession?.processTitle) return activeSession.processTitle;
   if (activeSession?.kind === "local" && activeSession.cwd) {
     const parts = activeSession.cwd.split("/").filter(Boolean);
     return parts.length ? parts[parts.length - 1] : "/";
@@ -221,48 +222,50 @@ export function pluralLabelFor(kind: Tab["kind"]): string {
 
 // --- Shared icon component ---
 
-export function TabIconFor({ tab, active }: { tab: Tab; active: boolean }) {
+export function TabIconFor({ tab, active, size = 14 }: { tab: Tab; active: boolean; size?: number }) {
   if (tab.kind === "editor") {
     const url = fileIconUrl(tab.title);
-    return url ? <img src={url} alt="" decoding="sync" className="size-3.5 shrink-0" /> : null;
+    return url ? (
+      <img src={url} alt="" decoding="sync" className="shrink-0" style={{ width: size, height: size }} />
+    ) : null;
   }
   if (tab.kind === "preview") {
-    return <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} className="shrink-0" />;
+    return <HugeiconsIcon icon={Globe02Icon} size={size} strokeWidth={1.75} className="shrink-0" />;
   }
   if (tab.kind === "ai-diff") {
     return (
-      <HugeiconsIcon icon={GitCompareIcon} size={14} strokeWidth={1.75} className="shrink-0 text-warning" />
+      <HugeiconsIcon icon={GitCompareIcon} size={size} strokeWidth={1.75} className="shrink-0 text-warning" />
     );
   }
   if (tab.kind === "home") {
-    return <HugeiconsIcon icon={Home03Icon} size={14} strokeWidth={1.75} className="shrink-0" />;
+    return <HugeiconsIcon icon={Home03Icon} size={size} strokeWidth={1.75} className="shrink-0" />;
   }
   if (tab.kind === "sftp") {
-    return <HugeiconsIcon icon={CloudServerIcon} size={14} strokeWidth={1.75} className="shrink-0" />;
+    return <HugeiconsIcon icon={CloudServerIcon} size={size} strokeWidth={1.75} className="shrink-0" />;
   }
   if (tab.kind === "git-graph") {
-    return <HugeiconsIcon icon={GitBranchIcon} size={14} strokeWidth={1.75} className="shrink-0" />;
+    return <HugeiconsIcon icon={GitBranchIcon} size={size} strokeWidth={1.75} className="shrink-0" />;
   }
   if (tab.kind === "git-diff") {
     return (
-      <HugeiconsIcon icon={GitCompareIcon} size={14} strokeWidth={1.75} className="shrink-0 text-modified" />
+      <HugeiconsIcon icon={GitCompareIcon} size={size} strokeWidth={1.75} className="shrink-0 text-modified" />
     );
   }
   if (tab.kind === "commit-diff") {
     return (
-      <HugeiconsIcon icon={GitCompareIcon} size={14} strokeWidth={1.75} className="shrink-0 text-info" />
+      <HugeiconsIcon icon={GitCompareIcon} size={size} strokeWidth={1.75} className="shrink-0 text-info" />
     );
   }
   if (tab.kind === "workspace") {
     const wt = tab as WorkspaceTab;
     const activeSession = wt.sessions[wt.activePaneId];
     const icon = activeSession?.kind === "ssh" ? ComputerTerminal02Icon : TerminalIcon;
-    return <HugeiconsIcon icon={icon} size={14} strokeWidth={1.75} className="shrink-0" />;
+    return <HugeiconsIcon icon={icon} size={size} strokeWidth={1.75} className="shrink-0" />;
   }
   return (
     <HugeiconsIcon
       icon={active ? Folder02Icon : Folder01Icon}
-      size={14}
+      size={size}
       strokeWidth={2}
       className="shrink-0"
     />

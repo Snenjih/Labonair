@@ -11,6 +11,19 @@ export function createShellIntegrationState(): ShellIntegrationState {
   return { inCommand: false };
 }
 
+/**
+ * Process-set terminal title (OSC 0/1/2), e.g. a TUI like Claude Code
+ * updating the tab to reflect its own session state. Unlike OSC 7/133,
+ * xterm.js already parses these itself and exposes `onTitleChange` — no
+ * manual `registerOscHandler` needed. Shell integration resets the title to
+ * empty on every new prompt (see `_labonair_precmd` in the shell-integration
+ * scripts), so an empty string here means "no process title" to the caller.
+ */
+export function registerTitleHandler(term: Terminal, onTitle: (title: string) => void): () => void {
+  const d = term.onTitleChange((title) => onTitle(title.trim()));
+  return () => d.dispose();
+}
+
 export function registerCwdHandler(
   term: Terminal,
   onCwd: (cwd: string) => void,
