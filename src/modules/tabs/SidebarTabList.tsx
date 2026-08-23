@@ -367,10 +367,7 @@ function SidebarTabRow({
             {infoSegments.map((seg, i) => (
               <span
                 key={seg.type}
-                className={cn(
-                  "flex min-w-0 items-center gap-1",
-                  seg.type === "path" ? "shrink" : "shrink-0",
-                )}
+                className={cn("flex min-w-0 items-center gap-1", seg.type === "path" ? "shrink" : "shrink-0")}
               >
                 {i > 0 && (
                   <span aria-hidden className="shrink-0 text-muted-foreground/50">

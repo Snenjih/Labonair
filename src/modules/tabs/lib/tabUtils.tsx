@@ -146,10 +146,16 @@ export function sidebarInfoLineFor(
     if (text) segments.push({ type: "host", text });
   };
   const addConnection = (entry: ConnectionEntry | undefined) => {
-    if (entry) segments.push({ type: "connection", text: CONNECTION_STATUS_LABELS[entry.status], status: entry.status });
+    if (entry)
+      segments.push({
+        type: "connection",
+        text: CONNECTION_STATUS_LABELS[entry.status],
+        status: entry.status,
+      });
   };
   const addUptime = (entry: ConnectionEntry | undefined) => {
-    if (entry?.status === "connected") segments.push({ type: "uptime", text: formatUptime(entry.connectedAt, nowMs) });
+    if (entry?.status === "connected")
+      segments.push({ type: "uptime", text: formatUptime(entry.connectedAt, nowMs) });
   };
   const addTransfer = (sessionId: string) => {
     const job = transferJobs.find((j) => j.session_id === sessionId && j.status === "running");
@@ -248,7 +254,12 @@ export function TabIconFor({ tab, active, size = 14 }: { tab: Tab; active: boole
   }
   if (tab.kind === "git-diff") {
     return (
-      <HugeiconsIcon icon={GitCompareIcon} size={size} strokeWidth={1.75} className="shrink-0 text-modified" />
+      <HugeiconsIcon
+        icon={GitCompareIcon}
+        size={size}
+        strokeWidth={1.75}
+        className="shrink-0 text-modified"
+      />
     );
   }
   if (tab.kind === "commit-diff") {

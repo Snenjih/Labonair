@@ -23,14 +23,7 @@ export type ThemePref = "system" | "light" | "dark";
 // Deferred: "gitBranch" — add to this array + label map in a later phase,
 // once per-tab live git-branch tracking exists (today there's only a single
 // global git-status store for the explorer's focused repo).
-export const SIDEBAR_TAB_INFO_TYPES = [
-  "path",
-  "connection",
-  "host",
-  "uptime",
-  "transfer",
-  "busy",
-] as const;
+export const SIDEBAR_TAB_INFO_TYPES = ["path", "connection", "host", "uptime", "transfer", "busy"] as const;
 
 export type SidebarTabInfoType = (typeof SIDEBAR_TAB_INFO_TYPES)[number];
 
