@@ -4,6 +4,7 @@ import { useHostsStore } from "@/modules/hosts/store/hostsStore";
 import type { Host } from "@/modules/hosts/types";
 import type { SidebarTabInfoType } from "@/modules/settings/store";
 import type { TransferJob } from "@/modules/sftp/store/transferStore";
+import { getLocalOpenedAt } from "@/modules/terminal/lib/terminalSessionRegistry";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -179,8 +180,14 @@ export function sidebarInfoLineFor(
       const entry = connections[wt.activePaneId];
       if (type === "path") addPath(activeSession?.cwd);
       else if (type === "connection") addConnection(entry);
-      else if (type === "uptime") addUptime(entry);
-      else if (type === "busy") addBusy();
+      else if (type === "uptime") {
+        if (activeSession?.kind === "local") {
+          const openedAt = getLocalOpenedAt(wt.activePaneId);
+          if (openedAt) segments.push({ type: "uptime", text: formatUptime(openedAt, nowMs) });
+        } else {
+          addUptime(entry);
+        }
+      } else if (type === "busy") addBusy();
     } else if (t.kind === "editor") {
       if (type === "path") addPath(t.remoteHostId ? (t.remotePath ?? t.path) : t.path);
     } else if (t.kind === "ai-diff") {

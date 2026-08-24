@@ -83,6 +83,19 @@ export function getLocalPtyId(sessionId: string): number | undefined {
   return localPtyIds.get(sessionId);
 }
 
+/** Stamped once after `openPty()` resolves — mirrors `connectedAt` on the
+ *  SSH-side `ConnectionEntry`, but local sessions have no host/connection
+ *  concept, so this lives here instead of in `useConnectionStatusStore`. */
+const localOpenedAt = new Map<string, number>();
+
+export function setLocalOpenedAt(sessionId: string, ts: number): void {
+  localOpenedAt.set(sessionId, ts);
+}
+
+export function getLocalOpenedAt(sessionId: string): number | undefined {
+  return localOpenedAt.get(sessionId);
+}
+
 type SessionRecord = {
   bridge: SessionBridge;
   callbacks: SessionCallbacks;
@@ -869,6 +882,7 @@ export function disposeSession(sessionId: string): void {
   blockSubscribers.delete(sessionId);
   integrationSubscribers.delete(sessionId);
   localPtyIds.delete(sessionId);
+  localOpenedAt.delete(sessionId);
   composerFocusHandlers.delete(sessionId);
 }
 
