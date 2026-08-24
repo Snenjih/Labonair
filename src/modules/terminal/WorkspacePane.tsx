@@ -15,6 +15,7 @@ import { FindWidget } from "@/modules/search";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { PaneNode, TerminalSessionData, WorkspaceTab } from "@/modules/tabs";
 import { BlockEmptyState, BlockOverlay } from "./block";
+import { PaneRectBatcher } from "./lib/paneRectBatcher";
 import { focusComposer, getBlockEngine, shouldBlockTerminalClick } from "./lib/terminalSessionRegistry";
 import { SshTerminalPane } from "./SshTerminalPane";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
@@ -70,38 +71,67 @@ export const WorkspacePane = forwardRef<WorkspacePaneHandle, Props>(function Wor
   );
 
   // Sync slot element rects → terminal absolute positions
-  // useLayoutEffect instead of useEffect so the initial updateRect() calls
+  // useLayoutEffect instead of useEffect so the initial measureRect() calls
   // happen synchronously before the first paint. Without this, paneRects is
   // empty on the first render and terminal divs get display:none for one
   // frame — visible as a blank flash when switching to a terminal tab.
+  //
+  // Keyed off a stable pane-id-set string rather than `tab.sessions` itself:
+  // updatePaneSessionCwd/updatePaneSessionProcessTitle replace that object on
+  // every cwd/process-title change (essentially every shell prompt), which
+  // would otherwise tear down and rebuild every ResizeObserver on every `cd`.
+  //
+  // Observers are only attached while tabVisible — inactive tabs stay fully
+  // laid out (opacity-0, not display:none, see WorkspaceStack.tsx) so their
+  // slots would otherwise keep resizing (and reporting) in lockstep with
+  // every other open tab whenever the workspace area itself resizes, e.g.
+  // during a sidebar drag.
+  //
+  // Ongoing ticks (after the first synchronous measurement) go through
+  // PaneRectBatcher so N ResizeObserver callbacks firing within the same
+  // frame collapse into a single measurement pass + a single setPaneRects
+  // call, instead of a forced-layout read and a state update per pane per
+  // tick.
+  const paneIdsKey = Object.keys(tab.sessions).sort().join(",");
   useLayoutEffect(() => {
+    if (!tabVisible) return;
+
     const observers: ResizeObserver[] = [];
-    const updateRect = (paneId: string) => {
+    const measureRect = (paneId: string) => {
       const slotEl = slotRefs.current.get(paneId);
       const containerEl = containerRef.current;
-      if (!slotEl || !containerEl) return;
+      if (!slotEl || !containerEl) return null;
       const s = slotEl.getBoundingClientRect();
       const c = containerEl.getBoundingClientRect();
-      setPaneRects((prev) => {
-        const next = new Map(prev);
-        next.set(paneId, { x: s.left - c.left, y: s.top - c.top, w: s.width, h: s.height });
-        return next;
-      });
+      return { x: s.left - c.left, y: s.top - c.top, w: s.width, h: s.height };
     };
 
-    for (const paneId of Object.keys(tab.sessions)) {
+    const batcher = new PaneRectBatcher(measureRect, (updates) => {
+      setPaneRects((prev) => {
+        const next = new Map(prev);
+        for (const [paneId, rect] of updates) next.set(paneId, rect);
+        return next;
+      });
+    });
+
+    for (const paneId of paneIdsKey.split(",").filter(Boolean)) {
       const el = slotRefs.current.get(paneId);
       if (!el) continue;
-      updateRect(paneId);
-      const obs = new ResizeObserver(() => updateRect(paneId));
+      // Synchronous first measurement — not routed through the batcher (which
+      // defers to the next animation frame) — so a freshly split pane gets a
+      // rect before this paint instead of flashing display:none for a frame.
+      const rect = measureRect(paneId);
+      if (rect) setPaneRects((prev) => new Map(prev).set(paneId, rect));
+      const obs = new ResizeObserver(() => batcher.schedule(paneId));
       obs.observe(el);
       observers.push(obs);
     }
 
     return () => {
+      batcher.dispose();
       for (const obs of observers) obs.disconnect();
     };
-  }, [tab.sessions, tab.layout]);
+  }, [paneIdsKey, tab.layout, tabVisible]);
 
   // Keep activeAddon in sync with the active pane
   useEffect(() => {
