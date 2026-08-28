@@ -135,7 +135,8 @@ export function usePaletteCallbacks({
           if (session?.kind === "ssh" && session.hostId) newSshTab(session.hostId, tab.title);
           else newTab(session?.cwd);
         } else if (tab.kind === "editor") {
-          openFileTab((tab as { path: string }).path);
+          // A deliberate duplicate, not a quick look — never peek.
+          openFileTab((tab as { path: string }).path, true, false);
         }
       },
       closeOtherTabs: () => {

@@ -4,10 +4,12 @@ import {
   CancelSquareIcon,
   Copy01Icon,
   Layers01Icon,
+  PinIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { pluralLabelFor } from "../lib/tabUtils";
+import { useTabsStore } from "../store/tabsStore";
 import type { Tab } from "../types";
 
 export interface NonWorkspaceTabContextMenuContentProps {
@@ -32,6 +34,15 @@ export function NonWorkspaceTabContextMenuContent({
 }: NonWorkspaceTabContextMenuContentProps) {
   return (
     <ContextMenuContent>
+      {tab.kind === "editor" && tab.peek && (
+        <>
+          <ContextMenuItem onSelect={() => useTabsStore.getState().updateTab(tab.id, { peek: false })}>
+            <HugeiconsIcon icon={PinIcon} size={14} strokeWidth={1.75} />
+            <span className="flex-1">Keep Tab Open</span>
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      )}
       {tab.kind !== "home" && (
         <>
           <ContextMenuItem onSelect={() => onDuplicate(tab.id)}>

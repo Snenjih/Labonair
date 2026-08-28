@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import { useHostsStore } from "@/modules/hosts/store/hostsStore";
-import { useTabsStore } from "@/modules/tabs/store/tabsStore";
+import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
 import type { PaneLeaf, PaneNode, PaneSplit } from "@/modules/tabs";
+import { useTabsStore } from "@/modules/tabs/store/tabsStore";
 import { loadSnapshot } from "./store";
 import type {
   RestoreResult,
@@ -30,7 +30,7 @@ export interface TabActions {
     sessionId?: string,
     cold?: boolean,
   ) => number;
-  openFileTab: (path: string, activate?: boolean) => number | null;
+  openFileTab: (path: string, activate?: boolean, peek?: boolean) => number | null;
   newPreviewTab: (url: string, title?: string, activate?: boolean) => number;
   openHomeTab: (activate?: boolean) => void;
   newSftpTab: (hostId: string, title: string, activate?: boolean) => number;
@@ -181,7 +181,8 @@ async function restoreTab(
           failedTabs.push({ title: snap.title, reason: `File not found: ${snap.path}` });
           return null;
         }
-        return actions.openFileTab(snap.path, !cold);
+        // Restored tabs are deliberate, not a quick look — never peek.
+        return actions.openFileTab(snap.path, !cold, false);
       } catch {
         failedTabs.push({ title: snap.title, reason: `Could not check file: ${snap.path}` });
         return null;

@@ -26,6 +26,7 @@ import {
   TabIconFor,
 } from "./lib/tabUtils";
 import { resolveDragReorder, shouldMiddleClickClose, useTabList } from "./lib/useTabList";
+import { useTabsStore } from "./store/tabsStore";
 import type { Tab, WorkspaceTab } from "./types";
 
 type Props = {
@@ -329,6 +330,13 @@ function SidebarTabRow({
       onMouseDown={(e) => {
         if (e.button === 1) e.preventDefault();
       }}
+      onDoubleClick={() => {
+        // Peek tabs promote to permanent on double-click, same as editing
+        // them — VS Code's "keep open" gesture.
+        if (t.kind === "editor" && t.peek) {
+          useTabsStore.getState().updateTab(t.id, { peek: false });
+        }
+      }}
       className={cn(
         "group flex w-full gap-1.5 rounded-lg px-2 py-1.5 text-left text-xs transition-colors",
         hasInfoLine ? "items-start" : "items-center",
@@ -343,7 +351,7 @@ function SidebarTabRow({
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 overflow-hidden">
         <span className="flex items-center gap-1.5 truncate">
-          <span className="truncate">{labelFor(t)}</span>
+          <span className={cn("truncate", t.kind === "editor" && t.peek && "italic")}>{labelFor(t)}</span>
           {remoteBadge && (
             <span
               title={remoteBadge}

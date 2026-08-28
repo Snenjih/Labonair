@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -171,15 +170,9 @@ export function useTabManagement({
         }
         workspacePaneRefs.current.delete(id);
       }
-      // Best-effort cleanup of the local temp file `prepare_remote_edit`
-      // staged for a remote editor/preview tab — fire-and-forget, a
-      // leftover temp file isn't worth blocking or failing a tab close over.
-      if (tab?.kind === "editor" && tab.remoteHostTabId && tab.remotePath) {
-        void invoke("cleanup_remote_edit_temp", { localTempPath: tab.path }).catch(() => {});
-      }
-      if (tab?.kind === "preview" && tab.remoteHostTabId && tab.remoteTempPath) {
-        void invoke("cleanup_remote_edit_temp", { localTempPath: tab.remoteTempPath }).catch(() => {});
-      }
+      // Remote temp-file cleanup for a remote editor/preview tab now happens
+      // inside `closeTab` itself (also needed for the peek-tab auto-close
+      // path, which bypasses `disposeTab`) — no need to duplicate it here.
       editorRefs.current.delete(id);
       previewRefs.current.delete(id);
       closeTab(id);
@@ -247,7 +240,8 @@ export function useTabManagement({
         if (session?.kind === "ssh" && session.hostId) newSshTab(session.hostId, tab.title, session.cwd);
         else newTab(session?.cwd);
       } else if (tab.kind === "editor") {
-        openFileTab((tab as { path: string }).path);
+        // A deliberate duplicate, not a quick look — never peek.
+        openFileTab((tab as { path: string }).path, true, false);
       }
     },
     [newTab, newSshTab, openFileTab],
@@ -375,8 +369,13 @@ export function useTabManagement({
   }, []);
 
   const handlePreviewUrl = useCallback((id: number, url: string) => updateTab(id, { url }), [updateTab]);
+  // First edit promotes a "peek" tab to a permanent one — it's no longer a
+  // quick look, so it must stop auto-closing on tab switch and lose the
+  // italic label. Only patches `peek` on the dirty transition; going back to
+  // saved (dirty -> false, e.g. undo) intentionally leaves a promoted tab
+  // promoted, matching VS Code.
   const handleEditorDirty = useCallback(
-    (id: number, dirty: boolean) => updateTab(id, { dirty }),
+    (id: number, dirty: boolean) => updateTab(id, dirty ? { dirty, peek: false } : { dirty }),
     [updateTab],
   );
   const handleEditorSaveAs = useCallback(

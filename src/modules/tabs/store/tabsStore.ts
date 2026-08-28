@@ -11,6 +11,7 @@ import {
   basename,
   type CommitDiffTab,
   collectLeafIds,
+  type EditorTab,
   findParent,
   type GitDiffTab,
   makeLeaf,
@@ -57,7 +58,7 @@ export type TabsState = {
   ) => number;
   openDefaultTab: () => void;
   openHomeTab: (activate?: boolean) => void;
-  openFileTab: (path: string, activate?: boolean) => number | null;
+  openFileTab: (path: string, activate?: boolean, peek?: boolean) => number | null;
   openAiDiffTab: (input: {
     path: string;
     originalContent: string;
@@ -78,6 +79,7 @@ export type TabsState = {
     remotePath: string,
     hostId: string,
     source: "sftp-tab" | "lazy-session",
+    peek?: boolean,
   ) => Promise<void>;
   openRemotePreviewTab: (
     sftpTabId: string,
@@ -135,10 +137,11 @@ export const selectActivePaneId = (s: TabsState): string | null => {
 function tabRenderFingerprint(t: Tab): string {
   const label = labelFor(t);
   const dirty = t.kind === "editor" ? t.dirty : false;
+  const peek = t.kind === "editor" ? !!t.peek : false;
   // Workspace tabs pick their icon (terminal vs SSH) off the active pane's
   // session kind — not otherwise captured by label/dirty.
   const iconKind = t.kind === "workspace" ? (t.sessions[t.activePaneId]?.kind ?? "") : "";
-  return `${t.kind} ${label} ${dirty} ${iconKind}`;
+  return `${t.kind} ${label} ${dirty} ${peek} ${iconKind}`;
 }
 
 const tabIdentityCache = new Map<number, { fingerprint: string; tab: Tab }>();
@@ -257,6 +260,60 @@ async function prepareRemoteFileForTab(
   }
 
   return localTempPath;
+}
+
+// Best-effort cleanup of the local temp file `prepare_remote_edit` staged for
+// a remote editor/preview tab — fire-and-forget, a leftover temp file isn't
+// worth blocking or failing a tab close/recycle over. Shared by `closeTab`
+// and the peek-recycle path in `openEditorTab` (both "this tab's remote
+// staging is going away").
+function cleanupRemoteTempIfNeeded(tab: Tab): void {
+  if (tab.kind === "editor" && tab.remoteHostTabId && tab.remotePath) {
+    void invoke("cleanup_remote_edit_temp", { localTempPath: tab.path }).catch(() => {});
+  } else if (tab.kind === "preview" && tab.remoteHostTabId && tab.remoteTempPath) {
+    void invoke("cleanup_remote_edit_temp", { localTempPath: tab.remoteTempPath }).catch(() => {});
+  }
+}
+
+// A closed/recycled tab can no longer honor an MCP agent-access grant —
+// revoke it both locally and on the Rust side so list_sessions/the header
+// badge don't keep showing a tab that no longer exists (or, for a recycled
+// peek tab, don't silently carry a grant made for the old file over to
+// whatever file now occupies that tab id).
+function revokeAgentAccessIfNeeded(id: number): void {
+  if (useAgentAccessStore.getState().entries[id]) void setAgentAccessGrant(id, "", false, "");
+}
+
+// Opens an editor tab, recycling the current "peek" slot in place (same tab
+// id, same position in the tab strip) instead of piling up a new tab when
+// the user is just clicking through files — mirrors VS Code's preview-tab
+// behavior. Shared by `openFileTab` and `openRemoteEditorTab`, which differ
+// only in what fields the resulting tab needs. Reads/writes the store
+// directly (rather than taking `get`/`set` params) since it's only ever
+// called from inside those two actions, after the store already exists.
+function openEditorTab(fields: Omit<EditorTab, "id">, activate: boolean): number {
+  const { getState, setState } = useTabsStore;
+  if (fields.peek) {
+    const currentPeek = getState().tabs.find(
+      (t): t is EditorTab => t.kind === "editor" && !!t.peek && !t.dirty && !t.remoteSyncFailed,
+    );
+    if (currentPeek) {
+      cleanupRemoteTempIfNeeded(currentPeek);
+      revokeAgentAccessIfNeeded(currentPeek.id);
+      setState((s) => ({
+        tabs: s.tabs.map((t) => (t.id === currentPeek.id ? { ...fields, id: currentPeek.id } : t)),
+        activeId: activate ? currentPeek.id : s.activeId,
+      }));
+      return currentPeek.id;
+    }
+  }
+  const id = getState()._nextId;
+  setState((s) => ({
+    tabs: [...s.tabs, { ...fields, id }],
+    activeId: activate ? id : s.activeId,
+    _nextId: s._nextId + 1,
+  }));
+  return id;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -436,19 +493,13 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     }));
   },
 
-  openFileTab: (path, activate = true) => {
+  openFileTab: (path, activate = true, peek = true) => {
     const existing = get().tabs.find((t) => t.kind === "editor" && t.path === path);
     if (existing) {
       if (activate) set({ activeId: existing.id });
       return existing.id;
     }
-    const id = get()._nextId;
-    set((s) => ({
-      tabs: [...s.tabs, { id, kind: "editor" as const, title: basename(path), path, dirty: false }],
-      activeId: activate ? id : s.activeId,
-      _nextId: s._nextId + 1,
-    }));
-    return id;
+    return openEditorTab({ kind: "editor", title: basename(path), path, dirty: false, peek }, activate);
   },
 
   openAiDiffTab: (input) => {
@@ -506,7 +557,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   closeTab: (id) => {
     const { tabs, activeId } = get();
-    if (tabs.find((t) => t.id === id)?.kind === "home") return;
+    const tab = tabs.find((t) => t.id === id);
+    if (tab?.kind === "home") return;
     if (tabs.length <= 1) return;
     const idx = tabs.findIndex((t) => t.id === id);
     const next = tabs.filter((t) => t.id !== id);
@@ -514,10 +566,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     set({ tabs: next, activeId: newActiveId });
     tabIdentityCache.delete(id);
     workspaceSessionsCache.delete(id);
-    // A closed tab can no longer honor an MCP agent-access grant — revoke it
-    // both locally and on the Rust side so list_sessions/the header badge
-    // don't keep showing a tab that no longer exists.
-    if (useAgentAccessStore.getState().entries[id]) void setAgentAccessGrant(id, "", false, "");
+    revokeAgentAccessIfNeeded(id);
+    if (tab) cleanupRemoteTempIfNeeded(tab);
   },
 
   updateTab: (id, patch) => {
@@ -544,6 +594,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           ...x,
           ...(patch.title !== undefined && { title: patch.title }),
           ...(patch.dirty !== undefined && { dirty: patch.dirty }),
+          ...(patch.peek !== undefined && { peek: patch.peek }),
           ...(patch.remoteSyncFailed !== undefined && { remoteSyncFailed: patch.remoteSyncFailed }),
           ...(patch.path !== undefined && { path: patch.path, isUntitled: false }),
           ...(patch.languageOverride !== undefined && {
@@ -598,28 +649,23 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     return id;
   },
 
-  openRemoteEditorTab: async (sftpTabId, remotePath, hostId, source) => {
+  openRemoteEditorTab: async (sftpTabId, remotePath, hostId, source, peek = true) => {
     const localTempPath = await prepareRemoteFileForTab(sftpTabId, remotePath, "(editor)");
     const fileName = remotePath.split("/").pop() ?? "remote-file";
-    const id = get()._nextId;
-    set((s) => ({
-      tabs: [
-        ...s.tabs,
-        {
-          id,
-          kind: "editor" as const,
-          title: `✦ ${fileName}`,
-          path: localTempPath,
-          dirty: false,
-          remoteHostTabId: sftpTabId,
-          remotePath,
-          remoteHostId: hostId,
-          remoteSource: source,
-        },
-      ],
-      activeId: id,
-      _nextId: s._nextId + 1,
-    }));
+    openEditorTab(
+      {
+        kind: "editor",
+        title: `✦ ${fileName}`,
+        path: localTempPath,
+        dirty: false,
+        remoteHostTabId: sftpTabId,
+        remotePath,
+        remoteHostId: hostId,
+        remoteSource: source,
+        peek,
+      },
+      true,
+    );
   },
 
   openRemotePreviewTab: async (sftpTabId, remotePath, hostId, source) => {
@@ -871,3 +917,26 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     set({ tabs: next });
   },
 }));
+
+// Auto-closes the previous "peek" tab the moment `activeId` moves away from
+// it — whichever action caused the move (tab click, shortcut, opening a
+// brand-new tab, session restore, ...), they all funnel through this same
+// store's `set()`, so a single subscription here covers every path instead
+// of having to special-case each of the many actions above that change
+// `activeId`. Recycling (see `openEditorTab`) reuses the same tab id and
+// therefore never changes `activeId`, so it never triggers this — only an
+// actual switch to a *different* tab does.
+useTabsStore.subscribe((state, prevState) => {
+  if (state.activeId === prevState.activeId) return;
+  const oldTab = prevState.tabs.find((t) => t.id === prevState.activeId);
+  if (
+    oldTab?.kind !== "editor" ||
+    !oldTab.peek ||
+    oldTab.dirty ||
+    oldTab.remoteSyncFailed ||
+    !state.tabs.some((t) => t.id === oldTab.id)
+  ) {
+    return;
+  }
+  useTabsStore.getState().closeTab(oldTab.id);
+});

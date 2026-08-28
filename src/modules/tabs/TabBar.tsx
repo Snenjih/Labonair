@@ -14,6 +14,7 @@ import { NonWorkspaceTabContextMenuContent } from "./components/NonWorkspaceTabC
 import { WorkspaceTabContextMenuContent } from "./components/WorkspaceTabContextMenuContent";
 import { labelFor, NewTabDropdownItems, TabIconFor } from "./lib/tabUtils";
 import { shouldMiddleClickClose, useTabList } from "./lib/useTabList";
+import { useTabsStore } from "./store/tabsStore";
 import type { Tab, WorkspaceTab } from "./types";
 
 type Props = {
@@ -180,6 +181,13 @@ export function TabBar({
                       onMouseDown={(e) => {
                         if (e.button === 1) e.preventDefault();
                       }}
+                      onDoubleClick={() => {
+                        // Peek tabs promote to permanent on double-click, same
+                        // as editing them — VS Code's "keep open" gesture.
+                        if (t.kind === "editor" && t.peek) {
+                          useTabsStore.getState().updateTab(t.id, { peek: false });
+                        }
+                      }}
                       className={cn(
                         "group relative z-[1] h-7 shrink-0 gap-1.5 rounded-md text-xs",
                         "bg-transparent data-active:bg-transparent dark:data-active:bg-transparent",
@@ -202,7 +210,9 @@ export function TabBar({
                         )}
                       >
                         <TabIconFor tab={t} active={isActive} />
-                        <span className="truncate">{labelFor(t)}</span>
+                        <span className={cn("truncate", t.kind === "editor" && t.peek && "italic")}>
+                          {labelFor(t)}
+                        </span>
                         {t.kind === "editor" && t.remoteSyncFailed ? (
                           <span
                             aria-label="Failed to save to remote — click to retry"

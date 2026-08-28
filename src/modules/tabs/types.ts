@@ -60,6 +60,15 @@ export type EditorTab = {
   path: string;
   dirty: boolean;
   isUntitled?: boolean;
+  /** "Peek" tab (VS Code preview-tab equivalent): opened for a quick look,
+   *  not a deliberate edit. Rendered with an italic title. At most one peek
+   *  tab exists at a time — opening another file while one is peeking
+   *  recycles the same tab (see `openFileTab`/`openRemoteEditorTab`) instead
+   *  of piling up tabs. Cleared (promoted to a permanent tab) the moment the
+   *  user edits it (`handleEditorDirty`) or double-clicks its tab, and the
+   *  tab itself is auto-closed the moment the user navigates away from it
+   *  while still `peek` (see the `useTabsStore.subscribe` in `tabsStore.ts`). */
+  peek?: boolean;
   /** True when the most recent `save_remote_edit` push failed after the
    *  local temp-file write already succeeded — the local `dirty` flag has
    *  already cleared by then, so without this the user has no way to tell
@@ -190,6 +199,7 @@ export type TabPatch = Partial<{
   remoteSyncFailed: boolean;
   url: string;
   languageOverride: string | null;
+  peek: boolean;
 }>;
 
 // ─── Tree helpers (used by tabsStore) ────────────────────────────────────────

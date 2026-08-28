@@ -194,7 +194,7 @@ describe("restoreSnapshot activate-threading for home/editor/preview/sftp", () =
 
     await restoreSnapshot(snapshot, actions);
 
-    expect(actions.openFileTab).toHaveBeenCalledWith("/tmp/a.txt", false);
+    expect(actions.openFileTab).toHaveBeenCalledWith("/tmp/a.txt", false, false);
   });
 
   it("passes activate=false for a cold-restored sftp tab", async () => {
