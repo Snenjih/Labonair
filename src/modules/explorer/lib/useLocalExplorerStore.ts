@@ -114,6 +114,14 @@ type LocalExplorerStore = {
   addExpanded: (path: string) => void;
   reset: () => void;
   toggleShowHidden: () => void;
+  /** Drops the current scope's cached nodes (but keeps `expanded`, so open
+   *  folders don't collapse) and bumps `generation`. Used by "Hard Refresh"
+   *  — unlike `refresh()`, which only re-fetches what's already known, this
+   *  forces every subsequent fetch to hit the backend fresh instead of
+   *  reusing anything currently in memory. Also drops this scope's entry
+   *  from `remoteScopeCache` so leaving and returning to it doesn't
+   *  re-hydrate the very state that was just cleared. */
+  hardReset: () => void;
 };
 
 export const useLocalExplorerStore = create<LocalExplorerStore>((set) => ({
@@ -195,6 +203,13 @@ export const useLocalExplorerStore = create<LocalExplorerStore>((set) => ({
     }),
 
   reset: () => set({ nodes: {}, expanded: new Set(), remoteScopeCache: {} }),
+
+  hardReset: () =>
+    set((s) => {
+      const remoteScopeCache = { ...s.remoteScopeCache };
+      delete remoteScopeCache[s.scopeKey];
+      return { nodes: {}, remoteScopeCache, generation: s.generation + 1 };
+    }),
 }));
 
 // Drops a deleted host's cached scope, if any — hostIds are never reused so

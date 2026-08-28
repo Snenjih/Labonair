@@ -214,8 +214,17 @@ export function useFileTree(provider: FsProvider, rootPath: string | null, optio
   // during a long session. Local providers use OS watchers (fs:dir-changed)
   // and never hit this path. 0 (from the "Never" option) disables polling.
   const remotePollIntervalMs = usePreferencesStore((s) => s.explorerRemotePollInterval) * 1000;
-  const { nodes, expanded, showHidden, setScope, setNode, toggleExpanded, addExpanded, toggleShowHidden } =
-    useLocalExplorerStore();
+  const {
+    nodes,
+    expanded,
+    showHidden,
+    setScope,
+    setNode,
+    toggleExpanded,
+    addExpanded,
+    toggleShowHidden,
+    hardReset,
+  } = useLocalExplorerStore();
 
   // Ephemeral UI states — don't need to survive sidebar hide/show.
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null);
@@ -387,8 +396,40 @@ export function useFileTree(provider: FsProvider, rootPath: string | null, optio
   const refresh = useCallback(
     (path: string) => {
       void fetchChildren(path);
+      // A full-tree refresh (the root path — toolbar/context-menu "Refresh")
+      // also silently revalidates every already-expanded subfolder, mirroring
+      // the background poll below and the scope-change hydration path above.
+      // Without this the manual button was, perversely, less thorough than
+      // the automatic revalidation running beside it — a change several
+      // levels deep in an expanded subtree wouldn't show up until the next
+      // poll tick (or never, if remote polling is disabled). Single-node
+      // refreshes (drag-drop drop target, error-row retry) pass a path other
+      // than the root and stay scoped to just that path.
+      if (path === rootPath) {
+        for (const p of useLocalExplorerStore.getState().expanded) {
+          void fetchChildren(p, { silent: true });
+        }
+      }
     },
-    [fetchChildren],
+    [fetchChildren, rootPath],
+  );
+
+  // Drops the current scope's cached nodes entirely and re-fetches the root
+  // plus every expanded folder from scratch (loading placeholders included,
+  // since there's no cached data left to show while that's in flight).
+  // Unlike `refresh`, this also clears this scope's `remoteScopeCache` entry
+  // so a subsequent tab-away/tab-back can't re-hydrate the stale state that
+  // was just thrown away. This is the closest in-app equivalent to closing
+  // and reopening the connection.
+  const hardRefresh = useCallback(
+    (path: string) => {
+      hardReset();
+      void fetchChildren(path);
+      for (const p of useLocalExplorerStore.getState().expanded) {
+        void fetchChildren(p);
+      }
+    },
+    [fetchChildren, hardReset],
   );
 
   // --- mutations ---
@@ -535,6 +576,7 @@ export function useFileTree(provider: FsProvider, rootPath: string | null, optio
     toggle,
     expand,
     refresh,
+    hardRefresh,
     loadMore,
     beginCreate,
     cancelCreate,

@@ -4,6 +4,7 @@ import {
   MoreHorizontalIcon,
   PlusMinusIcon,
   PlusSignIcon,
+  Refresh01Icon,
   Sorting01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -176,6 +177,19 @@ export function SourceControlActionBar({ onRefresh }: SourceControlActionBarProp
         )}
 
         <div className="flex-1" />
+
+        {/* Refresh — the panel otherwise only updates on its background poll
+         *  interval, a mutating action, or the window regaining focus, so
+         *  changes made outside the app (another terminal, another machine)
+         *  on a remote repo can lag behind by a full poll tick. */}
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground outline-none transition-colors hover:bg-foreground/6 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
+          title="Refresh"
+        >
+          <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={2} />
+        </button>
 
         {/* Options */}
         <DropdownMenu>

@@ -284,6 +284,7 @@ export function FileExplorer({
         source: "Explorer",
       });
     const onRefresh = () => (rootPath ? tree.refresh(rootPath) : notifyNotReady());
+    const onHardRefresh = () => (rootPath ? tree.hardRefresh(rootPath) : notifyNotReady());
     const onToggleHidden = () => {
       if (!rootPath) return notifyNotReady();
       tree.toggleShowHidden();
@@ -293,12 +294,14 @@ export function FileExplorer({
     const onNewFolder = () => (rootPath ? tree.beginCreate(rootPath, "dir") : notifyNotReady());
     const onCopyRootPath = () => (rootPath ? void copyToClipboard(rootPath) : notifyNotReady());
     window.addEventListener("labonair:explorer-refresh", onRefresh);
+    window.addEventListener("labonair:explorer-hard-refresh", onHardRefresh);
     window.addEventListener("labonair:explorer-toggle-hidden", onToggleHidden);
     window.addEventListener("labonair:explorer-new-file", onNewFile);
     window.addEventListener("labonair:explorer-new-folder", onNewFolder);
     window.addEventListener("labonair:explorer-copy-root-path", onCopyRootPath);
     return () => {
       window.removeEventListener("labonair:explorer-refresh", onRefresh);
+      window.removeEventListener("labonair:explorer-hard-refresh", onHardRefresh);
       window.removeEventListener("labonair:explorer-toggle-hidden", onToggleHidden);
       window.removeEventListener("labonair:explorer-new-file", onNewFile);
       window.removeEventListener("labonair:explorer-new-folder", onNewFolder);
@@ -452,8 +455,8 @@ export function FileExplorer({
           variant="ghost"
           size="icon"
           className="size-6 text-muted-foreground hover:text-foreground"
-          onClick={() => tree.refresh(rootPath)}
-          title="Refresh"
+          onClick={(e) => (e.shiftKey ? tree.hardRefresh(rootPath) : tree.refresh(rootPath))}
+          title="Refresh (Shift-click: Hard Refresh — clears cache)"
         >
           <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={2} />
         </Button>
@@ -591,6 +594,9 @@ export function FileExplorer({
             </ContextMenuItem>
             <ContextMenuItem className={COMPACT_ITEM} onSelect={() => tree.refresh(rootPath)}>
               Refresh
+            </ContextMenuItem>
+            <ContextMenuItem className={COMPACT_ITEM} onSelect={() => tree.hardRefresh(rootPath)}>
+              Hard Refresh (Clear Cache)
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>

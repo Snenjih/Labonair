@@ -40,6 +40,14 @@ export function useExplorerCommands(): { rootActions: CommandAction[] } {
         perform: () => dispatchExplorer("labonair:explorer-refresh"),
       },
       {
+        id: "explorer.hard-refresh",
+        title: "Hard Refresh File Tree (Clear Cache)",
+        subtitle: "Drops cached entries and re-fetches the root and every expanded folder from scratch",
+        section: "Explorer",
+        icon: createElement(HugeiconsIcon, { icon: Refresh01Icon, strokeWidth: 2, className: "size-4" }),
+        perform: () => dispatchExplorer("labonair:explorer-hard-refresh"),
+      },
+      {
         id: "explorer.toggle-hidden",
         title: "Toggle: Show Hidden Files (Explorer)",
         section: "Explorer",
