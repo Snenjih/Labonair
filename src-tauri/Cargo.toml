@@ -1,6 +1,6 @@
 [package]
 name = "labonair"
-version = "2.0.5"
+version = "2.0.6"
 description = "Labonair — an open-source AI-native terminal emulator"
 authors = ["Snenjih"]
 edition = "2021"
