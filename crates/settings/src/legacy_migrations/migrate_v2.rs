@@ -159,6 +159,8 @@ const LEGACY_TOP_LEVEL_KEYS: &[&str] = &[
     "backgroundBlur",
     "backgroundTintColor",
     "backgroundTintOpacity",
+    "backgroundFit",
+    "backgroundTarget",
     "barItemPlacements",
     "barItemPlacements_legacy",
     "hosts",
