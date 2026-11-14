@@ -275,8 +275,11 @@ impl FormTab {}
 
 /// Curated host-avatar icon set (`lib/icons/` in the reference). Key stored in
 /// `hosts.icon`.
-const HOST_ICONS: [(&str, IconName); 8] = [
+const HOST_ICONS: [(&str, IconName); 11] = [
     ("server", IconName::Server),
+    ("laptop", IconName::Laptop),
+    ("monitor", IconName::Monitor),
+    ("mac-studio", IconName::MacStudio),
     ("terminal", IconName::Terminal),
     ("globe", IconName::Globe),
     ("shield", IconName::Shield),
@@ -286,7 +289,8 @@ const HOST_ICONS: [(&str, IconName); 8] = [
     ("cloud", IconName::Sparkles),
 ];
 
-fn host_icon(key: Option<&str>) -> IconName {
+/// Glyph of a stored host-icon key (default: server).
+pub fn host_icon(key: Option<&str>) -> IconName {
     key.and_then(|k| HOST_ICONS.iter().find(|(n, _)| *n == k))
         .map(|(_, i)| *i)
         .unwrap_or(IconName::Server)

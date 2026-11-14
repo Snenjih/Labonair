@@ -129,6 +129,8 @@ pub struct Palette {
     /// A floating card's fill and rim, at rest and focused (`float.pane*`).
     pub pane: Hsla,
     pub pane_focused: Hsla,
+    /// A framed dock's card fill (Sidebar role, stacked over the canvas).
+    pub dock_card: Hsla,
     pub pane_line: Hsla,
     pub pane_line_focused: Hsla,
     /// The tab track pill, its rim, the selected tab's pill and the divider
@@ -168,8 +170,9 @@ impl Palette {
         let translucent = theme.surface_material();
         let f = &t.float;
         // The canvas fades with the surface material; opaque keeps the stops.
-        let canvas_alpha = VibrancyLayer::Canvas.resolve(f.canvas_top, translucent).a
-            / f.canvas_top.a.max(f32::EPSILON);
+        // Cards sit on this canvas, so both layers use the *stacked* opacity:
+        // together they are as glassy as the flat Compact surface.
+        let canvas_alpha = VibrancyLayer::Canvas.stacked_opacity_in(translucent);
         let fade = |c: Hsla| Hsla {
             a: c.a * canvas_alpha,
             ..c
@@ -183,8 +186,9 @@ impl Palette {
                 fade(f.canvas_bottom),
             ],
             canvas_tint: fade(f.canvas_tint),
-            pane: VibrancyLayer::Canvas.resolve(f.pane, translucent),
-            pane_focused: VibrancyLayer::Canvas.resolve(f.pane_focused, translucent),
+            pane: VibrancyLayer::Canvas.resolve_stacked(f.pane, translucent),
+            pane_focused: VibrancyLayer::Canvas.resolve_stacked(f.pane_focused, translucent),
+            dock_card: VibrancyLayer::Sidebar.resolve_stacked(t.sidebar.background, translucent),
             pane_line: f.pane_border,
             pane_line_focused: f.pane_border_focused,
             track: f.track,
@@ -309,6 +313,33 @@ mod tests {
     impl UiTheme for TestTheme {
         fn theme(&self) -> &Theme {
             &self.0
+        }
+    }
+
+    struct GlassTheme(Theme);
+    impl UiTheme for GlassTheme {
+        fn theme(&self) -> &Theme {
+            &self.0
+        }
+        fn metrics(&self) -> labonair_theme_tokens::ThemeMetrics {
+            labonair_theme_tokens::ThemeMetrics {
+                translucent_surfaces: true,
+                ..Default::default()
+            }
+        }
+    }
+
+    /// Comfortable layout: a card over the canvas must be exactly as glassy as
+    /// the flat Compact surface, not the compounded product of both layers.
+    #[test]
+    fn card_over_canvas_is_as_glassy_as_the_flat_surface() {
+        for theme in [Theme::dark(), Theme::light()] {
+            let c = Palette::from_theme(&GlassTheme(theme.clone()));
+            let flat = 1.0 - c.bg.a;
+            let canvas_a = c.canvas[0].a / theme.float.canvas_top.a;
+            let stacked = (1.0 - canvas_a) * (1.0 - c.pane.a / theme.float.pane.a);
+            assert!(c.pane.a < 1.0 && c.canvas[0].a < 1.0 && c.dock_card.a < 1.0);
+            assert!((stacked - flat).abs() < 1e-4, "{stacked} vs {flat}");
         }
     }
 

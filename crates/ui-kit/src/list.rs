@@ -57,6 +57,7 @@ pub fn list_separator(border: Hsla) -> Div {
 pub struct ListItem {
     id: ElementId,
     icon: Option<IconName>,
+    leading: Option<AnyElement>,
     trailing: Option<AnyElement>,
     selected: bool,
     disabled: bool,
@@ -75,6 +76,7 @@ impl ListItem {
         Self {
             id: id.into(),
             icon: None,
+            leading: None,
             trailing: None,
             selected: false,
             disabled: false,
@@ -88,6 +90,12 @@ impl ListItem {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// A custom leading element (e.g. a tab tile) replacing the icon.
+    pub fn leading(mut self, el: impl IntoElement) -> Self {
+        self.leading = Some(el.into_any_element());
         self
     }
 
@@ -147,6 +155,7 @@ impl IntoElement for ListItem {
 
     fn into_element(self) -> Self::Element {
         let c = self.c;
+        let leading_none = self.leading.is_none();
         let text_color = if self.disabled { c.muted } else { c.fg };
         let mut row = div()
             .id(self.id.clone())
@@ -172,7 +181,8 @@ impl IntoElement for ListItem {
                 px(c.radius.md),
                 px(0.0),
             ))
-            .when_some(self.icon, |d, icon| {
+            .when_some(self.leading, |d, el| d.child(el))
+            .when_some(self.icon.filter(|_| leading_none), |d, icon| {
                 d.child(icon.svg(text_color).size(px(14.0)))
             })
             .children(self.children);

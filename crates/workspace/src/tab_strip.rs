@@ -22,9 +22,11 @@ use labonair_ui_kit::{
     TabTileSpec, Tooltip,
 };
 
+use crate::pane::PaneId;
 use crate::pane_dnd::Payload;
 use crate::pane_drop::tab_join_highlight;
 use crate::pane_group_naming::group_label;
+use crate::pane_kind::PaneKind;
 use crate::pane_view::PaneDragChip;
 use crate::tabs::{Tab, TabDiagnosticStatus, TabGitStatus, TabKind};
 use crate::{relative_path_under_root, DraggedPane, DraggedTab, NewTabSubmenu, Workspace};
@@ -39,8 +41,9 @@ pub(crate) struct TabDisplay {
     pub tooltip: SharedString,
     /// Kind icon, shown on non-editor tabs and in the sidebar.
     pub icon: IconName,
-    /// Gorex-style program tile for a single-pane tab (`None` for groups).
-    pub tile: Option<TabTileSpec>,
+    /// Gorex-style tiles, one per pane (focused pane first, at most three
+    /// shown). Empty only if the tab has no pane at all.
+    pub tiles: Vec<TabTileSpec>,
     /// Git status marker of an editor tab, when enabled in settings.
     pub status_color: Option<Hsla>,
     /// Diagnostics marker of an editor tab, when enabled in settings.
@@ -94,17 +97,12 @@ pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisp
         TabDiagnosticStatus::Error => c.error,
         TabDiagnosticStatus::Warning => c.warning,
     });
-    // Agent integration: a single-pane terminal tab running a coding agent
-    // swaps its icon for the agent's logo and shows its status.
+    // Agent integration: a terminal pane running a coding agent shows the
+    // agent's logo; the status badge is the most urgent one of the tab.
     let agent = workspace.tab_agent(tab.id);
-    let tile = match agent {
-        Some(a) => Some(agent_tile(a.agent)),
-        None => group
-            .is_none()
-            .then(|| kind_tile(tab.kind, tab.data.host_id.is_some())),
-    };
+    let tiles = workspace.tab_tiles(tab, &panes, cx);
     TabDisplay {
-        tile,
+        tiles,
         agent_status: agent.and_then(|a| a.status),
         tooltip: label.clone(),
         label,
@@ -132,6 +130,62 @@ pub(crate) fn agent_tile(agent: labonair_terminal::agent::Agent) -> TabTileSpec 
         Agent::Codex => TabTileSpec::codex(),
         Agent::Pi => TabTileSpec::pi(),
         Agent::OpenCode => TabTileSpec::opencode(),
+    }
+}
+
+impl Workspace {
+    /// Tile of one pane: detected agent, SSH host, foreground program or the
+    /// pane kind's tile.
+    pub(crate) fn pane_tile(&self, pane: PaneId, cx: &App) -> TabTileSpec {
+        if let Some(a) = self.agents.get(&pane) {
+            return agent_tile(a.agent);
+        }
+        let kind = self.pane_kind(pane, cx);
+        if kind != PaneKind::Terminal {
+            return kind_tile(kind.tab_kind(), false);
+        }
+        if let Some(host) = self.pane_ssh_host(pane) {
+            let tile = TabTileSpec::ssh();
+            let icon = self
+                .host_view
+                .picker_rows(cx)
+                .into_iter()
+                .find(|r| r.id == host)
+                .and_then(|r| r.icon);
+            return match icon {
+                Some(key) => tile.with_glyph(labonair_hosts_ui::host_icon(Some(&key))),
+                None => tile,
+            };
+        }
+        self.programs
+            .get(&pane)
+            .copied()
+            .unwrap_or_else(TabTileSpec::terminal)
+    }
+
+    /// Host id of the SSH session shown by terminal pane `pane`.
+    pub(crate) fn pane_ssh_host(&self, pane: PaneId) -> Option<String> {
+        let session = &self.panes.get(&pane)?.session_id;
+        self.ssh_tabs.get(session).map(|t| t.host_id.clone())
+    }
+
+    /// Tiles of a tab: the focused pane in front, the rest behind in visual
+    /// order. A tab without panes falls back to its kind.
+    pub(crate) fn tab_tiles(&self, tab: &Tab, panes: &[PaneId], cx: &App) -> Vec<TabTileSpec> {
+        if panes.is_empty() {
+            return vec![kind_tile(tab.kind, tab.data.host_id.is_some())];
+        }
+        let front = self
+            .layouts
+            .get(&tab.id)
+            .and_then(|l| l.active)
+            .filter(|a| panes.contains(a))
+            .unwrap_or(panes[0]);
+        std::iter::once(front)
+            .chain(panes.iter().copied().filter(|p| *p != front))
+            .take(labonair_ui_kit::MAX_STACKED_TILES)
+            .map(|p| self.pane_tile(p, cx))
+            .collect()
     }
 }
 
@@ -265,9 +319,10 @@ impl Workspace {
         let view = cx.entity();
         let mut tab_item = tab_item(format!("workspace-tab-{id}"), c, label.clone());
         if sidebar || tab.kind != TabKind::Editor || display.pane_count > 1 {
-            tab_item = match display.tile {
-                Some(tile) => tab_item.leading_tile(tile),
-                None => tab_item.leading(display.icon),
+            tab_item = if display.tiles.is_empty() {
+                tab_item.leading(display.icon)
+            } else {
+                tab_item.leading_tiles(display.tiles.clone())
             };
         }
         if let Some(status) = display.agent_status {
@@ -313,7 +368,7 @@ impl Workspace {
                 view.update(app, |this, cx| this.request_close(id, window, cx));
             });
         }
-        let tile = display.tile;
+        let tile = display.tiles.first().copied();
         let renaming = self.rename_tab.as_ref().is_some_and(|(rid, _)| *rid == id);
         let (join, strip_end) = self.tab_drop_hints(id, cx);
         let marker = self

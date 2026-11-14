@@ -79,6 +79,7 @@ mod tests {
                 id: "prod".to_string(),
                 name: "Production".to_string(),
                 subtitle: "deploy@prod.example.com:22".to_string(),
+                icon: None,
             }],
         );
         let row = &snapshot.items[0];
@@ -107,6 +108,7 @@ mod tests {
             id: "h".into(),
             name: "H".into(),
             subtitle: String::new(),
+            icon: None,
         };
         let snapshot = host_submenu(
             "sftp-hosts",

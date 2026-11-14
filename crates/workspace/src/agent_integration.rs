@@ -85,9 +85,18 @@ impl Workspace {
         let ids: Vec<_> = self.panes.keys().copied().collect();
         for id in ids {
             let view = self.panes[&id].view.read(cx);
+            // Foreground program tile (node, python, htop ...); idle shell = none.
+            let foreground = view.handle().foreground_process();
+            let program = foreground
+                .as_ref()
+                .and_then(|p| crate::program_tile::program_tile(&p.name));
+            match program {
+                Some(tile) => changed |= self.programs.insert(id, tile) != Some(tile),
+                None => changed |= self.programs.remove(&id).is_some(),
+            }
             // SSH panes have no foreground process: fall back to the screen.
             let is_ssh = self.ssh_tabs.values().any(|t| t.pane_id == id);
-            let agent = match view.handle().foreground_process() {
+            let agent = match foreground {
                 Some(p) => Agent::detect(&p.name),
                 None if is_ssh => Agent::detect_screen(
                     &view.shell_title().unwrap_or_default(),

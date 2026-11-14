@@ -10,8 +10,8 @@ use gpui::{
 
 use crate::animation::{state_fill, MotionExt};
 use crate::{
-    icon_button_builder, indicator, tab_tile, ButtonSize, ButtonVariant, IconButtonShape, IconName,
-    IndicatorSize, Palette, TabTileSpec, DISABLED_OPACITY,
+    icon_button_builder, indicator, tab_tile_stack, ButtonSize, ButtonVariant, IconButtonShape,
+    IconName, IndicatorSize, Palette, TabTileSpec, DISABLED_OPACITY,
 };
 
 type TabAction = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -52,7 +52,7 @@ pub struct TabItemBuilder {
     label: SharedString,
     label_content: Option<AnyElement>,
     leading: Option<IconName>,
-    leading_tile: Option<TabTileSpec>,
+    leading_tiles: Vec<TabTileSpec>,
     layout: TabLayout,
     style: TabStyle,
     selected: bool,
@@ -82,7 +82,7 @@ pub fn tab_item(
         label: label.into(),
         label_content: None,
         leading: None,
-        leading_tile: None,
+        leading_tiles: Vec::new(),
         layout: TabLayout::Horizontal,
         style: TabStyle::Classic,
         selected: false,
@@ -119,7 +119,13 @@ impl TabItemBuilder {
 
     /// A Gorex-style program tile in place of the plain leading glyph.
     pub fn leading_tile(mut self, tile: TabTileSpec) -> Self {
-        self.leading_tile = Some(tile);
+        self.leading_tiles = vec![tile];
+        self
+    }
+
+    /// A stack of up to three tiles, the first in front (pane-group tab).
+    pub fn leading_tiles(mut self, tiles: Vec<TabTileSpec>) -> Self {
+        self.leading_tiles = tiles;
         self
     }
 
@@ -215,7 +221,7 @@ impl TabItemBuilder {
             label,
             label_content,
             leading,
-            leading_tile,
+            leading_tiles,
             layout,
             style,
             selected,
@@ -322,8 +328,8 @@ impl TabItemBuilder {
             ))
         };
 
-        if let Some(tile) = leading_tile {
-            row = row.child(tab_tile(tile, &palette));
+        if !leading_tiles.is_empty() {
+            row = row.child(tab_tile_stack(&leading_tiles, &palette));
         } else if let Some(icon) = leading {
             row = row.child(
                 div().flex_shrink_0().child(

@@ -56,6 +56,7 @@ pub(crate) mod pane_menu;
 pub mod pane_motion;
 pub mod pane_ops;
 pub mod pane_view;
+mod program_tile;
 pub mod project_multibuffer;
 pub mod project_search;
 pub mod recent_projects;
@@ -730,6 +731,8 @@ pub struct Workspace {
     pub(crate) panes: HashMap<PaneId, PaneEntry>,
     /// Coding agent currently in the foreground of a terminal pane.
     pub(crate) agents: HashMap<PaneId, agent_integration::AgentPane>,
+    /// Foreground-program tile per terminal pane (no entry = idle shell).
+    pub(crate) programs: HashMap<PaneId, labonair_ui_kit::TabTileSpec>,
     /// Kind / title / dirty metadata of every pane (the pure half of the
     /// `PaneId`-keyed store; the views live in the maps below).
     pub(crate) pane_meta: crate::pane_kind::PaneMetaStore,
@@ -1107,6 +1110,7 @@ impl Workspace {
             layouts: HashMap::new(),
             panes: HashMap::new(),
             agents: HashMap::new(),
+            programs: HashMap::new(),
             editors: HashMap::new(),
             project_search_owner: None,
             project_search_task: None,
@@ -7437,7 +7441,7 @@ impl Workspace {
             // vertical gap margin would overflow into the statusbar.
             .when(!is_bottom && !framed, |d| d.h_full())
             .when(is_bottom, |d| d.w_full())
-            .bg(sidebar_bg)
+            .bg(if framed { card.dock_card } else { sidebar_bg })
             .text_color(sidebar_fg)
             .when(framed, |d| {
                 // GPUI clips to rectangles: the inset keeps square panel

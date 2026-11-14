@@ -212,7 +212,7 @@ impl Workspace {
                     icon: entry.icon,
                 };
                 ListItem::new(("tab-hover-pane", pane), c)
-                    .icon(entry.icon)
+                    .leading(labonair_ui_kit::tab_tile(self.pane_tile(pane, cx), &c))
                     .selected(entry.active)
                     .child(
                         div()

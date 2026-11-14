@@ -12,6 +12,14 @@ impl Workspace {
             return;
         };
         let (cwd, process) = entry.view.read(cx).shell_meta();
+        // Header glyph follows the tile: agent, SSH host or foreground program.
+        if let Some(a) = self.agents.get(&pane) {
+            spec.icon = crate::agent_integration::icon(a.agent);
+        } else if let Some(tile) = self.programs.get(&pane) {
+            spec.icon = tile.glyph;
+        } else if self.pane_ssh_host(pane).is_some() {
+            spec.icon = self.pane_tile(pane, cx).glyph;
+        }
         if let Some(ssh) = self.ssh_tabs.get(&entry.session_id) {
             let host = self
                 .host_view

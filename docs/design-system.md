@@ -491,6 +491,13 @@ views embedded in a Settings card are row stacks (rows separated by
 uses `ListItem` rows with a `category_chip`, the selected row keeps the sunken
 fill and semibold label, and section anchors are indented muted rows.
 
+In the Comfortable (floating) layout the window canvas and every card on it
+(pane frame, framed dock) are two stacked translucent layers. Each uses
+`VibrancyLayer::stacked_opacity_in` / `resolve_stacked` (`1 - (1 - a)^2` equals
+the role's single-layer opacity), so a card over the canvas is exactly as glassy
+as the flat Compact surface; using the full opacity on both compounds to
+near-opaque and hides the glass.
+
 ## Floating tabs
 
 `TabStyle::Floating` (default `Classic`) renders tab items as 28 px blocks;
@@ -533,6 +540,27 @@ tab (active or not, strip or sidebar) opens, after 350 ms, a 240 px
 `popover_with_exit` list of its panes (`ListItem`: icon, title, check on the
 active one); a click focuses the pane. It never opens over a context menu,
 another popover, a rename or a drag, and it replaces the tooltip.
+
+Tab tiles (`ui-kit/src/tab_tile.rs`, after Gorex `tabs.go`/`programs.go`). A
+tab shows one 18 px tile per pane instead of a plain icon: the focused pane in
+front with its glyph, up to two more peeking out behind it (5 px step, 0.8 px
+height inset, shadow and rim); more than three panes show three. A pane's tile
+is, in order: the detected coding agent (Claude, Codex, Pi, OpenCode; status
+badge after the title), an SSH host (SSH tile with the host's picked glyph:
+server, laptop, monitor, mac-studio ...), the foreground program of a local
+terminal (`workspace/src/program_tile.rs`: node, python, git/tig/lazygit,
+vim/nvim/hx/emacs, htop/btop, docker, npm/pnpm/yarn, go/cargo, psql/mysql ...;
+an unknown program gets a stable hashed colour with the terminal glyph; an
+idle shell the green terminal tile), else the pane kind (editor, preview,
+SFTP, git graph, diff, keymap ...). The tab strip, the Tabs sidebar, the
+spaces popover and the pane hover list use the same tiles; the pane header
+glyph follows the program/agent/host glyph. The own glyphs `activity`, `cpu`,
+`hexagon`, `container`, `laptop`, `monitor`, `mac_studio`, `snake_blocks` are
+hand-drawn in the Lucide style (24 px grid, `currentColor`). Not taken over
+from Gorex: the third-party brand logos (`assets/brands`: trademarks, not
+copied; programs use an abstract glyph on a brand-ish colour instead) and the
+Gorex-only UI icons that Labonair already has in its Zed/Lucide set (check,
+copy, folder-open, git-branch, globe, keyboard, search, server, terminal, x ...).
 
 Drag and drop. A dragged tab or pane shows the shared mini chip (`PaneDragChip`:
 icon and title on a `popover` surface, offset 12 px from the pointer). Over a

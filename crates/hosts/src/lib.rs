@@ -45,6 +45,8 @@ pub struct HostPickerRow {
     pub id: String,
     pub name: String,
     pub subtitle: String,
+    /// Stored host-icon key (`hosts.icon`), if the user picked one.
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -96,6 +98,7 @@ impl Host {
                 self.name.clone()
             },
             subtitle: identity,
+            icon: self.icon.clone().filter(|i| !i.is_empty()),
         }
     }
 }
@@ -143,6 +146,7 @@ mod tests {
                 id: "host-1".to_string(),
                 name: "Production".to_string(),
                 subtitle: "deploy@prod.example.com:2222".to_string(),
+                icon: None,
             }
         );
         assert_eq!(

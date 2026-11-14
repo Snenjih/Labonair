@@ -441,7 +441,7 @@ impl Workspace {
                 let display = crate::tab_strip::tab_display(tab, self, cx);
                 rows.push(
                     ListItem::new(("space-tab", tab_id), c)
-                        .icon(display.icon)
+                        .leading(labonair_ui_kit::tab_tile_stack(&display.tiles, &c))
                         .child(
                             div()
                                 .flex_1()

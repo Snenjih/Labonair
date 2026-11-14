@@ -3,9 +3,8 @@
 //! `drawTile`). The caller maps a tab kind / detected program to a
 //! [`TabTileSpec`]; the ui-kit owns only the look.
 
-use gpui::{
-    div, linear_color_stop, linear_gradient, px, rgb, Div, Hsla, ParentElement, Pixels, Styled,
-};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{div, linear_color_stop, linear_gradient, px, rgb, Div, Hsla, ParentElement, Styled};
 
 use crate::{IconName, Palette};
 
@@ -106,6 +105,28 @@ impl TabTileSpec {
     pub fn onboarding() -> Self {
         Self::solid(IconName::Home, tile_colors::ONBOARDING)
     }
+
+    /// A coloured tile for a detected program (`bg` as `0xRRGGBB`).
+    pub fn program(glyph: IconName, bg: u32, fg: u32) -> Self {
+        Self {
+            glyph,
+            bg: rgb(bg).into(),
+            fg: rgb(fg).into(),
+            outlined: false,
+        }
+    }
+
+    /// Same tile with another glyph (host-type icon on the SSH tile).
+    pub fn with_glyph(mut self, glyph: IconName) -> Self {
+        self.glyph = glyph;
+        self
+    }
+
+    /// Light tile with a dark outline.
+    pub fn outlined(mut self) -> Self {
+        self.outlined = true;
+        self
+    }
 }
 
 /// Tile edge length and glyph size (Gorex: 11px glyph in a ~18px tile).
@@ -114,14 +135,63 @@ const GLYPH_SIZE: f32 = 11.0;
 
 /// Render a tile.
 pub fn tab_tile(spec: TabTileSpec, c: &Palette) -> Div {
+    tile_box(spec, c, TILE_SIZE, true)
+}
+
+/// Horizontal peek of each tile behind the front one (Gorex `tileStep`).
+const TILE_STEP: f32 = 5.0;
+/// Height lost per tile behind the front one, top and bottom (Gorex `inset`).
+const TILE_INSET: f32 = 0.8;
+/// At most this many tiles are stacked.
+pub const MAX_STACKED_TILES: usize = 3;
+
+/// Width of a stack of `n` tiles (clamped to [`MAX_STACKED_TILES`]).
+pub fn stack_width(n: usize) -> f32 {
+    TILE_SIZE + TILE_STEP * (n.clamp(1, MAX_STACKED_TILES) - 1) as f32
+}
+
+/// Gorex-style stack: `specs[0]` in front with its glyph, up to two more
+/// peeking out behind it, each further back a little shorter. With one spec
+/// this is just [`tab_tile`].
+pub fn tab_tile_stack(specs: &[TabTileSpec], c: &Palette) -> Div {
+    let Some((front, rest)) = specs.split_first() else {
+        return div();
+    };
+    let back = &rest[..rest.len().min(MAX_STACKED_TILES - 1)];
+    if back.is_empty() {
+        return tab_tile(*front, c);
+    }
+    let mut stack = div()
+        .relative()
+        .flex_none()
+        .w(px(stack_width(specs.len())))
+        .h(px(TILE_SIZE));
+    for (i, spec) in back.iter().enumerate().rev() {
+        let inset = TILE_INSET * (i + 1) as f32;
+        stack = stack.child(
+            tile_box(*spec, c, TILE_SIZE - 2.0 * inset, false)
+                .absolute()
+                .left(px(TILE_STEP * (i + 1) as f32))
+                .top(px(inset)),
+        );
+    }
+    stack.child(
+        tile_box(*front, c, TILE_SIZE, true)
+            .absolute()
+            .left_0()
+            .top_0(),
+    )
+}
+
+fn tile_box(spec: TabTileSpec, c: &Palette, height: f32, glyph: bool) -> Div {
     let radius = px(4.5);
     let sheen_from = gpui::hsla(0.0, 0.0, 1.0, 0.18);
     let sheen_to = gpui::hsla(0.0, 0.0, 1.0, 0.0);
-    let size: Pixels = px(TILE_SIZE);
     div()
         .relative()
         .flex_none()
-        .size(size)
+        .w(px(TILE_SIZE))
+        .h(px(height))
         .flex()
         .items_center()
         .justify_center()
@@ -150,7 +220,9 @@ pub fn tab_tile(spec: TabTileSpec, c: &Palette) -> Div {
                     linear_color_stop(sheen_to, 0.6),
                 )),
         )
-        .child(spec.glyph.svg(spec.fg).size(px(GLYPH_SIZE)))
+        .when(glyph, |d| {
+            d.child(spec.glyph.svg(spec.fg).size(px(GLYPH_SIZE)))
+        })
 }
 
 /// The light rim around a tile: a faint foreground tint, readable on both
@@ -186,5 +258,16 @@ mod tests {
         ] {
             let _ = tab_tile(spec, &c);
         }
+    }
+
+    #[test]
+    fn stack_is_capped_at_three_tiles() {
+        assert_eq!(stack_width(1), TILE_SIZE);
+        assert_eq!(stack_width(3), TILE_SIZE + 2.0 * TILE_STEP);
+        assert_eq!(stack_width(9), stack_width(3));
+        let c = test_palette();
+        let specs = vec![TabTileSpec::terminal(); 5];
+        let _ = tab_tile_stack(&specs, &c);
+        let _ = tab_tile_stack(&[], &c);
     }
 }

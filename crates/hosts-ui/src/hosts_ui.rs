@@ -16,7 +16,7 @@ pub(crate) mod theme {
 
 mod hosts;
 
-pub use hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
+pub use hosts::{host_icon, ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 
 use gpui::Entity;
 use labonair_settings::{
