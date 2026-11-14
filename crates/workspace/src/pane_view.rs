@@ -485,7 +485,9 @@ impl Workspace {
         let body = Self::pane_context(body).into_any_element();
         // Comfortable (framed) panes: a small breathing margin around the
         // terminal grid on every side.
-        let body = if ctx.style.is_framed() && self.pane_kind(pane, cx) == crate::pane_kind::PaneKind::Terminal {
+        let body = if ctx.style.is_framed()
+            && self.pane_kind(pane, cx) == crate::pane_kind::PaneKind::Terminal
+        {
             div().size_full().p(px(4.0)).child(body).into_any_element()
         } else {
             body
