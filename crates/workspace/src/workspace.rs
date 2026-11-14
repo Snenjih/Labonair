@@ -166,7 +166,7 @@ use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::{CursorStyle as PrefCursorStyle, SessionHostMode};
 use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
-    h_stack, indicator, BlinkCursor, ButtonSize, ButtonVariant, IndicatorSize, Palette,
+    h_stack, indicator, BlinkCursor, ButtonSize, ButtonVariant, IndicatorSize, Palette, Severity,
 };
 
 fn editor_tab_git_status(
@@ -3688,9 +3688,13 @@ impl Workspace {
                             .save_remote_edit(SshSessionId::new(sid), rpath, tpath)
                             .await
                     });
-                    cx.spawn(async move |_this, _cx| {
+                    cx.spawn(async move |_this, cx| {
                         if let Ok(Err(e)) = jh.await {
                             tracing::warn!(%e, "save_remote_edit failed");
+                            cx.update(|cx| {
+                                Self::report_remote_file_error("Could not save remote file", e, cx)
+                            })
+                            .ok();
                         }
                     })
                     .detach();
@@ -5465,30 +5469,12 @@ impl Workspace {
                 remote_path,
                 host_id,
             } => {
-                let service = self.ssh_remote_file.clone();
-                let (sid, rpath, hid) = (session_id.clone(), remote_path.clone(), host_id.clone());
-                let (jh_sid, jh_rpath) = (sid.clone(), rpath.clone());
-                let jh = self.tokio.spawn(async move {
-                    service
-                        .prepare_remote_edit(SshSessionId::new(jh_sid), jh_rpath, None)
-                        .await
-                });
-                cx.spawn(async move |this, cx| {
-                    let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
-                    let _ = this.update(cx, |this, cx| match res {
-                        Ok(temp_path) => {
-                            this.pending_open.push(PendingOpen::RemoteEdit {
-                                session_id: sid,
-                                remote_path: rpath,
-                                host_id: hid,
-                                temp_path,
-                            });
-                            cx.notify();
-                        }
-                        Err(e) => tracing::warn!(%e, "prepare_remote_edit failed"),
-                    });
-                })
-                .detach();
+                self.stage_remote_edit(
+                    session_id.clone(),
+                    remote_path.clone(),
+                    host_id.clone(),
+                    cx,
+                );
             }
             SftpEvent::Enqueue {
                 session_id,
@@ -5519,6 +5505,86 @@ impl Workspace {
                 cx.notify();
             }
         }
+    }
+
+    /// Open `remote_path` of the live SSH session `ssh_id` (Explorer sidebar
+    /// on an SSH tab) in the editor; saving uploads it back to the host.
+    pub fn open_remote_file(
+        &mut self,
+        ssh_id: String,
+        remote_path: String,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(host_id) = self
+            .ssh_tabs
+            .values()
+            .find(|t| t.ssh_id == ssh_id)
+            .map(|t| t.host_id.clone())
+        else {
+            return;
+        };
+        self.stage_remote_edit(ssh_id, remote_path, host_id, cx);
+    }
+
+    /// Download a remote file into a local temp copy off-thread, then queue it
+    /// for [`Self::open_remote_edit`]. An already-open copy is just focused.
+    fn stage_remote_edit(
+        &mut self,
+        session_id: String,
+        remote_path: String,
+        host_id: String,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(tab_id) = self
+            .remote_edits
+            .iter()
+            .find(|(_, re)| re.session_id == session_id && re.remote_path == remote_path)
+            .map(|(id, _)| *id)
+        {
+            self.tabs.update(cx, |s, cx| s.set_active(tab_id, cx));
+            return;
+        }
+        let service = self.ssh_remote_file.clone();
+        let (sid, rpath, hid) = (session_id, remote_path, host_id);
+        let (jh_sid, jh_rpath) = (sid.clone(), rpath.clone());
+        let jh = self.tokio.spawn(async move {
+            service
+                .prepare_remote_edit(SshSessionId::new(jh_sid), jh_rpath, None)
+                .await
+        });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let _ = this.update(cx, |this, cx| match res {
+                Ok(temp_path) => {
+                    this.pending_open.push(PendingOpen::RemoteEdit {
+                        session_id: sid,
+                        remote_path: rpath,
+                        host_id: hid,
+                        temp_path,
+                    });
+                    cx.notify();
+                }
+                Err(e) => {
+                    tracing::warn!(%e, "prepare_remote_edit failed");
+                    Self::report_remote_file_error("Could not open remote file", e, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn report_remote_file_error(title: &'static str, err: String, cx: &mut App) {
+        labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+            center.push(
+                labonair_notifications::Notification::error(
+                    title,
+                    "The file could not be transferred over SSH.",
+                )
+                .source("ssh")
+                .details(err),
+                cx,
+            );
+        });
     }
 
     /// Open an editor tab on a remote-edit temp copy and register it so a
@@ -5934,6 +6000,15 @@ impl Workspace {
             self.host_view.jump_host_label(&host_id, cx),
         );
         let view = self.new_terminal_view(handle, window, cx);
+        view.update(cx, |v, _| v.set_reconnectable(true));
+        cx.subscribe_in(
+            &view,
+            window,
+            move |this, _, _: &crate::views::terminal::ReconnectRequested, window, cx| {
+                this.reconnect_ssh_pane(pane_id, window, cx)
+            },
+        )
+        .detach();
         self.panes.insert(
             pane_id,
             PaneEntry {
@@ -5985,6 +6060,38 @@ impl Workspace {
         }
         self.focus_active(window, cx);
         cx.notify();
+    }
+
+    /// Enter in a closed SSH pane: start a fresh connection to the same host
+    /// in that pane (a closed remote session cannot be restarted in place).
+    fn reconnect_ssh_pane(&mut self, pane_id: PaneId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((old_session, host_id, tab_id, old_ssh_id)) = self
+            .ssh_tabs
+            .iter()
+            .find(|(_, t)| t.pane_id == pane_id)
+            .map(|(sid, t)| (*sid, t.host_id.clone(), t.tab_id, t.ssh_id.clone()))
+        else {
+            return;
+        };
+        let Some((ssh_id, session_id, feed, handle)) = self.new_ssh_session(&host_id, cx) else {
+            return;
+        };
+        self.ssh_tabs.remove(&old_session);
+        self.ssh_connection
+            .update(cx, |s, cx| s.remove(&old_ssh_id, cx));
+        self.registry.close(old_session);
+        self.tabs.update(cx, |s, cx| {
+            if let Some(tab) = s
+                .get(tab_id)
+                .filter(|t| t.data.session_id == Some(old_session))
+            {
+                let cwd = tab.data.cwd.clone();
+                s.set_session(tab_id, session_id, cwd, cx);
+            }
+        });
+        self.attach_ssh_terminal(
+            host_id, ssh_id, session_id, feed, handle, pane_id, tab_id, window, cx,
+        );
     }
 
     /// (Re)run `ssh_connect` for `ssh_id`, streaming remote output into `feed`.
@@ -6411,7 +6518,6 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = self.theme.read(cx);
-        let core = theme.theme().core.clone();
         let (bg, card, fg, border, accent, muted) = (
             theme.background(),
             theme.card(),
@@ -6421,7 +6527,15 @@ impl Workspace {
             theme.muted_foreground(),
         );
         let c = Palette::from_theme(theme);
-        let destructive = core.destructive;
+        let severity = match entry.state {
+            ConnectionState::Error => Severity::Error,
+            ConnectionState::WaitingTrust if entry.trust_mismatch => Severity::Error,
+            ConnectionState::WaitingTrust => Severity::Warning,
+            ConnectionState::Connected => Severity::Success,
+            _ => Severity::Info,
+        };
+        let sev_color = severity.color(c);
+        let failed = entry.state == ConnectionState::Error;
         let ssh_id = entry.session_id.clone();
         let is_sftp = matches!(entry.kind, ConnectionKind::Sftp);
         let tab_id = self
@@ -6446,10 +6560,18 @@ impl Workspace {
                 .gap_2()
                 .children(ConnStage::ORDER.iter().enumerate().map(|(i, &stage)| {
                     let status = entry.stage_status(stage);
+                    // Done = success, in progress = info, the stage a failed
+                    // connection stopped at = error.
+                    let active_color = if failed { c.error } else { c.info };
                     let (dot_bg, dot_fg, txt) = match status {
-                        StageStatus::Done => (accent, bg, accent),
-                        StageStatus::Active => (accent.opacity(0.2), accent, fg),
+                        StageStatus::Done => (c.success, bg, c.success),
+                        StageStatus::Active => (active_color.opacity(0.2), active_color, fg),
                         StageStatus::Pending => (gpui::transparent_black(), muted, muted),
+                    };
+                    let ring = match status {
+                        StageStatus::Done => c.success,
+                        StageStatus::Active => active_color,
+                        StageStatus::Pending => border,
                     };
                     div()
                         .flex()
@@ -6460,11 +6582,7 @@ impl Workspace {
                                 .size(px(18.0))
                                 .rounded_full()
                                 .border_1()
-                                .border_color(if status == StageStatus::Pending {
-                                    border
-                                } else {
-                                    accent
-                                })
+                                .border_color(ring)
                                 .bg(dot_bg)
                                 .flex()
                                 .items_center()
@@ -6507,10 +6625,11 @@ impl Workspace {
             .unwrap_or_default();
 
         let (card_title, card_body): (String, String) = match &entry.state {
-            ConnectionState::Error => (
-                "Connection failed".to_string(),
-                "See Notifications for connection details.".to_string(),
-            ),
+            ConnectionState::Error => {
+                let (title, hint) =
+                    crate::ssh_connection::classify_error(entry.error.as_deref().unwrap_or(""));
+                (title.to_string(), hint.to_string())
+            }
             ConnectionState::WaitingTrust => (
                 if entry.trust_mismatch {
                     "Host key CHANGED".to_string()
@@ -6630,13 +6749,21 @@ impl Workspace {
             }
         }
 
-        let card_border = if matches!(entry.state, ConnectionState::Error)
-            || entry.trust_mismatch && entry.state == ConnectionState::WaitingTrust
-        {
-            destructive
-        } else {
-            border
-        };
+        let card_border = sev_color.opacity(0.5);
+        // The raw error text, kept verbatim in a monospace block so the user
+        // can read or copy it (the title/hint above only summarise it).
+        let error_detail = entry.error.clone().filter(|_| failed).map(|e| {
+            div()
+                .w_full()
+                .p_2()
+                .rounded_md()
+                .bg(c.error.opacity(0.08))
+                .font_family("monospace")
+                .text_size(px(11.0))
+                .text_color(fg)
+                .whitespace_normal()
+                .child(SharedString::from(e))
+        });
 
         let state_card = div()
             .track_focus(&self.prompt_focus)
@@ -6652,10 +6779,17 @@ impl Workspace {
             .border_1()
             .border_color(card_border)
             .child(
-                div()
-                    .text_sm()
-                    .text_color(fg)
-                    .child(SharedString::from(card_title)),
+                h_stack()
+                    .gap_2()
+                    .when_some(severity.icon(), |d, icon| {
+                        d.child(icon.svg(sev_color).size(px(14.0)))
+                    })
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(if failed { sev_color } else { fg })
+                            .child(SharedString::from(card_title)),
+                    ),
             )
             .child(
                 div()
@@ -6664,6 +6798,7 @@ impl Workspace {
                     .whitespace_normal()
                     .child(SharedString::from(card_body)),
             )
+            .children(error_detail)
             .child(actions);
 
         // ── live connection log ───────────────────────────────────────────

@@ -737,6 +737,12 @@ pub(crate) fn bootstrap(
             },
             explorer_remote,
         )
+        .with_open_remote_file({
+            let ws = ws.clone();
+            move |ssh_id, path, _window, cx| {
+                ws.update(cx, |w, cx| w.open_remote_file(ssh_id, path, cx));
+            }
+        })
         .with_follow(
             {
                 let ws = ws.clone();

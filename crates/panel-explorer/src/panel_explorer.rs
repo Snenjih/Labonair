@@ -1679,8 +1679,11 @@ impl ExplorerView {
     }
 
     fn open_file(&mut self, path: &Path, peek: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_remote() {
-            self.notify_remote_unsupported("Opening remote files", cx);
+        if let Some(ssh_id) = self.model.remote_ssh_id.clone() {
+            let path = path.to_string_lossy().to_string();
+            if !self.host.open_remote_file(ssh_id, path, window, cx) {
+                self.notify_remote_unsupported("Opening remote files", cx);
+            }
             return;
         }
         let path = path.to_string_lossy().to_string();

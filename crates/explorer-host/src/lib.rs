@@ -26,6 +26,7 @@ use gpui::{App, Window};
 type OpenFileFn = Rc<dyn Fn(String, bool, &mut Window, &mut App)>;
 type OpenTerminalFn = Rc<dyn Fn(String, &mut Window, &mut App)>;
 type OpenPreviewFn = Rc<dyn Fn(String, &mut Window, &mut App)>;
+type OpenRemoteFileFn = Rc<dyn Fn(String, String, &mut Window, &mut App)>;
 type ActiveFilePathFn = Rc<dyn Fn(&App) -> Option<String>>;
 type FollowStateFn = Rc<dyn Fn(&App) -> bool>;
 type ToggleFollowFn = Rc<dyn Fn(&mut App)>;
@@ -83,6 +84,7 @@ pub struct ExplorerHost {
     open_preview: OpenPreviewFn,
     active_file_path: ActiveFilePathFn,
     remote: Arc<dyn RemoteExplorerService>,
+    open_remote_file: Option<OpenRemoteFileFn>,
     follow: Option<(FollowStateFn, ToggleFollowFn)>,
 }
 
@@ -119,7 +121,36 @@ impl ExplorerHost {
             open_preview: Rc::new(open_preview),
             active_file_path: Rc::new(active_file_path),
             remote,
+            open_remote_file: None,
             follow: None,
+        }
+    }
+
+    /// Wire how a file of a remote (SSH) Explorer root is opened:
+    /// `(ssh session id, remote path)`.
+    pub fn with_open_remote_file(
+        mut self,
+        open: impl Fn(String, String, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.open_remote_file = Some(Rc::new(open));
+        self
+    }
+
+    /// Open `path` of the SSH session `ssh_id` in an editor tab. Returns
+    /// `false` when the host has no remote-open wiring.
+    pub fn open_remote_file(
+        &self,
+        ssh_id: String,
+        path: String,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        match &self.open_remote_file {
+            Some(open) => {
+                open(ssh_id, path, window, cx);
+                true
+            }
+            None => false,
         }
     }
 

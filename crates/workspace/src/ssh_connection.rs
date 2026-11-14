@@ -223,6 +223,66 @@ pub fn detect_stage(line: &str) -> Option<(usize, bool)> {
     }
 }
 
+/// Map a raw connection error to a clear `(title, hint)` pair for the error
+/// card. The raw text is still shown as the detail; this only names the
+/// failure and says what to try. Jump-host and host-key failures are matched
+/// first because their messages also contain generic words like "refused".
+pub fn classify_error(message: &str) -> (&'static str, &'static str) {
+    let m = message.to_ascii_lowercase();
+    let has = |needles: &[&str]| needles.iter().any(|n| m.contains(n));
+    if has(&["cancelled", "canceled"]) {
+        (
+            "Connection cancelled",
+            "The connection was cancelled before it finished.",
+        )
+    } else if has(&["jump host"]) {
+        (
+            "Jump host failed",
+            "The connection through the jump host could not be completed. Check the jump host's own settings.",
+        )
+    } else if has(&["host key", "not trusted"]) {
+        (
+            "Host key not trusted",
+            "Verify the fingerprint, then retry and trust the host.",
+        )
+    } else if has(&[
+        "permission denied",
+        "authentication",
+        "auth fail",
+        "passphrase",
+    ]) {
+        (
+            "Authentication failed",
+            "The host rejected the credentials. Check the username, password or key in Edit Host.",
+        )
+    } else if has(&["timed out", "timeout"]) {
+        (
+            "Connection timed out",
+            "The host did not answer in time. Check the address, port and your network.",
+        )
+    } else if has(&["refused"]) {
+        (
+            "Connection refused",
+            "Nothing is accepting connections on that port, or a firewall is blocking it.",
+        )
+    } else if has(&["resolve", "no route", "dns", "lookup", "nodename"]) {
+        (
+            "Host not found",
+            "The address could not be resolved. Check the hostname in Edit Host.",
+        )
+    } else if has(&["lost", "closed", "reset", "broken pipe", "eof"]) {
+        (
+            "Connection lost",
+            "The connection dropped. Retry to reconnect.",
+        )
+    } else {
+        (
+            "Connection failed",
+            "Check the details below, then retry or edit the host.",
+        )
+    }
+}
+
 /// Emitted on any change so views can `cx.observe` / re-render.
 pub struct ConnectionStatusChanged;
 
@@ -403,6 +463,35 @@ mod tests {
             Some((3, true))
         );
         assert_eq!(detect_stage("some unrelated chatter"), None);
+    }
+
+    #[test]
+    fn classify_error_names_the_failure() {
+        assert_eq!(
+            classify_error("Jump host 'x' not found").0,
+            "Jump host failed"
+        );
+        assert_eq!(
+            classify_error("Permission denied (publickey)").0,
+            "Authentication failed"
+        );
+        assert_eq!(
+            classify_error("connection timed out").0,
+            "Connection timed out"
+        );
+        assert_eq!(
+            classify_error("Connection refused (os error 61)").0,
+            "Connection refused"
+        );
+        assert_eq!(
+            classify_error("Host key was not trusted.").0,
+            "Host key not trusted"
+        );
+        assert_eq!(
+            classify_error("Cancelled by user.").0,
+            "Connection cancelled"
+        );
+        assert_eq!(classify_error("something odd").0, "Connection failed");
     }
 
     #[test]

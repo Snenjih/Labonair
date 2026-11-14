@@ -30,11 +30,11 @@ const RESIZE_DEBOUNCE: Duration = Duration::from_millis(120);
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    canvas, div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable,
-    FontWeight, Hsla, InteractiveElement, IntoElement, KeyDownEvent, Keystroke, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    ScrollDelta, ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled, Task,
-    Window,
+    canvas, div, px, App, ClickEvent, ClipboardItem, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, FontWeight, Hsla, InteractiveElement, IntoElement, KeyDownEvent, Keystroke,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
+    Render, ScrollDelta, ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled,
+    Task, Window,
 };
 use labonair_terminal::{
     batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
@@ -119,11 +119,23 @@ pub struct TerminalView {
     /// Command offered by the restore-time "Resume ...?" banner, until the user
     /// resumes or dismisses it.
     resume_offer: Option<String>,
+    /// SSH pane: Enter on an exited session asks the workspace to reconnect.
+    reconnectable: bool,
     _poll: Task<()>,
     _blink: Task<()>,
 }
 
+/// Emitted when the user presses Enter in an exited reconnectable (SSH) pane.
+pub struct ReconnectRequested;
+
+impl EventEmitter<ReconnectRequested> for TerminalView {}
+
 impl TerminalView {
+    /// Mark this pane as an SSH pane whose closed session Enter reconnects.
+    pub fn set_reconnectable(&mut self, reconnectable: bool) {
+        self.reconnectable = reconnectable;
+    }
+
     /// Render the registry session behind `handle`.
     pub fn new(
         handle: SessionHandle,
@@ -221,6 +233,7 @@ impl TerminalView {
             focused: false,
             activity_at: Instant::now(),
             resume_offer: None,
+            reconnectable: false,
             _poll: poll,
             _blink: blink,
         }
@@ -589,6 +602,7 @@ impl Render for TerminalView {
         };
 
         self.cell_size = (cell_w, cell_h);
+        let reconnectable = self.reconnectable;
 
         // Wait for this view's first measured bounds before resizing. The
         // window viewport includes the shell chrome and is larger than the
@@ -925,6 +939,14 @@ impl Render for TerminalView {
             }))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
                 let ks = &ev.keystroke;
+                if this.reconnectable
+                    && ks.key == "enter"
+                    && !ks.modifiers.modified()
+                    && matches!(this.handle.status(), SessionStatus::Exited(_))
+                {
+                    cx.emit(ReconnectRequested);
+                    return;
+                }
                 this.process_keystroke(ks, cx);
             }))
             .on_drop(cx.listener(|this, d: &DraggedPaths, _window, _cx| {
@@ -953,9 +975,11 @@ impl Render for TerminalView {
                         .bg(with_alpha(fg, 0.08))
                         .text_color(fg)
                         .text_size(px(font_px))
-                        .child(SharedString::from(format!(
-                            "Shell exited ({code}) — press \u{2318}W to close this tab"
-                        ))),
+                        .child(SharedString::from(if reconnectable {
+                            "Connection closed \u{2014} press Enter to reconnect, \u{2318}W to close this tab".to_string()
+                        } else {
+                            format!("Shell exited ({code}) \u{2014} press \u{2318}W to close this tab")
+                        })),
                 )
             })
             .children(
