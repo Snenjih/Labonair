@@ -2442,7 +2442,12 @@ impl Render for SnippetsView {
             .flex()
             .flex_col()
             .size_full()
-            // No fill: the dock card supplies the (glass) surface.
+            // Framed docks: the card supplies the (glass) surface; Compact paints it.
+            .when(
+                self.theme.read(cx).metrics().pane_layout
+                    != labonair_theme::PaneLayout::Comfortable,
+                |el| el.bg(c.bg),
+            )
             .text_color(c.fg)
             .child(header)
             .when_some(search_bar, |d, sb| d.child(div().p(px(6.0)).child(sb)))

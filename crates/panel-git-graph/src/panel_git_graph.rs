@@ -1658,7 +1658,12 @@ impl Render for GitGraphView {
             .flex()
             .flex_col()
             .size_full()
-            // No fill: the dock / pane card supplies the (glass) surface.
+            // Framed docks: the card supplies the (glass) surface; Compact paints it.
+            .when(
+                self.theme.read(cx).metrics().pane_layout
+                    != labonair_theme::PaneLayout::Comfortable,
+                |el| el.bg(c.bg),
+            )
             .text_color(c.fg)
             .font(self.theme.read(cx).ui_font())
             .child(self.render_toolbar(c, cx))
