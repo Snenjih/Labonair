@@ -111,11 +111,16 @@ pub fn install_host(
 ) -> Result<(), String> {
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
+        // A host row may reference its jump host, which the snapshot lists
+        // after it: check foreign keys at commit, not per statement.
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch("PRAGMA defer_foreign_keys = ON")
+            .map_err(|e| e.to_string())?;
         for credential in &snapshot.credentials {
             if credential.id.is_empty() {
                 return Err("credential without an id".into());
             }
-            conn.execute(
+            tx.execute(
                 "INSERT INTO credentials (id, name, cred_type, key_path, has_secret, created_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, 0) \
                  ON CONFLICT(id) DO UPDATE SET name = excluded.name, cred_type = excluded.cred_type, \
@@ -144,7 +149,7 @@ pub fn install_host(
             } else {
                 host.auth_method.as_str()
             };
-            conn.execute(
+            tx.execute(
                 "INSERT INTO hosts (id, name, host_address, port, username, auth_method, \
                  private_key_path, keep_alive_interval, keep_alive_tries, default_path_ssh, \
                  credential_id, jump_host_id, tunnels, created_at) \
@@ -178,9 +183,49 @@ pub fn install_host(
             )
             .map_err(|e| e.to_string())?;
         }
+        tx.commit().map_err(|e| e.to_string())?;
     }
     for secret in &snapshot.secrets {
         labonair_secrets::store_password(secrets, &secret.service, &secret.account, &secret.value)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::HostRecord;
+
+    fn record(id: &str, jump: Option<&str>) -> HostRecord {
+        HostRecord {
+            id: id.into(),
+            name: id.into(),
+            host_address: "h".into(),
+            username: "u".into(),
+            jump_host_id: jump.map(Into::into),
+            ..Default::default()
+        }
+    }
+
+    /// Regression: a connect snapshot lists the target before its jump host;
+    /// installing it used to fail with "FOREIGN KEY constraint failed".
+    #[test]
+    fn installs_a_host_listed_before_its_jump_host() {
+        let db = Database(Arc::new(Mutex::new(
+            labonair_persistence::initialize_in_memory_database().unwrap(),
+        )));
+        let snapshot = SshHostSnapshot {
+            hosts: vec![record("target", Some("jump")), record("jump", None)],
+            ..Default::default()
+        };
+        install_host(&db, &SecretsState::in_memory(), &snapshot).unwrap();
+        // Re-installing (upsert path) works too.
+        install_host(&db, &SecretsState::in_memory(), &snapshot).unwrap();
+        // A dangling reference is still rejected at commit.
+        let dangling = SshHostSnapshot {
+            hosts: vec![record("x", Some("missing"))],
+            ..Default::default()
+        };
+        assert!(install_host(&db, &SecretsState::in_memory(), &dangling).is_err());
+    }
 }
