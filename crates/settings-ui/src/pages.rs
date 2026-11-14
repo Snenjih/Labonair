@@ -125,6 +125,7 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
                     // The background session host is unix-only.
                     #[cfg(unix)]
                     "background-hosts",
+                    "agents",
                     "advanced",
                 ],
             )),
@@ -135,6 +136,12 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
                     slug: "background-hosts",
                     description: "Host status and the sessions running in the background.",
                     body: PageBody::Generated(items_from_groups(TERMINAL_BACKGROUND_HOST)),
+                },
+                SubPage {
+                    title: "Agent Integrations",
+                    slug: "agents",
+                    description: "Per-agent detection (Claude Code, Codex, Pi, OpenCode) and finish notifications.",
+                    body: PageBody::Generated(items_from_groups(TERMINAL_AGENTS)),
                 },
                 SubPage {
                     title: "Advanced",
@@ -646,7 +653,10 @@ const TERMINAL_MAIN: &[Group] = &[
             "scrollbackRetentionDays"
         ),
     ),
-    ("Sessions", paths!("terminal": "resumeOnRestore")),
+    (
+        "Integrations",
+        paths!("terminal": "agentIntegrations", "resumeOnRestore"),
+    ),
     ("Bell", paths!("terminal": "terminalBell")),
     ("Appearance", paths!("terminal": "terminalOpacity")),
     (
@@ -658,6 +668,17 @@ const TERMINAL_MAIN: &[Group] = &[
         ),
     ),
 ];
+
+const TERMINAL_AGENTS: &[Group] = &[(
+    "Agents",
+    paths!("terminal":
+        "agentIntegrationClaudeCode",
+        "agentIntegrationCodex",
+        "agentIntegrationPi",
+        "agentIntegrationOpenCode",
+        "agentIntegrationNotify"
+    ),
+)];
 
 #[cfg(unix)]
 const TERMINAL_BACKGROUND_HOST: &[Group] = &[(
@@ -987,7 +1008,7 @@ mod tests {
         );
         assert_eq!(
             resolve_slug(&pages, "terminal/advanced"),
-            Some((6, Some(1)))
+            Some((6, Some(2)))
         );
     }
 }

@@ -673,6 +673,48 @@ pub fn all_fields() -> Vec<AnyField> {
             "Resume on restore",
             "Re-run the program that was in the foreground (for example claude or codex) when a terminal is restored. Ask shows a one-click banner in the pane."
         ),
+        field!(
+            terminal.agent_integrations,
+            "agentIntegrations",
+            Switch,
+            "Agent integrations",
+            "Detect coding agents (Claude Code, Codex, Pi, OpenCode) running in a terminal and show their icon and status on the tab."
+        ),
+        field!(
+            terminal.agent_integration_claude_code,
+            "agentIntegrationClaudeCode",
+            Switch,
+            "Claude Code",
+            "Detect Claude Code in terminals."
+        ),
+        field!(
+            terminal.agent_integration_codex,
+            "agentIntegrationCodex",
+            Switch,
+            "Codex",
+            "Detect Codex in terminals."
+        ),
+        field!(
+            terminal.agent_integration_pi,
+            "agentIntegrationPi",
+            Switch,
+            "Pi",
+            "Detect Pi in terminals."
+        ),
+        field!(
+            terminal.agent_integration_open_code,
+            "agentIntegrationOpenCode",
+            Switch,
+            "OpenCode",
+            "Detect OpenCode in terminals."
+        ),
+        field!(
+            terminal.agent_integration_notify,
+            "agentIntegrationNotify",
+            Switch,
+            "Notify when finished",
+            "Send a native OS notification when an agent finishes its work."
+        ),
         field_with_details!(
             terminal.detached_scrollback_lines,
             "detachedScrollbackLines",
