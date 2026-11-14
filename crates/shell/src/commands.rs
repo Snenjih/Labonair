@@ -186,10 +186,15 @@ impl AppShell {
                 self.toggle_search_overlay(window, cx);
                 return;
             }
-            CommandId::NewSshTab
-            | CommandId::NewSftpTab
-            | CommandId::NewQuickSsh
-            | CommandId::NewSshConnection => {
+            CommandId::NewSftpTab => {
+                self.show_command_palette(
+                    Some(labonair_command_palette::Page::SftpHosts),
+                    window,
+                    cx,
+                );
+                return;
+            }
+            CommandId::NewSshTab | CommandId::NewQuickSsh | CommandId::NewSshConnection => {
                 self.show_command_palette(Some(labonair_command_palette::Page::Hosts), window, cx);
                 return;
             }

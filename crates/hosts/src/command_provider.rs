@@ -10,12 +10,13 @@ use labonair_command_palette_core::{
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HostsCommandProvider;
 
-/// Build a host picker snapshot. SSH is the primary action and SFTP is the
-/// typed `Shift+Enter` secondary action for every row.
+/// Build a host picker snapshot. The primary action is SSH (or SFTP when
+/// `sftp_primary`); the other protocol is the typed `Shift+Enter` secondary.
 pub fn host_submenu(
     id: &str,
     title: &str,
     submenu: CommandSubmenu,
+    sftp_primary: bool,
     rows: impl IntoIterator<Item = HostPickerRow>,
 ) -> SubmenuSnapshot {
     SubmenuSnapshot {
@@ -29,13 +30,18 @@ pub fn host_submenu(
                 active: false,
                 action: SubmenuAction::ConnectHost {
                     host_id: row.id.clone(),
-                    sftp: false,
+                    sftp: sftp_primary,
                 },
                 secondary: Some(SubmenuSecondary {
-                    label: "Open SFTP".to_string(),
+                    label: if sftp_primary {
+                        "Open SSH"
+                    } else {
+                        "Open SFTP"
+                    }
+                    .to_string(),
                     action: SubmenuAction::ConnectHost {
                         host_id: row.id,
-                        sftp: true,
+                        sftp: !sftp_primary,
                     },
                 }),
             })
@@ -53,23 +59,7 @@ impl CommandProvider for HostsCommandProvider {
                 .with_submenu(CommandSubmenu::Hosts),
             CommandDescriptor::new(CommandId::NewSftpTab, "New SFTP Tab", "Connections")
                 .with_icon(CommandIcon::Folder)
-                .with_submenu(CommandSubmenu::Hosts),
-            CommandDescriptor::new(CommandId::NewQuickSsh, "New Quick SSH", "Connections")
-                .with_icon(CommandIcon::Terminal)
-                .with_submenu(CommandSubmenu::Hosts),
-            CommandDescriptor::new(
-                CommandId::NewSshConnection,
-                "New SSH Connection",
-                "Connections",
-            )
-            .with_icon(CommandIcon::Terminal)
-            .with_submenu(CommandSubmenu::Hosts),
-            CommandDescriptor::new(CommandId::ConnectSsh, "Connect SSH…", "Connections")
-                .with_icon(CommandIcon::Terminal)
-                .with_submenu(CommandSubmenu::Hosts),
-            CommandDescriptor::new(CommandId::OpenSftp, "Open SFTP…", "Connections")
-                .with_icon(CommandIcon::Folder)
-                .with_submenu(CommandSubmenu::Hosts),
+                .with_submenu(CommandSubmenu::SftpHosts),
         ]
     }
 }
@@ -84,6 +74,7 @@ mod tests {
             "hosts",
             "Hosts",
             CommandSubmenu::Hosts,
+            false,
             [HostPickerRow {
                 id: "prod".to_string(),
                 name: "Production".to_string(),
@@ -106,6 +97,37 @@ mod tests {
             Some(&SubmenuAction::ConnectHost {
                 host_id: "prod".to_string(),
                 sftp: true,
+            })
+        );
+    }
+
+    #[test]
+    fn sftp_picker_makes_sftp_primary_and_ssh_secondary() {
+        let row = HostPickerRow {
+            id: "h".into(),
+            name: "H".into(),
+            subtitle: String::new(),
+        };
+        let snapshot = host_submenu(
+            "sftp-hosts",
+            "SFTP Hosts",
+            CommandSubmenu::SftpHosts,
+            true,
+            [row],
+        );
+        let item = &snapshot.items[0];
+        assert_eq!(
+            item.action,
+            SubmenuAction::ConnectHost {
+                host_id: "h".into(),
+                sftp: true
+            }
+        );
+        assert_eq!(
+            item.secondary.as_ref().map(|s| &s.action),
+            Some(&SubmenuAction::ConnectHost {
+                host_id: "h".into(),
+                sftp: false
             })
         );
     }

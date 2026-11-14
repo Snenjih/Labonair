@@ -314,6 +314,7 @@ pub enum CommandIcon {
 pub enum CommandSubmenu {
     Tabs,
     RecentHosts,
+    SftpHosts,
     ColorMode,
     EditorTheme,
     Themes,

@@ -220,14 +220,25 @@ impl AppShell {
             "hosts",
             "Hosts",
             CommandSubmenu::Hosts,
+            false,
             self.workspace.read(cx).host_picker_rows(cx),
         );
         register_snapshot(&mut submenus, hosts);
+
+        let sftp_hosts = labonair_hosts::command_provider::host_submenu(
+            "sftp-hosts",
+            "SFTP Hosts",
+            CommandSubmenu::SftpHosts,
+            true,
+            self.workspace.read(cx).host_picker_rows(cx),
+        );
+        register_snapshot(&mut submenus, sftp_hosts);
 
         let recent_hosts = labonair_hosts::command_provider::host_submenu(
             "recent-hosts",
             "Recent Hosts",
             CommandSubmenu::RecentHosts,
+            false,
             self.workspace.read(cx).recent_host_picker_rows(cx, 5),
         );
         register_snapshot(&mut submenus, recent_hosts);
