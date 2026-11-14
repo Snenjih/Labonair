@@ -364,7 +364,7 @@ pub fn all_fields() -> Vec<AnyField> {
                 ("strong", "Strong"),
             ]),
             "Font smoothing",
-            "Text anti-aliasing weight for the whole app (macOS). May need a restart to fully apply."
+            "Text anti-aliasing weight, shared by the UI, editor and terminal (macOS). New text picks it up immediately; already cached glyphs need a restart (Restart required)."
         ),
         field!(
             appearance.ui_density,

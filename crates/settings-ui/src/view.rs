@@ -1877,7 +1877,11 @@ impl Render for SettingsView {
         self.sync_search_input(window, cx);
         self.ensure_text_inputs(window, cx);
         self.sync_text_inputs(window, cx);
-        let c = Palette::from_theme(self.theme.read(cx));
+        let mut c = Palette::from_theme(self.theme.read(cx));
+        // Responsive content: spacing and control sizes grow with the window.
+        let scale = content_scale(f32::from(window.viewport_size().width));
+        c.density *= scale;
+        c.ui_font_scale *= scale;
         let searching = !self.search.trim().is_empty();
         // T19-007: recompute every render so Up/Down/Enter and mouse clicks
         // always act on what's currently on screen (cheap — ~200 entries).
@@ -2033,6 +2037,24 @@ impl Render for SettingsView {
                     .on_click(|_, _w, cx| cx.stop_propagation()),
             )
             .into_any_element()
+    }
+}
+
+/// Content scale for a Settings window of `width` px: 1.0 up to 1000 px,
+/// growing linearly to 1.25 at 1400 px and beyond.
+fn content_scale(width: f32) -> f32 {
+    (1.0 + (width - 1000.0) / 400.0 * 0.25).clamp(1.0, 1.25)
+}
+
+#[cfg(test)]
+mod content_scale_tests {
+    use super::content_scale;
+
+    #[test]
+    fn scale_is_clamped_between_one_and_one_and_a_quarter() {
+        assert_eq!(content_scale(640.0), 1.0);
+        assert_eq!(content_scale(1200.0), 1.125);
+        assert_eq!(content_scale(3000.0), 1.25);
     }
 }
 

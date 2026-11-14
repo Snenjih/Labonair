@@ -69,19 +69,29 @@ macro_rules! paths {
 /// contribute at [`labonair_settings::FIRST_OWNER_PAGE_INDEX`].
 pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
     let mut pages = vec![
-        page(
+        page_with_sub_pages(
             "general",
             "General",
             &["general", "workspace"],
             GENERAL_GROUPS,
-            vec![],
+            vec![sub_page(
+                "Command Palette",
+                "command-palette",
+                "Position, size, opacity, history and search mode of the command palette.",
+                GENERAL_PALETTE,
+            )],
         ),
-        page(
+        page_with_sub_pages(
             "appearance",
             "Appearance",
             &["appearance"],
             APPEARANCE_GROUPS,
-            vec![],
+            vec![sub_page(
+                "Panes & Zen Mode",
+                "panes-zen",
+                "Active-pane highlight, dimming of inactive panes and Zen Mode chrome.",
+                APPEARANCE_ADVANCED,
+            )],
         ),
         // Owner surfaces (colour theme, icon theme, background) are inserted
         // into these sections by `compose_owner_surfaces`; the page owns no
@@ -100,19 +110,37 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
                 body: PageBody::Generated(items_from_groups(EDITOR_ADVANCED)),
             }],
         },
-        page(
+        page_with_sub_pages(
             "languages-tools",
             "Languages & Tools",
             &[],
             LANGUAGE_GROUPS,
-            vec![],
+            vec![sub_page(
+                "Error Lens & Inlay Hints",
+                "inline-hints",
+                "Inline diagnostics, inlay hint kinds and their debounce timings.",
+                LANGUAGE_INLINE,
+            )],
         ),
-        page(
+        page_with_sub_pages(
             "search-files",
             "Search & Files",
             &["file_manager"],
             FILE_GROUPS,
-            vec![],
+            vec![
+                sub_page(
+                    "Explorer",
+                    "explorer",
+                    "Tree guides, sticky ancestors, auto-reveal and Git decorations.",
+                    FILE_EXPLORER,
+                ),
+                sub_page(
+                    "SFTP Browser",
+                    "sftp",
+                    "Hidden files, zebra striping, relative times and columns.",
+                    FILE_SFTP,
+                ),
+            ],
         ),
         SettingsPage {
             key: "terminal",
@@ -161,6 +189,40 @@ fn with_links(mut items: Vec<SettingsPageItem>, slugs: &[&'static str]) -> Vec<S
     items.push(SettingsPageItem::SectionHeader("More settings"));
     items.extend(slugs.iter().map(|slug| SettingsPageItem::SubPageLink(slug)));
     items
+}
+
+/// A generated page whose power-user groups live on sub-pages, each linked
+/// from a trailing "More settings" section.
+fn page_with_sub_pages(
+    key: &'static str,
+    title: &'static str,
+    fallback_areas: &'static [&'static str],
+    groups: &'static [Group],
+    sub_pages: Vec<SubPage>,
+) -> SettingsPage {
+    let slugs: Vec<&'static str> = sub_pages.iter().map(|sub| sub.slug).collect();
+    SettingsPage {
+        key,
+        title,
+        slug: key,
+        fallback_areas,
+        body: PageBody::Generated(with_links(items_from_groups(groups), &slugs)),
+        sub_pages,
+    }
+}
+
+fn sub_page(
+    title: &'static str,
+    slug: &'static str,
+    description: &'static str,
+    groups: &'static [Group],
+) -> SubPage {
+    SubPage {
+        title,
+        slug,
+        description,
+        body: PageBody::Generated(items_from_groups(groups)),
+    }
 }
 
 fn page(
@@ -367,21 +429,22 @@ const GENERAL_GROUPS: &[Group] = &[
         "Startup",
         paths!("general": "defaultStartupTab", "restoreWindowState", "sessionRestore"),
     ),
-    (
-        "Command Palette",
-        paths!("workspace":
-            "commandPaletteOpacity",
-            "commandPalettePosition",
-            "commandPaletteSize",
-            "commandPaletteShowRecent",
-            "commandPaletteHistorySize",
-            "commandPaletteSearchMode",
-            "commandPaletteCloseOnOverlayClick"
-        ),
-    ),
     ("Updates", paths!("general": "checkForUpdates")),
     ("Quit", paths!("workspace": "confirmQuitWithActiveSessions")),
 ];
+
+const GENERAL_PALETTE: &[Group] = &[(
+    "Command Palette",
+    paths!("workspace":
+        "commandPaletteOpacity",
+        "commandPalettePosition",
+        "commandPaletteSize",
+        "commandPaletteShowRecent",
+        "commandPaletteHistorySize",
+        "commandPaletteSearchMode",
+        "commandPaletteCloseOnOverlayClick"
+    ),
+)];
 
 /// Appearance absorbs the former Window & Layout page (tabs, Zen mode).
 const APPEARANCE_GROUPS: &[Group] = &[
@@ -401,10 +464,6 @@ const APPEARANCE_GROUPS: &[Group] = &[
         "Panes",
         paths!("appearance":
             "paneLayout",
-            "paneHighlight",
-            "paneHighlightColor",
-            "paneHighlightOpacity",
-            "dimInactivePanes",
             "cornerRadiusScale"
         ),
     ),
@@ -421,6 +480,18 @@ const APPEARANCE_GROUPS: &[Group] = &[
         ),
     ),
     ("Motion", paths!("appearance": "animations")),
+];
+
+const APPEARANCE_ADVANCED: &[Group] = &[
+    (
+        "Pane focus",
+        paths!("appearance":
+            "paneHighlight",
+            "paneHighlightColor",
+            "paneHighlightOpacity",
+            "dimInactivePanes"
+        ),
+    ),
     (
         "Zen Mode",
         paths!("appearance":
@@ -452,11 +523,13 @@ const EDITOR_GROUPS: &[Group] = &[
     ("Theme", paths!("editor": "editorTheme")),
     (
         "Font",
-        paths!("editor":
-            "editorFontFamily",
-            "editorFontSize",
-            "editorLineHeight"
-        ),
+        &[
+            "editor.editorFontFamily",
+            "editor.editorFontSize",
+            "editor.editorLineHeight",
+            // Same key as Appearance > Typography: one value, two surfaces.
+            "appearance.fontSmoothing",
+        ],
     ),
     (
         "Behaviour",
@@ -557,25 +630,41 @@ const LANGUAGE_GROUPS: &[Group] = &[(
     paths!("editor":
         "editorDiagnostics",
         "editorDiagnosticsMaxSeverity",
-        "editorErrorLens",
-        "editorErrorLensDelayMs",
-        "editorErrorLensSpacing",
-        "editorErrorLensMinimumColumn",
         "editorSemanticTokens",
         "editorCodeLens",
-        "editorInlayHints",
-        "editorInlayTypeHints",
-        "editorInlayParameterHints",
-        "editorInlayOtherHints",
-        "editorInlayShowBackground",
-        "editorInlayEditDebounceMs",
-        "editorInlayScrollDebounceMs",
         "editorCompletion",
         "editorHover",
-        "editorAutocompleteDebounceMs",
         "editorMaxFileSizeMb"
     ),
 )];
+
+const LANGUAGE_INLINE: &[Group] = &[
+    (
+        "Error Lens",
+        paths!("editor":
+            "editorErrorLens",
+            "editorErrorLensDelayMs",
+            "editorErrorLensSpacing",
+            "editorErrorLensMinimumColumn"
+        ),
+    ),
+    (
+        "Inlay Hints",
+        paths!("editor":
+            "editorInlayHints",
+            "editorInlayTypeHints",
+            "editorInlayParameterHints",
+            "editorInlayOtherHints",
+            "editorInlayShowBackground",
+            "editorInlayEditDebounceMs",
+            "editorInlayScrollDebounceMs"
+        ),
+    ),
+    (
+        "Completion",
+        paths!("editor": "editorAutocompleteDebounceMs"),
+    ),
+];
 
 const FILE_GROUPS: &[Group] = &[
     (
@@ -595,6 +684,9 @@ const FILE_GROUPS: &[Group] = &[
         "Browsing",
         paths!("file_manager": "explorerShowHiddenByDefault"),
     ),
+];
+
+const FILE_EXPLORER: &[Group] = &[
     (
         "Explorer Tree",
         paths!("file_manager":
@@ -611,28 +703,30 @@ const FILE_GROUPS: &[Group] = &[
             "scmFileTree"
         ),
     ),
-    (
-        "SFTP Browser",
-        paths!("file_manager":
-            "sftpShowHiddenFiles",
-            "sftpShowUpFolder",
-            "sftpZebraStriping",
-            "sftpRelativeTimes",
-            "sftpColumns"
-        ),
-    ),
 ];
+
+const FILE_SFTP: &[Group] = &[(
+    "SFTP Browser",
+    paths!("file_manager":
+        "sftpShowHiddenFiles",
+        "sftpShowUpFolder",
+        "sftpZebraStriping",
+        "sftpRelativeTimes",
+        "sftpColumns"
+    ),
+)];
 
 const TERMINAL_MAIN: &[Group] = &[
     ("Shell", paths!("terminal": "terminalShell")),
     (
         "Font",
-        paths!("terminal":
-            "terminalFontFamily",
-            "terminalFontSize",
-            "terminalLineHeight",
-            "terminalFontWeight"
-        ),
+        &[
+            "terminal.terminalFontFamily",
+            "terminal.terminalFontSize",
+            "terminal.terminalLineHeight",
+            "terminal.terminalFontWeight",
+            "appearance.fontSmoothing",
+        ],
     ),
     (
         "Cursor",
@@ -779,8 +873,14 @@ mod tests {
         let fields = all_fields();
         let placed = all_placed_paths(&pages);
         let mut unique = HashSet::new();
+        // Keys intentionally shown on more than one page (one value, several
+        // surfaces); the first placement stays canonical for search.
+        const MIRRORED: &[&str] = &["appearance.fontSmoothing"];
         for path in &placed {
-            assert!(unique.insert(path), "explicit placement repeats `{path}`");
+            assert!(
+                unique.insert(path) || MIRRORED.contains(path),
+                "explicit placement repeats `{path}`"
+            );
             assert!(
                 fields.iter().any(|field| field.json_path == *path),
                 "explicit placement references missing field `{path}`"
@@ -792,6 +892,50 @@ mod tests {
                 field_location(&pages, field).is_some(),
                 "field `{}` is not reachable from Settings",
                 field.json_path
+            );
+        }
+    }
+
+    #[test]
+    fn font_smoothing_is_mirrored_into_editor_and_terminal_font_sections() {
+        let pages = pages();
+        for key in ["editor", "terminal"] {
+            let page = pages.iter().find(|page| page.key == key).unwrap();
+            let PageBody::Generated(items) = &page.body;
+            assert_eq!(
+                section_for_path(items, "appearance.fontSmoothing"),
+                Some("Font"),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn power_user_sub_pages_are_linked_and_non_empty() {
+        let pages = pages();
+        for page in &pages {
+            let PageBody::Generated(items) = &page.body;
+            for sub in &page.sub_pages {
+                assert!(
+                    items
+                        .iter()
+                        .any(|i| matches!(i, SettingsPageItem::SubPageLink(s) if *s == sub.slug)),
+                    "{}/{} has no link",
+                    page.key,
+                    sub.slug
+                );
+                let PageBody::Generated(rows) = &sub.body;
+                assert!(rows.iter().any(|i| matches!(i, SettingsPageItem::Item(_))));
+            }
+        }
+        for slug in [
+            "general/command-palette",
+            "appearance/panes-zen",
+            "search-files/sftp",
+        ] {
+            assert!(
+                matches!(resolve_slug(&pages, slug), Some((_, Some(_)))),
+                "{slug}"
             );
         }
     }
