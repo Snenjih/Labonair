@@ -489,8 +489,8 @@ enum McpTabOp {
 /// connection is routed through a jump host (task T07-002, item 5).
 fn ssh_tab_title(host_label: &str, jump_label: Option<&str>) -> String {
     match jump_label {
-        Some(j) => format!("SSH \u{00b7} {host_label}  \u{2192} {j}"),
-        None => format!("SSH \u{00b7} {host_label}"),
+        Some(j) => format!("{host_label}  \u{2192} {j}"),
+        None => host_label.to_string(),
     }
 }
 
@@ -5419,7 +5419,7 @@ impl Workspace {
                 },
                 cx,
             );
-            s.set_custom_title(id, Some(format!("SFTP \u{00b7} {label}")), cx);
+            s.set_custom_title(id, Some(label.to_string()), cx);
             id
         });
         self.ssh_connection.update(cx, |s, cx| {
@@ -7274,7 +7274,10 @@ impl Workspace {
                     .border_1()
                     .border_color(card.pane_line)
                     .shadow(card.pane_shadow(false))
-                    .p(px(card.radius.lg * 0.3))
+                    // Inset only along the rounded-corner axis; the content
+                    // uses the full card width (hover / active fills).
+                    .when(!is_bottom, |d| d.py(px(card.radius.lg * 0.3)))
+                    .when(is_bottom, |d| d.px(px(card.radius.lg * 0.3)))
                     .my(if is_bottom { px(0.0) } else { gap })
                     .when(is_bottom, |d| d.mx(gap).mb(gap))
                     .when(pos == DockPosition::Left, |d| d.ml(gap))
@@ -7676,10 +7679,10 @@ mod tests {
 
     #[test]
     fn ssh_tab_title_annotates_jump_route() {
-        assert_eq!(ssh_tab_title("prod-web", None), "SSH \u{00b7} prod-web");
+        assert_eq!(ssh_tab_title("prod-web", None), "prod-web");
         assert_eq!(
             ssh_tab_title("prod-web", Some("bastion")),
-            "SSH \u{00b7} prod-web  \u{2192} bastion"
+            "prod-web  \u{2192} bastion"
         );
     }
 }

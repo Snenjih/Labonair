@@ -92,7 +92,7 @@ impl Workspace {
             split(
                 "pane-split-right",
                 "Split Right",
-                IconName::ChevronRight,
+                IconName::SplitRight,
                 SplitDirection::Right,
                 CommandId::SplitRight,
                 "cmd-\\",
@@ -100,7 +100,7 @@ impl Workspace {
             split(
                 "pane-split-down",
                 "Split Down",
-                IconName::ChevronDown,
+                IconName::SplitDown,
                 SplitDirection::Down,
                 CommandId::SplitDown,
                 "cmd-shift-\\",

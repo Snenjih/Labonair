@@ -2084,7 +2084,6 @@ impl Render for ExplorerView {
             .flex()
             .flex_col()
             .min_h_0()
-            .py_1()
             .children(sticky_strip)
             .children(walk_hint)
             .on_drag_move(cx.listener(

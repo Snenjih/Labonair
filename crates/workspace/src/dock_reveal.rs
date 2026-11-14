@@ -95,7 +95,8 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let c = Palette::from_theme(self.theme.read(cx));
-        let open = self.dock(pos).is_open();
+        // A dock with no panels left (its last panel moved away) is closed.
+        let open = self.dock(pos).is_open() && !self.dock(pos).is_empty();
         let (size, zoomed) = (f32::from(self.dock(pos).size()), self.dock(pos).is_zoomed());
         let step = self.dock_reveal[slot(pos)].step(open, Instant::now(), &c.motion);
         if !step.mounted {

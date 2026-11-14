@@ -327,17 +327,22 @@ impl PaneBar {
         let actions = [
             (
                 "split-h",
-                IconName::Split,
+                IconName::SplitRight,
                 split_horizontal.map(|a| gate_split(a, can_split)),
                 false,
             ),
             (
                 "split-v",
-                IconName::SplitAlt,
+                IconName::SplitDown,
                 split_vertical.map(|a| gate_split(a, can_split)),
                 false,
             ),
-            ("zoom", IconName::Maximize, zoom, zoomed),
+            (
+                "zoom",
+                if zoomed { IconName::Minimize2 } else { IconName::Maximize2 },
+                zoom,
+                zoomed,
+            ),
             ("close", IconName::Close, close, false),
         ];
         let buttons: Vec<AnyElement> = actions

@@ -198,8 +198,14 @@ impl Workspace {
                 })
                 .into_any_element(),
             // Fill mode: the title takes the slack so the close button sits flush right.
+            // Never wraps: one line, clipped with an ellipsis.
             None => div()
-                .when(fill, |d| d.flex_1().min_w_0())
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .when(!sidebar && !fill, |d| d.max_w(px(180.0)))
                 .child(label.clone())
                 .into_any_element(),
         };

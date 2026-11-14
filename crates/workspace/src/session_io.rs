@@ -595,7 +595,7 @@ impl Workspace {
                 self.sftp_sessions.insert(pane, session_id);
                 self.register_pane(pane, PaneKind::Sftp);
                 if self.tab_pane_ids(tab_id).first() == Some(&pane) {
-                    let title = format!("SFTP \u{00b7} {label}");
+                    let title = label.to_string();
                     self.tabs
                         .update(cx, |st, cx| st.set_custom_title(tab_id, Some(title), cx));
                 }

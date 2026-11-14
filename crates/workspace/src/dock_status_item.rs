@@ -141,7 +141,7 @@ impl DockPanelButtons {
                     SharedString::from(format!("dock-move-{}", label(destination))),
                     label(destination),
                 )
-                .checked(is_current)
+                .toggled(is_current)
                 .on_click(move |_, _, cx| {
                     if !is_current {
                         let move_name = move_name.clone();

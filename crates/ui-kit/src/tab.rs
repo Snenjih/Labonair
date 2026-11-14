@@ -319,6 +319,7 @@ impl TabItemBuilder {
                 .min_w_0()
                 .overflow_hidden()
                 .whitespace_nowrap()
+                .text_ellipsis()
                 .when(layout == TabLayout::Horizontal, |title| {
                     title.max_w(palette.space(180.0))
                 })

@@ -14,7 +14,7 @@ impl Workspace {
     pub(super) fn sftp_pane_spec(&self, pane: PaneId, cx: &App, spec: &mut PaneSpec) {
         if let Some(view) = self.sftp_views.get(&pane) {
             let view = view.read(cx);
-            spec.title = SharedString::from(format!("SFTP \u{00b7} {}", view.host_label()));
+            spec.title = SharedString::from(view.host_label().to_string());
         }
     }
 

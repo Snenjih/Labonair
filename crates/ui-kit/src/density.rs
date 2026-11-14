@@ -73,9 +73,11 @@ impl Density {
         self.s(32.0)
     }
 
-    /// Height of the window titlebar (`--titlebar-height`).
+    /// Height of the window titlebar (`--titlebar-height`). Fixed: the shell's
+    /// titlebar is a constant 40px, so a density-scaled tab strip would
+    /// overflow it in the comfortable density.
     pub fn titlebar_height(&self) -> Pixels {
-        self.s(40.0)
+        px(40.0)
     }
 
     /// Height of the workspace statusbar (`--statusbar-height`).

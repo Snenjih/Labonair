@@ -25,6 +25,9 @@
 
 use std::time::{Duration, Instant};
 
+/// How long a terminal grid size must stay unchanged before the PTY is resized.
+const RESIZE_DEBOUNCE: Duration = Duration::from_millis(120);
+
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable,
@@ -84,6 +87,10 @@ pub struct TerminalView {
     handle: SessionHandle,
     /// Grid size last pushed to the engine, to avoid redundant resizes.
     grid: (usize, usize),
+    /// A grid change waiting out [`RESIZE_DEBOUNCE`]: target size + when it
+    /// was first seen. `resized` is false until the first size was applied.
+    resize_pending: Option<((usize, usize), Instant)>,
+    resized: bool,
     /// Cell (width, height) in pixels from the last render — used to map mouse
     /// positions to grid cells.
     cell_size: (f32, f32),
@@ -203,6 +210,8 @@ impl TerminalView {
             focus_handle,
             handle,
             grid: (80, 24),
+            resize_pending: None,
+            resized: false,
             cell_size: (8.0, 16.0),
             drag_anchor: None,
             measured: None,
@@ -593,14 +602,41 @@ impl Render for TerminalView {
                 cell_h,
             )
         });
-        if (cols, rows) != self.grid {
-            self.grid = (cols, rows);
-            let _ = self.handle.resize(TermDimensions {
-                columns: cols,
-                screen_lines: rows,
-                cell_width: cell_w.round().max(1.0) as u16,
-                cell_height: cell_h as u16,
-            });
+        // Root cause of garbled prompts while dragging a divider / the window:
+        // every intermediate grid size used to hit the emulator (reflow) and
+        // the PTY (SIGWINCH -> the shell redraws its prompt) immediately, so
+        // each frame left a reflowed prompt copy behind. Only the settled size
+        // is applied; the first measured size goes through at once.
+        if (cols, rows) == self.grid {
+            self.resize_pending = None;
+        } else {
+            let now = Instant::now();
+            let since = match self.resize_pending {
+                Some((target, at)) if target == (cols, rows) => at,
+                _ => now,
+            };
+            if !self.resized || now.duration_since(since) >= RESIZE_DEBOUNCE {
+                self.resized = true;
+                self.resize_pending = None;
+                self.grid = (cols, rows);
+                let _ = self.handle.resize(TermDimensions {
+                    columns: cols,
+                    screen_lines: rows,
+                    cell_width: cell_w.round().max(1.0) as u16,
+                    cell_height: cell_h as u16,
+                });
+            } else {
+                let first = self.resize_pending.map_or(true, |(t, _)| t != (cols, rows));
+                self.resize_pending = Some(((cols, rows), since));
+                if first {
+                    // Re-render once the size has been stable for the debounce.
+                    cx.spawn(async move |view, cx| {
+                        cx.background_executor().timer(RESIZE_DEBOUNCE).await;
+                        let _ = view.update(cx, |_, cx| cx.notify());
+                    })
+                    .detach();
+                }
+            }
         }
 
         let screen: RenderableScreen =
