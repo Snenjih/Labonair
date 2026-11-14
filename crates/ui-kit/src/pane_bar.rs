@@ -339,7 +339,11 @@ impl PaneBar {
             ),
             (
                 "zoom",
-                if zoomed { IconName::Minimize2 } else { IconName::Maximize2 },
+                if zoomed {
+                    IconName::Minimize2
+                } else {
+                    IconName::Maximize2
+                },
                 zoom,
                 zoomed,
             ),
