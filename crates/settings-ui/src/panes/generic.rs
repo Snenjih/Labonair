@@ -637,30 +637,9 @@ impl SettingsView {
                 let picker = self.color_state(json_path, stored, window, cx);
                 ColorPicker::new(&picker).into_any_element()
             }
-            FieldControl::Tiles(options) => {
+            FieldControl::Tiles(_) => {
                 control_below = true;
-                let current = value
-                    .as_ref()
-                    .and_then(tile_token)
-                    .unwrap_or_default()
-                    .to_owned();
-                let stored = value.clone();
-                let view = cx.entity();
-                let mut group = preview_tile_group(
-                    SharedString::from(format!("tiles-{json_path}")),
-                    *c,
-                    current,
-                )
-                .disabled(field_disabled);
-                for option in options {
-                    group = group.tile(preview_tile(option.token, option.label, option.preview));
-                }
-                group
-                    .on_select(move |token, _window, app| {
-                        let next = tile_value(stored.as_ref(), token);
-                        view.update(app, |this, cx| this.set_field_value(json_path, next, cx));
-                    })
-                    .into_any_element()
+                self.tile_group_control(field, value.clone(), field_disabled, c, cx)
             }
         };
         let control = if let (Some(unit), false) = (field.meta.unit, unit_in_control) {
@@ -794,6 +773,80 @@ impl SettingsView {
             .when(highlighted, |d| d.bg(c.selected_fill.opacity(0.7)))
             .child(content)
             .into_any_element()
+    }
+
+    /// The preview-tile group of a `FieldControl::Tiles` field.
+    fn tile_group_control(
+        &mut self,
+        field: &AnyField,
+        value: Option<Value>,
+        field_disabled: bool,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let json_path = field.json_path;
+        let FieldControl::Tiles(options) = field.control else {
+            return div().into_any_element();
+        };
+        let current = value
+            .as_ref()
+            .and_then(tile_token)
+            .unwrap_or_default()
+            .to_owned();
+        let stored = value;
+        let view = cx.entity();
+        let mut group = preview_tile_group(
+            SharedString::from(format!("tiles-{json_path}")),
+            *c,
+            current,
+        )
+        .disabled(field_disabled);
+        for option in options {
+            group = group.tile(preview_tile(option.token, option.label, option.preview));
+        }
+        group
+            .on_select(move |token, _window, app| {
+                let next = tile_value(stored.as_ref(), token);
+                view.update(app, |this, cx| this.set_field_value(json_path, next, cx));
+            })
+            .into_any_element()
+    }
+
+    /// Adjacent tile groups side by side, each under its own heading and
+    /// separated by a vertical divider.
+    fn render_tile_row(
+        &mut self,
+        fields: &[AnyField],
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let mut row = div().flex().flex_row().w_full().p(c.control_space(16.0));
+        for (i, field) in fields.iter().enumerate() {
+            let value = self.field_value(field, cx);
+            let disabled = field_disabled_in_scope(self.scope, field.json_path);
+            let control = self.tile_group_control(field, value, disabled, c, cx);
+            if i > 0 {
+                row = row.child(
+                    div()
+                        .w(px(1.0))
+                        .mx(c.space(20.0))
+                        .bg(c.border),
+                );
+            }
+            row = row.child(
+                v_stack()
+                    .gap(c.space(10.0))
+                    .child(
+                        div()
+                            .text_size(c.control_space(13.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(c.fg)
+                            .child(SharedString::from(field.meta.title)),
+                    )
+                    .child(control),
+            );
+        }
+        row.into_any_element()
     }
 
     /// Text fields are always real UI-kit `InputState` editors. Their entities
@@ -1285,6 +1338,7 @@ impl SettingsView {
                 SectionItem::OwnerSurface(id) => {
                     self.render_owner_surface_row(*id, embed, window, c, cx)
                 }
+                SectionItem::TileRow(fields) => self.render_tile_row(fields, c, cx),
                 SectionItem::BackgroundHost(item) => self.render_host_item(item, c, cx),
                 SectionItem::TerminalPreview => {
                     let theme = self.theme.clone();
@@ -1407,6 +1461,8 @@ enum SectionItem {
     OwnerSurface(SettingsSurfaceId),
     /// Live terminal sample (`crate::terminal_preview`).
     TerminalPreview,
+    /// Two or more adjacent tile-group fields shown side by side.
+    TileRow(Vec<AnyField>),
     /// A live row of the background-host group (`crate::background_host`).
     BackgroundHost(crate::background_host::HostItem),
 }
@@ -1455,7 +1511,36 @@ fn section_blocks(
         });
     }
     blocks.retain(|block| !block.items.is_empty());
+    for block in &mut blocks {
+        merge_tile_rows(&mut block.items);
+    }
     blocks
+}
+
+/// Replace runs of 2+ adjacent `Tiles` fields with one [`SectionItem::TileRow`].
+fn merge_tile_rows(items: &mut Vec<SectionItem>) {
+    let is_tiles = |item: &SectionItem| {
+        matches!(item, SectionItem::Field(f) if matches!(f.control, FieldControl::Tiles(_)))
+    };
+    let mut out = Vec::with_capacity(items.len());
+    let mut run: Vec<AnyField> = Vec::new();
+    let flush = |run: &mut Vec<AnyField>, out: &mut Vec<SectionItem>| match run.len() {
+        0 => {}
+        1 => out.push(SectionItem::Field(run.remove(0))),
+        _ => out.push(SectionItem::TileRow(std::mem::take(run))),
+    };
+    for item in items.drain(..) {
+        if is_tiles(&item) {
+            if let SectionItem::Field(f) = item {
+                run.push(f);
+            }
+        } else {
+            flush(&mut run, &mut out);
+            out.push(item);
+        }
+    }
+    flush(&mut run, &mut out);
+    *items = out;
 }
 
 /// The read-out next to a slider: whole numbers for integer fields, two

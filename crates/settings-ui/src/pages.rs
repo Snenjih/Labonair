@@ -316,9 +316,8 @@ fn items_from_groups(groups: &'static [Group]) -> Vec<SettingsPageItem> {
 const GENERAL_GROUPS: &[Group] = &[
     (
         "Startup",
-        paths!("general": "defaultStartupTab", "restoreWindowState"),
+        paths!("general": "defaultStartupTab", "restoreWindowState", "sessionRestore"),
     ),
-    ("Session Restore", paths!("general": "sessionRestore")),
     (
         "Command Palette",
         paths!("workspace":
@@ -337,13 +336,18 @@ const GENERAL_GROUPS: &[Group] = &[
 
 /// Appearance absorbs the former Window & Layout page (tabs, Zen mode).
 const APPEARANCE_GROUPS: &[Group] = &[
-    ("Color Scheme", paths!("general": "theme")),
+    // Colour scheme and interface-style tiles share one card, side by side.
     (
-        "Interface Style",
-        paths!("appearance": "translucentSurfaces", "glassTransparency", "glassBlur"),
+        "Interface",
+        &[
+            "general.theme",
+            "appearance.translucentSurfaces",
+            "appearance.uiDensity",
+            "appearance.glassTransparency",
+            "appearance.glassBlur",
+        ],
     ),
-    ("Tabs", paths!("appearance": "tabsLocation")),
-    ("Tab Behavior", paths!("appearance": "tabFillSpace")),
+    ("Tabs", paths!("appearance": "tabsLocation", "tabFillSpace")),
     (
         "Panes",
         paths!("appearance":
@@ -355,7 +359,6 @@ const APPEARANCE_GROUPS: &[Group] = &[
             "cornerRadiusScale"
         ),
     ),
-    ("Density", paths!("appearance": "uiDensity")),
     (
         "Typography",
         paths!("appearance":

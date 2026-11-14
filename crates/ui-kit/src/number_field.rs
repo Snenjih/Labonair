@@ -157,22 +157,20 @@ impl NumberField {
         let handler = self.on_change.clone();
         div()
             .id(SharedString::from(format!("{}-{tag}", self.id)))
-            .size(c.space(20.0))
+            .w(c.space(28.0))
+            .h_full()
             .flex()
             .flex_shrink_0()
             .items_center()
             .justify_center()
-            .rounded(px(c.radius.sm))
-            .border_1()
-            .border_color(c.border)
             .text_color(c.fg)
             .when(inert, |d| d.opacity(DISABLED_OPACITY))
             .when(!inert, |d| {
                 d.cursor_pointer()
-                    .hover(move |s| s.bg(c.border))
+                    .hover(move |s| s.bg(c.hover_strong))
                     .when(handler.is_some(), |d| {
                         d.tab_index(0)
-                            .focus(|style| style.border_1().border_color(c.ring))
+                            .focus(|style| style.bg(c.hover_strong))
                     })
             })
             .child(glyph)
@@ -215,8 +213,14 @@ impl IntoElement for NumberField {
         let label = SharedString::from(format!("{:.*}", self.decimals, self.value));
         let mut value = div()
             .id(SharedString::from(format!("{}-value", self.id)))
-            .min_w(c.space(52.0))
-            .text_center()
+            .min_w(c.space(56.0))
+            .h_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .border_x_1()
+            .border_color(c.border)
+            .bg(c.field_bg)
             .text_color(c.fg);
         if let Some(editor) = self.editor.as_ref() {
             value = value.child(text_input(editor, c).text_center());
@@ -249,7 +253,12 @@ impl IntoElement for NumberField {
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .h(c.space(28.0))
+                    .overflow_hidden()
+                    .rounded(px(c.radius.md))
+                    .border_1()
+                    .border_color(c.border)
+                    .bg(c.muted_bg)
                     // `\u{2212}` is MINUS SIGN — the glyph the reference
                     // stepper uses (not a hyphen).
                     .child(self.step_button("dec", "\u{2212}", -1))

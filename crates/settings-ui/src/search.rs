@@ -9,7 +9,7 @@
 
 use labonair_command_palette::{match_score, SearchMode};
 
-use crate::pages::{field_location, PageBody, SettingsPage, SettingsPageItem};
+use crate::pages::{field_location, surface_location, PageBody, SettingsPage, SettingsPageItem};
 use crate::schema::AnyField;
 use crate::services::{SettingsSurface, SettingsSurfaceId};
 
@@ -27,6 +27,7 @@ struct SearchEntry {
     target: SearchTarget,
     page_index: usize,
     page_title: &'static str,
+    section: Option<&'static str>,
     haystack: String,
 }
 
@@ -37,6 +38,8 @@ pub(crate) struct SearchRow {
     pub(crate) target: SearchTarget,
     pub(crate) page_index: usize,
     pub(crate) page_title: &'static str,
+    /// Section header the hit lives under (`None` = trailing "Other").
+    pub(crate) section: Option<&'static str>,
 }
 
 /// Build the full search index over every SettingsContent field. Rebuild only
@@ -56,6 +59,7 @@ fn build_index(
             target: SearchTarget::Field(i),
             page_index: location.page_index,
             page_title: pages[location.page_index].title,
+            section: location.section,
             haystack: format!(
                 "{} {} {}",
                 field.meta.title, field.meta.description, field.json_path
@@ -75,6 +79,7 @@ fn build_index(
                 target: SearchTarget::OwnerSurface(*id),
                 page_index,
                 page_title: page.title,
+                section: surface_location(pages, *id).map(|(_, section)| section),
                 haystack: format!(
                     "{} {} {} {}",
                     page.title, surface.title, surface.description, surface.action_label
@@ -136,6 +141,7 @@ pub(crate) fn search(index: &SearchIndex, query: &str, limit: usize) -> Vec<Sear
                 target: e.target,
                 page_index: e.page_index,
                 page_title: e.page_title,
+                section: e.section,
             });
             if rows.len() >= limit {
                 break 'outer;

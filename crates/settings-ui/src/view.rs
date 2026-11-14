@@ -818,9 +818,6 @@ impl SettingsView {
     /// category list.
     pub(crate) fn refresh_search_results(&mut self) {
         self.search_results = crate::search::search(&self.search_index, &self.search, 50);
-        for row in &self.search_results {
-            self.expanded_areas.insert(row.page_index);
-        }
         if self.search_selected >= self.search_results.len() {
             self.search_selected = self.search_results.len().saturating_sub(1);
         }
@@ -1697,8 +1694,23 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let is_active = i == self.active_area;
-        let expanded = self.expanded_areas.contains(&i);
-        let sections = self.section_labels_for_area(i);
+        // While searching, only categories with hits are open and only their
+        // matching sections are listed; `expanded_areas` is left untouched so
+        // clearing the query restores the previous tree.
+        let searching = !self.search.trim().is_empty();
+        let expanded = if searching {
+            self.search_results.iter().any(|row| row.page_index == i)
+        } else {
+            self.expanded_areas.contains(&i)
+        };
+        let mut sections = self.section_labels_for_area(i);
+        if searching {
+            sections.retain(|label| {
+                self.search_results.iter().any(|row| {
+                    row.page_index == i && row.section.unwrap_or("Other") == *label
+                })
+            });
+        }
         let has_sections = !sections.is_empty();
         let view = cx.entity();
         let target = NavigationTarget::area(i);
