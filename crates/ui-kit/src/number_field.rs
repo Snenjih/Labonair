@@ -151,6 +151,10 @@ impl NumberField {
 
     fn step_button(&self, tag: &str, glyph: &'static str, direction: i32) -> AnyElement {
         let c = self.c;
+        // GPUI clips to the content rectangle, not the rounded outline, so the
+        // outer segments carry the container's inner radius themselves (hover,
+        // focus and pressed fills then follow the field's rounded corners).
+        let inner = px((c.radius.md - 1.0).max(0.0));
         let next = self.stepped(direction);
         let at_bound = (next - self.value).abs() < f64::EPSILON;
         let inert = self.disabled || at_bound || self.on_change.is_none();
@@ -164,6 +168,13 @@ impl NumberField {
             .items_center()
             .justify_center()
             .text_color(c.fg)
+            .map(|d| {
+                if direction < 0 {
+                    d.rounded_tl(inner).rounded_bl(inner)
+                } else {
+                    d.rounded_tr(inner).rounded_br(inner)
+                }
+            })
             .when(inert, |d| d.opacity(DISABLED_OPACITY))
             .when(!inert, |d| {
                 d.cursor_pointer()

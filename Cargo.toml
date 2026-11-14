@@ -137,3 +137,9 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Vendored gpui 0.2.2 with one patch: a runtime-settable glyph coverage gamma
+# (`gpui::set_glyph_coverage_gamma`) so `appearance.fontSmoothing` really
+# changes how text is rasterised. See vendor/gpui/src/text_system.rs.
+[patch.crates-io]
+gpui = { path = "vendor/gpui" }

@@ -62,7 +62,6 @@ pub struct AppearanceContent {
     /// Per-theme light/dark variant overrides (`{ id: { light?, dark? } }`).
     pub theme_variant_overrides: Option<BTreeMap<String, Value>>,
     pub app_font_size: Option<u32>,
-    pub app_line_height: Option<f32>,
     /// UI font family (full CSS stack; empty = system default).
     pub app_font_family: Option<String>,
     /// Legacy boolean superseded by [`Self::animations`]. Still read: `true`
@@ -82,14 +81,9 @@ pub struct AppearanceContent {
     pub pane_highlight_color: Option<String>,
     /// Opacity of the active-pane outline, percent (0–100).
     pub pane_highlight_opacity: Option<u32>,
-    /// Editor/terminal text font family (empty = the theme's own mono family).
-    pub buffer_font_family: Option<String>,
-    /// Editor/terminal text font size, px (T20-007 `theme_settings` layer).
-    pub buffer_font_size: Option<u32>,
-    /// Editor/terminal text line-height multiple.
-    pub buffer_line_height: Option<f32>,
     /// macOS text anti-aliasing weight (`"system"` | `"none"` | `"light"` |
-    /// `"medium"` | `"strong"`); applied app-wide via `AppleFontSmoothing`.
+    /// `"medium"` | `"strong"`); applied app-wide (UI, editor, terminal) through the
+    /// vendored gpui glyph-coverage gamma; live, no restart.
     pub font_smoothing: Option<String>,
     /// UI density (`"compact"` | `"default"` | `"comfortable"`) — spacing/size
     /// multiplier around the layout-contract base metrics (T20-007).
@@ -124,7 +118,6 @@ impl AppearanceContent {
             icon_theme: Some("default".to_string()),
             theme_variant_overrides: Some(BTreeMap::new()),
             app_font_size: Some(13),
-            app_line_height: Some(1.5),
             app_font_family: Some("\"Inter Variable\", sans-serif".to_string()),
             reduce_motion: None,
             animations: Some(Animations::System),
@@ -132,9 +125,6 @@ impl AppearanceContent {
             pane_highlight: Some(false),
             pane_highlight_color: Some("#3b82f6".to_string()),
             pane_highlight_opacity: Some(100),
-            buffer_font_family: Some(String::new()),
-            buffer_font_size: Some(13),
-            buffer_line_height: Some(1.55),
             font_smoothing: Some("system".to_string()),
             ui_density: Some("default".to_string()),
             corner_radius_scale: Some(1.0),

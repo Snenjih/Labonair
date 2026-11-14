@@ -69,7 +69,7 @@ macro_rules! paths {
 /// contribute at [`labonair_settings::FIRST_OWNER_PAGE_INDEX`].
 pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
     let mut pages = vec![
-        page_with_sub_pages(
+        page(
             "general",
             "General",
             &["general", "workspace"],
@@ -81,16 +81,16 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
                 GENERAL_PALETTE,
             )],
         ),
-        page_with_sub_pages(
+        page(
             "appearance",
             "Appearance",
             &["appearance"],
             APPEARANCE_GROUPS,
             vec![sub_page(
-                "Panes & Zen Mode",
-                "panes-zen",
-                "Active-pane highlight, dimming of inactive panes and Zen Mode chrome.",
-                APPEARANCE_ADVANCED,
+                "Pane Focus",
+                "pane-focus",
+                "Active-pane highlight colour and opacity, dimming of inactive panes.",
+                APPEARANCE_PANE_FOCUS,
             )],
         ),
         // Owner surfaces (colour theme, icon theme, background) are inserted
@@ -102,15 +102,15 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
             title: "Editor",
             slug: "editor",
             fallback_areas: &["editor"],
-            body: PageBody::Generated(with_links(items_from_groups(EDITOR_GROUPS), &["advanced"])),
-            sub_pages: vec![SubPage {
-                title: "Advanced",
-                slug: "advanced",
-                description: "Minimap, scrollbar, toolbar and Git decorations.",
-                body: PageBody::Generated(items_from_groups(EDITOR_ADVANCED)),
-            }],
+            body: PageBody::Generated(items_from_groups(EDITOR_GROUPS)),
+            sub_pages: vec![sub_page(
+                "Minimap & Scrollbar",
+                "minimap-scrollbar",
+                "Minimap placement and thumb, scrollbar markers and axes.",
+                EDITOR_MINIMAP_SCROLLBAR,
+            )],
         },
-        page_with_sub_pages(
+        page(
             "languages-tools",
             "Languages & Tools",
             &[],
@@ -122,7 +122,7 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
                 LANGUAGE_INLINE,
             )],
         ),
-        page_with_sub_pages(
+        page(
             "search-files",
             "Search & Files",
             &["file_manager"],
@@ -147,16 +147,7 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
             title: "Terminal",
             slug: "terminal",
             fallback_areas: &["terminal", "connections"],
-            body: PageBody::Generated(with_links(
-                items_from_groups(TERMINAL_MAIN),
-                &[
-                    // The background session host is unix-only.
-                    #[cfg(unix)]
-                    "background-hosts",
-                    "agents",
-                    "advanced",
-                ],
-            )),
+            body: PageBody::Generated(items_from_groups(TERMINAL_MAIN)),
             sub_pages: vec![
                 #[cfg(unix)]
                 SubPage {
@@ -182,33 +173,6 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
     ];
     compose_owner_surfaces(&mut pages, surfaces);
     pages
-}
-
-/// Append a "More settings" section of [`SettingsPageItem::SubPageLink`] rows.
-fn with_links(mut items: Vec<SettingsPageItem>, slugs: &[&'static str]) -> Vec<SettingsPageItem> {
-    items.push(SettingsPageItem::SectionHeader("More settings"));
-    items.extend(slugs.iter().map(|slug| SettingsPageItem::SubPageLink(slug)));
-    items
-}
-
-/// A generated page whose power-user groups live on sub-pages, each linked
-/// from a trailing "More settings" section.
-fn page_with_sub_pages(
-    key: &'static str,
-    title: &'static str,
-    fallback_areas: &'static [&'static str],
-    groups: &'static [Group],
-    sub_pages: Vec<SubPage>,
-) -> SettingsPage {
-    let slugs: Vec<&'static str> = sub_pages.iter().map(|sub| sub.slug).collect();
-    SettingsPage {
-        key,
-        title,
-        slug: key,
-        fallback_areas,
-        body: PageBody::Generated(with_links(items_from_groups(groups), &slugs)),
-        sub_pages,
-    }
 }
 
 fn sub_page(
@@ -412,13 +376,18 @@ fn section_for_path(items: &[SettingsPageItem], json_path: &str) -> Option<&'sta
     None
 }
 
-/// Expand curated `(section, &[json_path])` groups into page rows.
+/// Expand curated `(section, &[entry])` groups into page rows. An entry is a
+/// field's JSON path, or `">slug"` for a [`SettingsPageItem::SubPageLink`] row
+/// that sits inline among the section's fields.
 fn items_from_groups(groups: &'static [Group]) -> Vec<SettingsPageItem> {
     let mut items = Vec::new();
     for (label, paths) in groups {
         items.push(SettingsPageItem::SectionHeader(label));
         for path in *paths {
-            items.push(SettingsPageItem::Item(path));
+            items.push(match path.strip_prefix('>') {
+                Some(slug) => SettingsPageItem::SubPageLink(slug),
+                None => SettingsPageItem::Item(path),
+            });
         }
     }
     items
@@ -431,6 +400,7 @@ const GENERAL_GROUPS: &[Group] = &[
     ),
     ("Updates", paths!("general": "checkForUpdates")),
     ("Quit", paths!("workspace": "confirmQuitWithActiveSessions")),
+    ("Command Palette", &[">command-palette"]),
 ];
 
 const GENERAL_PALETTE: &[Group] = &[(
@@ -446,7 +416,9 @@ const GENERAL_PALETTE: &[Group] = &[(
     ),
 )];
 
-/// Appearance absorbs the former Window & Layout page (tabs, Zen mode).
+/// Appearance owns app-wide chrome only: colour scheme, tabs, panes, UI font
+/// and glyph smoothing (which affects UI, editor and terminal text alike), and
+/// Zen Mode. Editor and terminal fonts live on their own pages.
 const APPEARANCE_GROUPS: &[Group] = &[
     // Colour scheme and interface-style tiles share one card, side by side.
     (
@@ -462,36 +434,21 @@ const APPEARANCE_GROUPS: &[Group] = &[
     ("Tabs", paths!("appearance": "tabsLocation", "tabFillSpace")),
     (
         "Panes",
-        paths!("appearance":
-            "paneLayout",
-            "cornerRadiusScale"
-        ),
+        &[
+            "appearance.paneLayout",
+            "appearance.cornerRadiusScale",
+            ">pane-focus",
+        ],
     ),
     (
         "Typography",
         paths!("appearance":
             "appFontFamily",
-            "fontSmoothing",
             "appFontSize",
-            "appLineHeight",
-            "bufferFontFamily",
-            "bufferFontSize",
-            "bufferLineHeight"
+            "fontSmoothing"
         ),
     ),
     ("Motion", paths!("appearance": "animations")),
-];
-
-const APPEARANCE_ADVANCED: &[Group] = &[
-    (
-        "Pane focus",
-        paths!("appearance":
-            "paneHighlight",
-            "paneHighlightColor",
-            "paneHighlightOpacity",
-            "dimInactivePanes"
-        ),
-    ),
     (
         "Zen Mode",
         paths!("appearance":
@@ -500,6 +457,16 @@ const APPEARANCE_ADVANCED: &[Group] = &[
         ),
     ),
 ];
+
+const APPEARANCE_PANE_FOCUS: &[Group] = &[(
+    "Pane focus",
+    paths!("appearance":
+        "paneHighlight",
+        "paneHighlightColor",
+        "paneHighlightOpacity",
+        "dimInactivePanes"
+    ),
+)];
 
 /// Section headers of the Themes page; the owners of the colour theme, icon
 /// theme and background contribute their surfaces into them.
@@ -523,13 +490,12 @@ const EDITOR_GROUPS: &[Group] = &[
     ("Theme", paths!("editor": "editorTheme")),
     (
         "Font",
-        &[
-            "editor.editorFontFamily",
-            "editor.editorFontSize",
-            "editor.editorLineHeight",
-            // Same key as Appearance > Typography: one value, two surfaces.
-            "appearance.fontSmoothing",
-        ],
+        paths!("editor":
+            "editorFontFamily",
+            "editorFontSize",
+            "editorFontWeight",
+            "editorLineHeight"
+        ),
     ),
     (
         "Behaviour",
@@ -553,22 +519,23 @@ const EDITOR_GROUPS: &[Group] = &[
     ),
     (
         "Display",
-        paths!("editor":
-            "editorLineNumbers",
-            "editorWordWrap",
-            "editorWhitespace",
-            "editorRulers",
-            "editorScrollBeyondLastLine",
-            "editorStickyContext",
-            "editorMouseWheelZoom",
-            "editorScrollSensitivity",
-            "editorFastScrollSensitivity",
-            "editorVerticalScrollMargin",
-            "editorHighlightCurrentLine",
-            "editorBracketMatching",
-            "editorShowCursorPosition",
-            "editorShowSelectionStats"
-        ),
+        &[
+            "editor.editorLineNumbers",
+            "editor.editorWordWrap",
+            "editor.editorWhitespace",
+            "editor.editorRulers",
+            "editor.editorScrollBeyondLastLine",
+            "editor.editorStickyContext",
+            "editor.editorMouseWheelZoom",
+            "editor.editorScrollSensitivity",
+            "editor.editorFastScrollSensitivity",
+            "editor.editorVerticalScrollMargin",
+            "editor.editorHighlightCurrentLine",
+            "editor.editorBracketMatching",
+            "editor.editorShowCursorPosition",
+            "editor.editorShowSelectionStats",
+            ">minimap-scrollbar",
+        ],
     ),
     (
         "Caret",
@@ -578,9 +545,26 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorCursorBlinkIntervalMs"
         ),
     ),
+    (
+        "Toolbar",
+        paths!("editor":
+            "editorToolbarBreadcrumbs",
+            "editorToolbarQuickActions",
+            "editorSelectionsMenu",
+            "editorToolbarCodeActions",
+            "editorShowOutline"
+        ),
+    ),
+    (
+        "Git",
+        paths!("editor":
+            "editorGitGutter",
+            "editorGitWordDiff"
+        ),
+    ),
 ];
 
-const EDITOR_ADVANCED: &[Group] = &[
+const EDITOR_MINIMAP_SCROLLBAR: &[Group] = &[
     (
         "Minimap",
         paths!("editor":
@@ -606,36 +590,20 @@ const EDITOR_ADVANCED: &[Group] = &[
             "editorScrollbarVertical"
         ),
     ),
-    (
-        "Toolbar",
-        paths!("editor":
-            "editorToolbarBreadcrumbs",
-            "editorToolbarQuickActions",
-            "editorSelectionsMenu",
-            "editorToolbarCodeActions",
-            "editorShowOutline"
-        ),
-    ),
-    (
-        "Git",
-        paths!("editor":
-            "editorGitGutter",
-            "editorGitWordDiff"
-        ),
-    ),
 ];
 
 const LANGUAGE_GROUPS: &[Group] = &[(
     "Language Services",
-    paths!("editor":
-        "editorDiagnostics",
-        "editorDiagnosticsMaxSeverity",
-        "editorSemanticTokens",
-        "editorCodeLens",
-        "editorCompletion",
-        "editorHover",
-        "editorMaxFileSizeMb"
-    ),
+    &[
+        "editor.editorDiagnostics",
+        "editor.editorDiagnosticsMaxSeverity",
+        "editor.editorSemanticTokens",
+        "editor.editorCodeLens",
+        "editor.editorCompletion",
+        "editor.editorHover",
+        "editor.editorMaxFileSizeMb",
+        ">inline-hints",
+    ],
 )];
 
 const LANGUAGE_INLINE: &[Group] = &[
@@ -682,7 +650,11 @@ const FILE_GROUPS: &[Group] = &[
     ),
     (
         "Browsing",
-        paths!("file_manager": "explorerShowHiddenByDefault"),
+        &[
+            "file_manager.explorerShowHiddenByDefault",
+            ">explorer",
+            ">sftp",
+        ],
     ),
 ];
 
@@ -725,7 +697,6 @@ const TERMINAL_MAIN: &[Group] = &[
             "terminal.terminalFontSize",
             "terminal.terminalLineHeight",
             "terminal.terminalFontWeight",
-            "appearance.fontSmoothing",
         ],
     ),
     (
@@ -747,9 +718,15 @@ const TERMINAL_MAIN: &[Group] = &[
             "scrollbackRetentionDays"
         ),
     ),
+    ("Integrations", &["terminal.agentIntegrations", ">agents"]),
     (
-        "Integrations",
-        paths!("terminal": "agentIntegrations", "resumeOnRestore"),
+        "Sessions",
+        &[
+            "terminal.resumeOnRestore",
+            // The background session host is unix-only.
+            #[cfg(unix)]
+            ">background-hosts",
+        ],
     ),
     ("Bell", paths!("terminal": "terminalBell")),
     ("Appearance", paths!("terminal": "terminalOpacity")),
@@ -761,6 +738,7 @@ const TERMINAL_MAIN: &[Group] = &[
             "sshKeepaliveMaxFailures"
         ),
     ),
+    ("Advanced", &[">advanced"]),
 ];
 
 const TERMINAL_AGENTS: &[Group] = &[(
@@ -872,14 +850,8 @@ mod tests {
         let fields = all_fields();
         let placed = all_placed_paths(&pages);
         let mut unique = HashSet::new();
-        // Keys intentionally shown on more than one page (one value, several
-        // surfaces); the first placement stays canonical for search.
-        const MIRRORED: &[&str] = &["appearance.fontSmoothing"];
         for path in &placed {
-            assert!(
-                unique.insert(path) || MIRRORED.contains(path),
-                "explicit placement repeats `{path}`"
-            );
+            assert!(unique.insert(path), "explicit placement repeats `{path}`");
             assert!(
                 fields.iter().any(|field| field.json_path == *path),
                 "explicit placement references missing field `{path}`"
@@ -896,17 +868,79 @@ mod tests {
     }
 
     #[test]
-    fn font_smoothing_is_mirrored_into_editor_and_terminal_font_sections() {
+    fn typography_is_split_by_owner_and_smoothing_is_not_duplicated() {
         let pages = pages();
-        for key in ["editor", "terminal"] {
-            let page = pages.iter().find(|page| page.key == key).unwrap();
-            let PageBody::Generated(items) = &page.body;
+        let place = |path: &str| {
+            section_label_for_field(&pages, path)
+                .map(|location| (pages[location.page_index].key, location.section))
+        };
+        for path in [
+            "appearance.appFontFamily",
+            "appearance.appFontSize",
+            "appearance.fontSmoothing",
+        ] {
             assert_eq!(
-                section_for_path(items, "appearance.fontSmoothing"),
-                Some("Font"),
-                "{key}"
+                place(path),
+                Some(("appearance", Some("Typography"))),
+                "{path}"
             );
         }
+        for path in [
+            "editor.editorFontFamily",
+            "editor.editorFontSize",
+            "editor.editorFontWeight",
+            "editor.editorLineHeight",
+        ] {
+            assert_eq!(place(path), Some(("editor", Some("Font"))), "{path}");
+        }
+        for path in [
+            "terminal.terminalFontFamily",
+            "terminal.terminalFontSize",
+            "terminal.terminalFontWeight",
+            "terminal.terminalLineHeight",
+        ] {
+            assert_eq!(place(path), Some(("terminal", Some("Font"))), "{path}");
+        }
+    }
+
+    #[test]
+    fn sub_page_links_sit_inline_in_a_topical_section() {
+        let pages = pages();
+        for page in &pages {
+            let PageBody::Generated(items) = &page.body;
+            assert!(
+                !items
+                    .iter()
+                    .any(|i| matches!(i, SettingsPageItem::SectionHeader("More settings"))),
+                "{}: no catch-all link section",
+                page.key
+            );
+        }
+        let section_of_link = |page: &str, slug: &str| {
+            let page = pages.iter().find(|p| p.key == page).unwrap();
+            let PageBody::Generated(items) = &page.body;
+            let mut section = "";
+            for item in items {
+                match item {
+                    SettingsPageItem::SectionHeader(label) => section = label,
+                    SettingsPageItem::SubPageLink(s) if *s == slug => return Some(section),
+                    _ => {}
+                }
+            }
+            None
+        };
+        assert_eq!(section_of_link("appearance", "pane-focus"), Some("Panes"));
+        assert_eq!(
+            section_of_link("editor", "minimap-scrollbar"),
+            Some("Display")
+        );
+        assert_eq!(section_of_link("terminal", "agents"), Some("Integrations"));
+        assert_eq!(section_of_link("search-files", "sftp"), Some("Browsing"));
+        #[cfg(unix)]
+        assert_eq!(
+            section_of_link("terminal", "background-hosts"),
+            Some("Sessions")
+        );
     }
 
     #[test]
@@ -929,7 +963,7 @@ mod tests {
         }
         for slug in [
             "general/command-palette",
-            "appearance/panes-zen",
+            "appearance/pane-focus",
             "search-files/sftp",
         ] {
             assert!(

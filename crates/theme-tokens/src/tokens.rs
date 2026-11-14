@@ -264,6 +264,24 @@ impl VibrancyLayer {
             material => color.opacity(self.opacity_in(material)),
         }
     }
+
+    /// Opacity of one of **two stacked** layers (a floating card over the
+    /// window canvas) such that the pair composites to this role's
+    /// [`opacity_in`](Self::opacity_in): `1 - (1 - a)^2 = opacity`. Two layers
+    /// that each used the full opacity would compound to near-opaque and hide
+    /// the glass in the Comfortable layout.
+    pub fn stacked_opacity_in(self, material: impl Into<SurfaceMaterial>) -> f32 {
+        1.0 - (1.0 - self.opacity_in(material.into())).sqrt()
+    }
+
+    /// [`resolve`](Self::resolve) for a layer that sits on the canvas card
+    /// stack (see [`stacked_opacity_in`](Self::stacked_opacity_in)).
+    pub fn resolve_stacked(self, color: Hsla, material: impl Into<SurfaceMaterial>) -> Hsla {
+        match material.into() {
+            SurfaceMaterial::Opaque => color,
+            material => color.opacity(self.stacked_opacity_in(material)),
+        }
+    }
 }
 
 /// Border variant tokens (`--border-*`).
@@ -1023,6 +1041,32 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stacked_layers_composite_to_the_single_layer_opacity() {
+        for material in [
+            SurfaceMaterial::Opaque,
+            SurfaceMaterial::Glassy(30),
+            SurfaceMaterial::Glassy(80),
+            SurfaceMaterial::ImageGlassy(30),
+            SurfaceMaterial::ImageClassic,
+        ] {
+            for layer in [VibrancyLayer::Canvas, VibrancyLayer::Sidebar] {
+                let a = layer.stacked_opacity_in(material);
+                let total = 1.0 - (1.0 - a) * (1.0 - a);
+                assert!(
+                    (total - layer.opacity_in(material)).abs() < 1e-5,
+                    "{layer:?}"
+                );
+                assert!(a <= layer.opacity_in(material) + 1e-6);
+            }
+        }
+        // Opaque stays opaque and returns the colour untouched.
+        let c = gpui::hsla(0.5, 0.5, 0.5, 1.0);
+        assert_eq!(VibrancyLayer::Canvas.resolve_stacked(c, false), c);
+        assert!(VibrancyLayer::Canvas.resolve_stacked(c, true).a < 1.0);
+    }
+
     use crate::color::{oklch_a, to_rgb8};
 
     fn close(a: [u8; 3], b: [u8; 3], tol: i32) -> bool {

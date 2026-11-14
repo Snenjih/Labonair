@@ -81,10 +81,6 @@ pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
     Some(ThemeMetrics {
         ui_font_family: s.ui_font_family().to_string(),
         ui_font_size: s.ui_font_size(),
-        ui_line_height: s.ui_line_height(),
-        buffer_font_family: s.buffer_font_family().to_string(),
-        buffer_font_size: s.buffer_font_size(),
-        buffer_line_height: s.buffer_line_height(),
         density: UiDensity::from_str_or_default(s.ui_density()),
         corner_radius_scale: s.corner_radius_scale(),
         reduce_motion: animations.is_reduced(),
@@ -194,32 +190,29 @@ pub fn apply_theme_metrics(theme: &Entity<ThemeStore>, cx: &mut App) {
     }
 }
 
-/// Apply `appearance.fontSmoothing` app-wide. GPUI 0.2.2 has no smoothing
-/// option; CoreText reads the per-app `AppleFontSmoothing` default (0 none ..
-/// 3 strong, unset = system), which new glyph rasterisations pick up.
-#[cfg(target_os = "macos")]
-fn apply_font_smoothing(cx: &App) {
-    use objc2_foundation::{ns_string, NSUserDefaults};
-    let Some(s) = ThemeSettings::try_get(cx) else {
-        return;
-    };
-    let level = match s.font_smoothing() {
-        "none" => Some(0),
-        "light" => Some(1),
-        "medium" => Some(2),
-        "strong" => Some(3),
-        _ => None,
-    };
-    let defaults = NSUserDefaults::standardUserDefaults();
-    let key = ns_string!("AppleFontSmoothing");
+/// Coverage gamma for an `appearance.fontSmoothing` value. Glyph alpha `a`
+/// becomes `a^gamma`: below 1.0 thickens/darkens strokes, above 1.0 thins them.
+/// `"system"` and unknown values leave rasterisation untouched.
+pub fn smoothing_gamma(level: &str) -> f32 {
     match level {
-        Some(level) => defaults.setInteger_forKey(level, key),
-        None => defaults.removeObjectForKey(key),
+        "none" => 1.5,
+        "light" => 1.2,
+        "medium" => 0.85,
+        "strong" => 0.7,
+        _ => 1.0,
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn apply_font_smoothing(_cx: &App) {}
+/// Apply `appearance.fontSmoothing` app-wide. CoreText ignores the
+/// `AppleFontSmoothing` default once the process runs, so we use the vendored
+/// gpui's glyph-coverage gamma instead (`vendor/gpui`, `[patch.crates-io]`).
+/// Applies live: the gamma is part of the glyph atlas key, so text everywhere
+/// (editor, terminal, UI) re-rasterises on the next frame; no restart needed.
+fn apply_font_smoothing(cx: &App) {
+    if let Some(s) = ThemeSettings::try_get(cx) {
+        gpui::set_glyph_coverage_gamma(smoothing_gamma(s.font_smoothing()));
+    }
+}
 
 /// Push the font + editor-syntax-theme preferences into the [`ThemeStore`], and
 /// (re)load + activate the persisted registry theme (T20-005). Used at startup
@@ -402,6 +395,20 @@ mod tests {
     use super::*;
     use gpui::TestAppContext;
     use labonair_settings::{SettingsContent, SettingsLayer, SettingsStore};
+
+    #[test]
+    fn smoothing_levels_map_monotonically_to_coverage_gamma() {
+        assert_eq!(smoothing_gamma("system"), 1.0);
+        assert_eq!(smoothing_gamma("bogus"), 1.0);
+        let order = ["none", "light", "system", "medium", "strong"].map(smoothing_gamma);
+        assert!(order.windows(2).all(|w| w[0] > w[1]));
+        // Real effect: strong thickens a half-coverage pixel, none thins it.
+        let mut strong = [128u8];
+        gpui::apply_coverage_gamma(&mut strong, smoothing_gamma("strong"));
+        let mut none = [128u8];
+        gpui::apply_coverage_gamma(&mut none, smoothing_gamma("none"));
+        assert!(strong[0] > 128 && none[0] < 128);
+    }
 
     fn install_store(cx: &mut App, content: SettingsContent) {
         let path = std::env::temp_dir().join(format!(

@@ -25,7 +25,6 @@
     "iconTheme": "default",
     "themeVariantOverrides": {},
     "appFontSize": 13,
-    "appLineHeight": 1.5,
     "appFontFamily": "\"Inter Variable\", sans-serif",
     // "system" (meant to follow the OS Reduce motion preference; currently behaves like "full") | "full" | "reduced" | "off".
     "animations": "system",
@@ -36,9 +35,6 @@
     "paneHighlightOpacity": 100,
     // Editor/terminal text (T20-007 theme_settings layer). Empty family = the
     // theme's own mono font.
-    "bufferFontFamily": "",
-    "bufferFontSize": 13,
-    "bufferLineHeight": 1.55,
     // "system" | "none" | "light" | "medium" | "strong" — macOS text smoothing.
     "fontSmoothing": "system",
     // "compact" | "default" | "comfortable" — spacing/size density.

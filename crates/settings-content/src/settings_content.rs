@@ -123,7 +123,6 @@ mod tests {
             Some("\"Inter Variable\", sans-serif")
         );
         assert_eq!(defaults.appearance.app_font_size, Some(13));
-        assert_eq!(defaults.appearance.app_line_height, Some(1.5));
         assert_eq!(
             defaults.terminal.terminal_font_family.as_deref(),
             Some("\"JetBrains Mono\", SFMono-Regular, Menlo, monospace")

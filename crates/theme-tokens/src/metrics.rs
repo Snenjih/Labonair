@@ -115,14 +115,6 @@ pub struct ThemeMetrics {
     pub ui_font_family: String,
     /// UI-chrome font size, px.
     pub ui_font_size: f32,
-    /// UI-chrome line-height multiple.
-    pub ui_line_height: f32,
-    /// Editor/terminal text font family (empty = the theme's own mono family).
-    pub buffer_font_family: String,
-    /// Editor/terminal text font size, px.
-    pub buffer_font_size: f32,
-    /// Editor/terminal text line-height multiple.
-    pub buffer_line_height: f32,
     /// Spacing/size density.
     pub density: UiDensity,
     /// Multiplier applied to the theme's [`RadiusScale`] (1.0 = unchanged).
@@ -158,10 +150,6 @@ impl Default for ThemeMetrics {
         Self {
             ui_font_family: String::new(),
             ui_font_size: ty.app_font_size,
-            ui_line_height: ty.app_line_height,
-            buffer_font_family: String::new(),
-            buffer_font_size: ty.buffer_font_size,
-            buffer_line_height: 1.55,
             density: UiDensity::Default,
             corner_radius_scale: 1.0,
             reduce_motion: false,
@@ -264,18 +252,6 @@ impl ActiveTheme {
 
     pub fn ui_font_size(&self) -> f32 {
         self.metrics.ui_font_size
-    }
-
-    pub fn ui_line_height(&self) -> f32 {
-        self.metrics.ui_line_height
-    }
-
-    pub fn buffer_font_size(&self) -> f32 {
-        self.metrics.buffer_font_size
-    }
-
-    pub fn buffer_line_height(&self) -> f32 {
-        self.metrics.buffer_line_height
     }
 
     pub fn reduce_motion(&self) -> bool {
@@ -385,9 +361,6 @@ mod tests {
         let m = ThemeMetrics::default();
         let ty = Typography::default();
         assert_eq!(m.ui_font_size, ty.app_font_size);
-        assert_eq!(m.ui_line_height, ty.app_line_height);
-        assert_eq!(m.buffer_font_size, ty.buffer_font_size);
-        assert_eq!(m.buffer_line_height, 1.55);
         assert_eq!(m.corner_radius_scale, 1.0);
         assert_eq!(m.density, UiDensity::Default);
         assert!(!m.reduce_motion);

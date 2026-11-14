@@ -5,6 +5,7 @@ use gpui::{
     div, px, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     Styled, Window,
 };
+use labonair_settings::{EditorSettings, Settings as _};
 use labonair_theme::ThemeStore;
 
 const SAMPLE: &[&str] = &[
@@ -31,9 +32,8 @@ impl Render for EditorPreview {
         let store = self.theme.read(cx);
         let core = &store.theme().core;
         let font_px = store.buffer_font_size();
-        let line_px = (font_px * store.metrics().buffer_line_height)
-            .ceil()
-            .max(1.0);
+        let line_height = EditorSettings::try_get(cx).map_or(1.55, |s| s.line_height());
+        let line_px = (font_px * line_height).ceil().max(1.0);
         div()
             .id("editor-settings-preview")
             .w_full()

@@ -128,6 +128,7 @@ pub(crate) fn is_known_legacy_path(path: &[String]) -> bool {
                 BACKGROUND_KEYS.contains(&key.as_str())
                     || MOVED_APPEARANCE_FIELDS.contains(&key.as_str())
                     || REMOVED_APPEARANCE_FIELDS.contains(&key.as_str())
+                    || REMOVED_V2_APPEARANCE_FIELDS.contains(&key.as_str())
             }
             "terminal" => REMOVED_TERMINAL_FIELDS.contains(&key.as_str()),
             "editor" => {
@@ -291,7 +292,6 @@ fn appearance_from(p: &Preferences) -> AppearanceContent {
         icon_theme: Some(p.icon_theme.clone()),
         theme_variant_overrides: Some(p.theme_variant_overrides.clone()),
         app_font_size: Some(p.app_font_size),
-        app_line_height: Some(p.app_line_height),
         app_font_family: Some(p.app_font_family.clone()),
         // `reduceMotion: true` maps to `animations: "off"`; `false` leaves the
         // default (`system`). The boolean itself is no longer written.
@@ -694,10 +694,17 @@ const REMOVED_GENERAL_FIELDS: &[&str] = &[
     "confirmQuitWithSsh",
 ];
 
+/// v2 `appearance` leaves that no code ever read (editor/terminal fonts live on
+/// their own pages). Old files may still carry them; they are ignored, not
+/// reported as schema warnings.
+const REMOVED_V2_APPEARANCE_FIELDS: &[&str] =
+    &["bufferFontFamily", "bufferFontSize", "bufferLineHeight"];
+
 /// Legacy appearance preferences with no native GPUI consumer. They remain
 /// readable in the backend wire shape solely for old configuration files.
 #[cfg_attr(not(test), allow(dead_code))]
 const REMOVED_APPEARANCE_FIELDS: &[&str] = &[
+    "appLineHeight",
     "sidebarTabInfoLine",
     "sidebarGroupByFolder",
     "sidebarGroupSingleTabs",
@@ -1224,7 +1231,6 @@ mod tests {
             "iconTheme",
             "themeVariantOverrides",
             "appFontSize",
-            "appLineHeight",
             "appFontFamily",
             "reduceMotion",
             "backgroundImage",

@@ -298,13 +298,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Base UI font size in points."
         ),
         field!(
-            appearance.app_line_height,
-            "appLineHeight",
-            Slider { min: 1.0, max: 2.0, step: 0.05, int: false },
-            "UI line height",
-            "Line height multiplier for application text."
-        ),
-        field!(
             appearance.app_font_family,
             "appFontFamily",
             FontFamily,
@@ -364,7 +357,7 @@ pub fn all_fields() -> Vec<AnyField> {
                 ("strong", "Strong"),
             ]),
             "Font smoothing",
-            "Text anti-aliasing weight, shared by the UI, editor and terminal (macOS). New text picks it up immediately; already cached glyphs need a restart (Restart required)."
+            "Glyph weight for all text: UI, editor and terminal. System default leaves rendering untouched; Light/None thin strokes, Medium/Strong thicken them. Applies live, no restart."
         ),
         field!(
             appearance.ui_density,
@@ -408,29 +401,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "How strongly the desktop behind Glassy surfaces is blurred. Only applies with the Glassy interface style.",
             "%",
             "0% is a sharp see-through window, 100% is the strongest blur."
-        ),
-        field!(
-            appearance.buffer_font_family,
-            "bufferFontFamily",
-            FontFamily,
-            "Editor & terminal font",
-            "Font used for editor and terminal text (empty = the theme's mono font)."
-        ),
-        field_with_details!(
-            appearance.buffer_font_size,
-            "bufferFontSize",
-            Slider { min: 9.0, max: 24.0, step: 1.0, int: true },
-            "Editor & terminal font size",
-            "Text size for editor and terminal content.",
-            "pt",
-            "Applied to editor and terminal text."
-        ),
-        field!(
-            appearance.buffer_line_height,
-            "bufferLineHeight",
-            Slider { min: 1.0, max: 2.0, step: 0.05, int: false },
-            "Editor & terminal line height",
-            "Line-height multiplier for editor and terminal text."
         ),
         field!(
             appearance.tabs_location,

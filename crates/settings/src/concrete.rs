@@ -181,26 +181,6 @@ impl ThemeSettings {
         self.0.app_font_size.unwrap_or(13) as f32
     }
 
-    /// UI-chrome line-height multiple.
-    pub fn ui_line_height(&self) -> f32 {
-        self.0.app_line_height.unwrap_or(1.5)
-    }
-
-    /// Editor/terminal text font family (empty = the theme's own mono family).
-    pub fn buffer_font_family(&self) -> &str {
-        self.0.buffer_font_family.as_deref().unwrap_or("")
-    }
-
-    /// Editor/terminal text font size, px.
-    pub fn buffer_font_size(&self) -> f32 {
-        self.0.buffer_font_size.unwrap_or(13) as f32
-    }
-
-    /// Editor/terminal text line-height multiple.
-    pub fn buffer_line_height(&self) -> f32 {
-        self.0.buffer_line_height.unwrap_or(1.55)
-    }
-
     /// Font smoothing token (`"system"` | `"none"` | `"light"` | `"medium"` | `"strong"`).
     pub fn font_smoothing(&self) -> &str {
         self.0.font_smoothing.as_deref().unwrap_or("system")
@@ -1254,7 +1234,6 @@ mod tests {
         assert_eq!(base.corner_radius_scale(), 1.0);
         assert_eq!(base.ui_density(), "default");
         assert_eq!(base.ui_font_size(), 13.0);
-        assert_eq!(base.buffer_font_size(), 13.0);
     }
 
     #[test]

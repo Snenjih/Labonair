@@ -1350,7 +1350,8 @@ impl SettingsView {
             SharedString::from(format!("settings-group-{}-{index}", self.active_area)),
             *c,
         );
-        for item in &block.items {
+        let last_index = block.items.len().saturating_sub(1);
+        for (item_index, item) in block.items.iter().enumerate() {
             let row = match item {
                 SectionItem::Field(field) => {
                     let source = self.field_source(field, cx);
@@ -1360,9 +1361,14 @@ impl SettingsView {
                 SectionItem::OwnerSurface(id) => {
                     self.render_owner_surface_row(*id, embed, window, c, cx)
                 }
-                SectionItem::SubPageLink(slug, title, description) => {
-                    self.render_subpage_link(slug, title, description, c, cx)
-                }
+                SectionItem::SubPageLink(slug, title, description) => self.render_subpage_link(
+                    slug,
+                    title,
+                    description,
+                    (item_index == 0, item_index == last_index),
+                    c,
+                    cx,
+                ),
                 SectionItem::TileRow(fields) => self.render_tile_row(fields, c, cx),
                 SectionItem::BackgroundHost(item) => self.render_host_item(item, c, cx),
                 SectionItem::EditorPreview => {
@@ -1485,10 +1491,14 @@ impl SettingsView {
         slug: &'static str,
         title: &'static str,
         description: &'static str,
+        (first, last): (bool, bool),
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let c = *c;
+        // GPUI clips to rectangles, not the group card's rounded outline, so the
+        // first/last row carries the card's inner radius for its hover/focus fill.
+        let inner = px((c.radius.lg - 1.0).max(0.0));
         let open = move |this: &mut Self, cx: &mut Context<Self>| {
             if let Some(i) = this.pages[this.active_area]
                 .sub_pages
@@ -1508,6 +1518,8 @@ impl SettingsView {
             .gap(c.space(12.0))
             .px(c.control_space(16.0))
             .py(c.control_space(12.0))
+            .when(first, |d| d.rounded_tl(inner).rounded_tr(inner))
+            .when(last, |d| d.rounded_bl(inner).rounded_br(inner))
             .cursor_pointer()
             .hover(move |s| s.bg(c.hover_strong))
             .tab_index(0)
