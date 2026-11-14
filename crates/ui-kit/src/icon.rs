@@ -56,6 +56,7 @@ macro_rules! icon_enum {
 
 icon_enum! {
 AcpRegistry => "acp_registry",
+AgentPi => "agent_pi",
 AiAnthropic => "ai_anthropic",
 AiAnthropicCompat => "ai_anthropic_compat",
 AiBedrock => "ai_bedrock",

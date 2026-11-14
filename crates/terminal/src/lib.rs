@@ -14,6 +14,7 @@
 //! * [`render`] — pure grid → style-run batching + resize math for the GPUI
 //!   renderer (T03-002). The GPUI element itself lives in `labonair-ui`.
 
+pub mod agent;
 pub mod command_provider;
 pub mod daemon_host;
 pub mod daemon_ssh;

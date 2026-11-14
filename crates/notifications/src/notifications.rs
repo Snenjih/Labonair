@@ -297,6 +297,33 @@ pub fn notification_center(cx: &App) -> Entity<NotificationCenter> {
     cx.global::<GlobalNotificationCenter>().0.clone()
 }
 
+/// Fire-and-forget native OS notification (macOS only for now). Title and body
+/// are passed to AppleScript as argv, never interpolated into the script.
+pub fn notify_os(title: &str, body: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::{Command, Stdio};
+        let _ = Command::new("osascript")
+            .args([
+                "-e",
+                "on run argv",
+                "-e",
+                "display notification (item 2 of argv) with title (item 1 of argv)",
+                "-e",
+                "end run",
+                title,
+                body,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    }
+    // ponytail: Linux/Windows native notifications not implemented.
+    #[cfg(not(target_os = "macos"))]
+    let _ = (title, body);
+}
+
 /// Turns a `Result<T, String>` into a retained error notification.
 pub fn notify_err<T>(
     title: impl Into<SharedString>,

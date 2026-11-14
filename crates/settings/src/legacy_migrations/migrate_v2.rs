@@ -432,6 +432,12 @@ fn terminal_from(p: &Preferences) -> TerminalContent {
         resume_on_restore: None,
         resume_commands: None,
         detached_scrollback_lines: None,
+        agent_integrations: None,
+        agent_integration_claude_code: None,
+        agent_integration_codex: None,
+        agent_integration_pi: None,
+        agent_integration_open_code: None,
+        agent_integration_notify: None,
     }
 }
 

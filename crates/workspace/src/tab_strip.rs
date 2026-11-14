@@ -47,6 +47,8 @@ pub(crate) struct TabDisplay {
     pub pane_count: usize,
     /// Unsaved-changes marker: an editor tab, or a group holding a dirty editor.
     pub dirty: bool,
+    /// Agent-integration status badge (terminal tab running a coding agent).
+    pub agent_status: Option<labonair_terminal::agent::AgentStatus>,
 }
 
 /// Resolve how `tab` is displayed. Reads settings and the theme, never mutates.
@@ -89,10 +91,20 @@ pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisp
         TabDiagnosticStatus::Error => c.error,
         TabDiagnosticStatus::Warning => c.warning,
     });
+    // Agent integration: a single-pane terminal tab running a coding agent
+    // swaps its icon for the agent's logo and shows its status.
+    let agent = (group.is_none())
+        .then(|| workspace.layouts.get(&tab.id).and_then(|l| l.active))
+        .flatten()
+        .and_then(|pane| workspace.agents.get(&pane));
     TabDisplay {
+        agent_status: agent.and_then(|a| a.status),
         tooltip: label.clone(),
         label,
-        icon: group.map_or_else(|| tab.kind.indicator(), |g| g.icon),
+        icon: group.map_or_else(
+            || agent.map_or_else(|| tab.kind.indicator(), |a| crate::agent_integration::icon(a.agent)),
+            |g| g.icon,
+        ),
         status_color,
         diagnostic_color,
         pane_count,
@@ -214,6 +226,9 @@ impl Workspace {
         let mut tab_item = tab_item(format!("workspace-tab-{id}"), c, label.clone());
         if sidebar || tab.kind != TabKind::Editor || display.pane_count > 1 {
             tab_item = tab_item.leading(display.icon);
+        }
+        if let Some(status) = display.agent_status {
+            tab_item = tab_item.badge(crate::agent_integration::badge(status, &c));
         }
         tab_item = tab_item
             .style(TabStyle::Floating)

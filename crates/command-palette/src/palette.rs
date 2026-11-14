@@ -331,6 +331,8 @@ fn icon_for(icon: CommandIcon) -> IconName {
         CommandIcon::PanelBottom => IconName::PanelBottom,
         CommandIcon::Download => IconName::Download,
         CommandIcon::Palette => IconName::Palette,
+        CommandIcon::SplitRight => IconName::SplitRight,
+        CommandIcon::SplitDown => IconName::SplitDown,
     }
 }
 

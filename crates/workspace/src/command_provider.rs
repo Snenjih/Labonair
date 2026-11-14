@@ -937,7 +937,7 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_contexts(PANE_CONTEXTS)
                 .with_default_binding("cmd-\\", Some(CommandContext::Pane))
                 .with_default_binding("cmd-d", Some(CommandContext::Terminal))
-                .with_icon(CommandIcon::ChevronRight),
+                .with_icon(CommandIcon::SplitRight),
             CommandDescriptor::new(CommandId::SplitUp, "Split Pane Up", "Layout")
                 .with_contexts(PANE_CONTEXTS)
                 .with_default_binding("cmd-k up", Some(CommandContext::Pane)),
@@ -945,7 +945,7 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_contexts(PANE_CONTEXTS)
                 .with_default_binding("cmd-shift-\\", Some(CommandContext::Pane))
                 .with_default_binding("cmd-shift-d", Some(CommandContext::Terminal))
-                .with_icon(CommandIcon::ChevronDown),
+                .with_icon(CommandIcon::SplitDown),
             CommandDescriptor::new(CommandId::ResetPaneSizes, "Reset Pane Sizes", "Layout")
                 .with_contexts(PANE_CONTEXTS),
             CommandDescriptor::new(CommandId::ClosePane, "Close Active Pane", "Layout")

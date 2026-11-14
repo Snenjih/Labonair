@@ -307,6 +307,8 @@ pub enum CommandIcon {
     PanelBottom,
     Download,
     Palette,
+    SplitRight,
+    SplitDown,
 }
 
 /// A palette follow-up page requested by a command descriptor.

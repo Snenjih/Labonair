@@ -59,6 +59,7 @@ pub struct TabItemBuilder {
     dirty: bool,
     status_colors: Vec<Hsla>,
     busy: bool,
+    badge: Option<AnyElement>,
     peek: bool,
     pinned: bool,
     activate: Option<TabAction>,
@@ -87,6 +88,7 @@ pub fn tab_item(
         dirty: false,
         status_colors: Vec::new(),
         busy: false,
+        badge: None,
         peek: false,
         pinned: false,
         activate: None,
@@ -149,6 +151,12 @@ impl TabItemBuilder {
         self
     }
 
+    /// Owner-rendered status badge (spinner, warning, dot) after the title.
+    pub fn badge(mut self, badge: impl IntoElement) -> Self {
+        self.badge = Some(badge.into_any_element());
+        self
+    }
+
     pub fn peek(mut self, peek: bool) -> Self {
         self.peek = peek;
         self
@@ -206,6 +214,7 @@ impl TabItemBuilder {
             dirty,
             status_colors,
             busy,
+            badge,
             peek,
             pinned,
             activate,
@@ -337,6 +346,9 @@ impl TabItemBuilder {
         }
         if busy {
             row = row.child(indicator(IndicatorSize::Xs, palette.info));
+        }
+        if let Some(badge) = badge {
+            row = row.child(badge);
         }
 
         if pinned {

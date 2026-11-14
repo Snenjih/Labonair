@@ -24,6 +24,7 @@
 //! forwards transfer requests from SFTP views to the injected service.
 
 pub mod agent_access;
+pub(crate) mod agent_integration;
 pub mod bell;
 pub mod command_provider;
 pub mod context;
@@ -727,6 +728,8 @@ pub struct Workspace {
     pub(crate) layouts: HashMap<u64, WorkspaceLayout>,
     /// Content view + session per pane id (pane ids are process-unique).
     pub(crate) panes: HashMap<PaneId, PaneEntry>,
+    /// Coding agent currently in the foreground of a terminal pane.
+    pub(crate) agents: HashMap<PaneId, agent_integration::AgentPane>,
     /// Kind / title / dirty metadata of every pane (the pure half of the
     /// `PaneId`-keyed store; the views live in the maps below).
     pub(crate) pane_meta: crate::pane_kind::PaneMetaStore,
@@ -1103,6 +1106,7 @@ impl Workspace {
             background,
             layouts: HashMap::new(),
             panes: HashMap::new(),
+            agents: HashMap::new(),
             editors: HashMap::new(),
             project_search_owner: None,
             project_search_task: None,
@@ -6916,6 +6920,7 @@ impl Workspace {
             }
         });
         self.sync_pane_meta(cx);
+        self.sync_agents(cx);
         if preview_changed {
             cx.notify();
         }

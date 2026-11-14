@@ -161,6 +161,16 @@ pub struct TerminalContent {
     pub resume_commands: Option<BTreeMap<String, String>>,
     /// Scrollback rows the detached session host keeps per session.
     pub detached_scrollback_lines: Option<u32>,
+    /// Master switch for agent integrations: recognise a coding agent running
+    /// in a terminal (tab logo, status marker, finished notification).
+    pub agent_integrations: Option<bool>,
+    /// Per-agent switches (only effective while `agentIntegrations` is on).
+    pub agent_integration_claude_code: Option<bool>,
+    pub agent_integration_codex: Option<bool>,
+    pub agent_integration_pi: Option<bool>,
+    pub agent_integration_open_code: Option<bool>,
+    /// Send a native OS notification when an agent finishes its work.
+    pub agent_integration_notify: Option<bool>,
 }
 
 /// Parse [`TerminalContent::terminal_environment_variables`]'s `KEY=value,
@@ -224,6 +234,12 @@ impl TerminalContent {
             resume_on_restore: Some(ResumeOnRestore::Ask),
             resume_commands: Some(BTreeMap::new()),
             detached_scrollback_lines: Some(5_000),
+            agent_integrations: Some(true),
+            agent_integration_claude_code: Some(true),
+            agent_integration_codex: Some(true),
+            agent_integration_pi: Some(true),
+            agent_integration_open_code: Some(true),
+            agent_integration_notify: Some(true),
         }
     }
 }
