@@ -9897,6 +9897,7 @@ impl EditorView {
         let max_cols = (content_width / MINIMAP_CHAR_PX) as usize;
         // (x, y, w, h, colour) relative to the canvas origin.
         let mut quads: Vec<(f32, f32, f32, f32, gpui::Hsla)> = Vec::new();
+        #[allow(clippy::needless_range_loop)]
         for line in first_line..last_line {
             let y = line as f32 * MINIMAP_LINE_PX - layout.scroll;
             let marker = markers[line];

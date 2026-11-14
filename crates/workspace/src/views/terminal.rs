@@ -640,7 +640,7 @@ impl Render for TerminalView {
                     cell_height: cell_h as u16,
                 });
             } else {
-                let first = self.resize_pending.map_or(true, |(t, _)| t != (cols, rows));
+                let first = self.resize_pending.is_none_or(|(t, _)| t != (cols, rows));
                 self.resize_pending = Some(((cols, rows), since));
                 if first {
                     // Re-render once the size has been stable for the debounce.

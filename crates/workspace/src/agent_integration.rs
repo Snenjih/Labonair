@@ -58,11 +58,11 @@ impl Workspace {
         let enabled = |a: Agent| {
             settings
                 .as_ref()
-                .map_or(true, |s| s.agent_integration_enabled(a.key()))
+                .is_none_or(|s| s.agent_integration_enabled(a.key()))
         };
         let notify = settings
             .as_ref()
-            .map_or(true, |s| s.agent_integration_notify());
+            .is_none_or(|s| s.agent_integration_notify());
         let mut changed = false;
         let mut finished = Vec::new();
         let ids: Vec<_> = self.panes.keys().copied().collect();
