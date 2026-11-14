@@ -24,6 +24,7 @@ use labonair_ui_kit::{
 
 use crate::pane::{Member, PaneId, SplitAxis, SplitDirection};
 use crate::pane_motion::Placed;
+use crate::frame_insets;
 use crate::tiling::{self, PxRect};
 use crate::{DragGhost, PaneResize, Workspace};
 
@@ -188,6 +189,11 @@ impl Workspace {
             let pane = root.first_leaf();
             let body = self.pane_body(pane, window, cx);
             let body = Self::pane_context(body);
+            let body = if self.pane_kind(pane, cx) == crate::pane_kind::PaneKind::Terminal {
+                Self::pad_terminal(body.into_any_element(), &c, style)
+            } else {
+                body.into_any_element()
+            };
             if !style.is_framed() {
                 let area = div().relative().size_full().child(probe).child(body);
                 return self.with_pane_dnd(area, tab_id, cx).into_any_element();
@@ -210,9 +216,7 @@ impl Workspace {
                 );
             let area = div().relative().size_full().child(probe).child(card);
             let area = self.with_pane_dnd(area, tab_id, cx);
-            return div()
-                .size_full()
-                .p(px(metrics.gap))
+            return Self::pane_area(style, metrics.gap)
                 .child(area)
                 .into_any_element();
         }
@@ -263,10 +267,7 @@ impl Workspace {
         let inner = self.with_pane_dnd(inner, tab_id, cx);
         // Comfortable panes float: the whole area keeps a gap margin so the
         // outer frames do not touch the dock or titlebar.
-        let margin = if style.is_framed() { metrics.gap } else { 0.0 };
-        div()
-            .size_full()
-            .p(px(margin))
+        Self::pane_area(style, metrics.gap)
             .child(inner)
             .into_any_element()
     }
@@ -332,12 +333,30 @@ impl Workspace {
             });
         }
         let inner = self.with_pane_dnd(inner, tab_id, cx);
-        let margin = if style.is_framed() { gap } else { 0.0 };
+        Self::pane_area(style, gap).child(inner).into_any_element()
+    }
+
+    /// The padded box around the pane tree: horizontal gap only, so cards
+    /// reach the titlebar / statusbar like the flat layout (`frame_insets`).
+    fn pane_area(style: PaneLayoutStyle, gap: f32) -> gpui::Div {
+        let i = frame_insets::pane_area_insets(style.is_framed(), gap);
         div()
             .size_full()
-            .p(px(margin))
-            .child(inner)
-            .into_any_element()
+            .pl(px(i.left))
+            .pr(px(i.right))
+            .pt(px(i.top))
+            .pb(px(i.bottom))
+    }
+
+    /// Terminal bodies in framed panes get a safety margin on every side. The
+    /// terminal measures its own (inner) bounds, so the PTY grid already
+    /// excludes it.
+    fn pad_terminal(body: AnyElement, c: &Palette, style: PaneLayoutStyle) -> AnyElement {
+        let pad = frame_insets::terminal_padding(style.is_framed(), c.density);
+        if pad == 0.0 {
+            return body;
+        }
+        div().size_full().p(px(pad)).child(body).into_any_element()
     }
 
     /// Divider drag: re-solve the tree against the measured area and turn the
@@ -496,10 +515,8 @@ impl Workspace {
         let body = Self::pane_context(body).into_any_element();
         // Comfortable (framed) panes: a small breathing margin around the
         // terminal grid on every side.
-        let body = if ctx.style.is_framed()
-            && self.pane_kind(pane, cx) == crate::pane_kind::PaneKind::Terminal
-        {
-            div().size_full().p(px(4.0)).child(body).into_any_element()
+        let body = if self.pane_kind(pane, cx) == crate::pane_kind::PaneKind::Terminal {
+            Self::pad_terminal(body, &c, ctx.style)
         } else {
             body
         };

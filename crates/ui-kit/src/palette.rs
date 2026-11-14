@@ -178,6 +178,11 @@ impl Palette {
             ..c
         };
         let shadows = &t.shadows;
+        // GPUI paints a box-shadow quad under the whole box, so a translucent
+        // card would show its own shadow through its fill (darkening the glass
+        // to near-opaque). Glass surfaces keep only the rim.
+        let no_shadow = !matches!(translucent, labonair_theme_tokens::SurfaceMaterial::Opaque);
+        let card_shadow = |layers: &[_]| ShadowStack::from_layers(if no_shadow { &[] } else { layers });
         Self {
             canvas: [
                 fade(f.canvas_top),
@@ -199,8 +204,8 @@ impl Palette {
             pressed: f.pressed,
             shadows: PaletteShadows {
                 row: ShadowStack::from_layers(&shadows.row),
-                pane: ShadowStack::from_layers(&shadows.pane),
-                pane_focused: ShadowStack::from_layers(&shadows.pane_focused),
+                pane: card_shadow(&shadows.pane),
+                pane_focused: card_shadow(&shadows.pane_focused),
                 popover: ShadowStack::from_layers(&shadows.popover),
                 modal: ShadowStack::from_layers(&shadows.modal),
             },
@@ -341,6 +346,14 @@ mod tests {
             assert!(c.pane.a < 1.0 && c.canvas[0].a < 1.0 && c.dock_card.a < 1.0);
             assert!((stacked - flat).abs() < 1e-4, "{stacked} vs {flat}");
         }
+    }
+
+    /// A shadow quad is painted under the whole card; on glass it would show
+    /// through the fill, so translucent cards carry no shadow.
+    #[test]
+    fn glass_cards_drop_their_shadow() {
+        let c = Palette::from_theme(&GlassTheme(Theme::dark()));
+        assert!(c.pane_shadow(false).is_empty() && c.pane_shadow(true).is_empty());
     }
 
     #[test]

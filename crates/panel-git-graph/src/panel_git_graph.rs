@@ -1658,7 +1658,7 @@ impl Render for GitGraphView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(c.bg)
+            // No fill: the dock / pane card supplies the (glass) surface.
             .text_color(c.fg)
             .font(self.theme.read(cx).ui_font())
             .child(self.render_toolbar(c, cx))

@@ -76,6 +76,7 @@ pub(crate) mod tab_hover;
 pub mod tab_strip;
 pub mod tabs;
 pub mod tabs_panel;
+pub mod frame_insets;
 pub mod tiling;
 pub mod views;
 pub mod zoom;
@@ -7381,7 +7382,15 @@ impl Workspace {
         // dock with its structural border.
         let (style, tiling) = self.pane_style(cx);
         let framed = style.is_framed();
-        let gap = px(if framed { tiling.gap } else { 0.0 });
+        let margins = crate::frame_insets::dock_margins(
+            framed,
+            tiling.gap,
+            match pos {
+                labonair_panel::DockPosition::Left => crate::frame_insets::DockEdge::Left,
+                labonair_panel::DockPosition::Right => crate::frame_insets::DockEdge::Right,
+                labonair_panel::DockPosition::Bottom => crate::frame_insets::DockEdge::Bottom,
+            },
+        );
         let card = Palette::from_theme(self.theme.read(cx));
         let is_bottom = pos == DockPosition::Bottom;
         let (size, zoomed, body) = {
@@ -7437,9 +7446,7 @@ impl Workspace {
             .when(!zoomed && !is_bottom, |d| d.w(px(size)))
             .when(!zoomed && is_bottom, |d| d.h(px(size)))
             .when(zoomed, |d| d.flex_1())
-            // Framed docks stretch inside the row instead: `h_full` plus the
-            // vertical gap margin would overflow into the statusbar.
-            .when(!is_bottom && !framed, |d| d.h_full())
+            .when(!is_bottom, |d| d.h_full())
             .when(is_bottom, |d| d.w_full())
             .bg(if framed { card.dock_card } else { sidebar_bg })
             .text_color(sidebar_fg)
@@ -7454,10 +7461,10 @@ impl Workspace {
                     // uses the full card width (hover / active fills).
                     .when(!is_bottom, |d| d.py(px(card.radius.lg * 0.3)))
                     .when(is_bottom, |d| d.px(px(card.radius.lg * 0.3)))
-                    .my(if is_bottom { px(0.0) } else { gap })
-                    .when(is_bottom, |d| d.mx(gap).mb(gap))
-                    .when(pos == DockPosition::Left, |d| d.ml(gap))
-                    .when(pos == DockPosition::Right, |d| d.mr(gap))
+                    .ml(px(margins.left))
+                    .mr(px(margins.right))
+                    .mt(px(margins.top))
+                    .mb(px(margins.bottom))
             })
             .when(!framed && pos == DockPosition::Left, |d| {
                 d.border_r_1().border_color(sidebar_border)

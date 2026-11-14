@@ -4028,7 +4028,7 @@ impl Render for GitPanelView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(c.bg)
+            // No fill: the dock card supplies the (glass) surface.
             .text_color(c.fg);
 
         if !self.is_repo {

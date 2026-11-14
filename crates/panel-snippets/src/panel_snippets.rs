@@ -2442,7 +2442,7 @@ impl Render for SnippetsView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(c.bg)
+            // No fill: the dock card supplies the (glass) surface.
             .text_color(c.fg)
             .child(header)
             .when_some(search_bar, |d, sb| d.child(div().p(px(6.0)).child(sb)))
