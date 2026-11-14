@@ -948,7 +948,7 @@ impl CommandId {
             .map(|(id, _)| *id)
             .or_else(|| (name == "settings::OpenShortcuts").then_some(Self::OpenKeymapJson))
             .or_else(|| (name == "connections::OpenHostSettings").then_some(Self::OpenHosts))
-            .or_else(|| match name {
+            .or(match name {
                 // Removed duplicates of New SSH Tab / New SFTP Tab.
                 "connections::NewSshConnection"
                 | "connections::NewQuickSsh"
@@ -1000,6 +1000,22 @@ pub fn toggle_pref_key(id: CommandId) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn removed_ssh_duplicates_alias_to_the_remaining_commands() {
+        for old in [
+            "connections::NewSshConnection",
+            "connections::NewQuickSsh",
+            "connections::Connect",
+        ] {
+            assert_eq!(CommandId::from_action_name(old), Some(CommandId::NewSshTab));
+        }
+        assert_eq!(
+            CommandId::from_action_name("connections::OpenSftp"),
+            Some(CommandId::NewSftpTab)
+        );
+        assert!(!known_action_names().contains("connections::NewQuickSsh"));
+    }
+
     use super::*;
 
     #[test]

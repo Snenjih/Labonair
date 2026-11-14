@@ -34,6 +34,40 @@ impl Agent {
         }
     }
 
+    /// Recognise an agent from the screen alone (OSC title + visible tail), for
+    /// SSH panes where no foreground process is available.
+    // ponytail: banner/title text match only; a stale banner left on screen
+    // after the agent exited still matches. Upgrade: remote `ps` over a side
+    // channel if that proves noisy.
+    pub fn detect_screen(title: &str, tail: &[String]) -> Option<Self> {
+        let title = title
+            .trim_start_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        let from = |text: &str| {
+            if text.starts_with("claude code") || text.contains("welcome to claude code") {
+                Some(Self::ClaudeCode)
+            } else if text.starts_with("opencode") {
+                Some(Self::OpenCode)
+            } else if text.starts_with("codex") || text.contains("openai codex") {
+                Some(Self::Codex)
+            } else {
+                None
+            }
+        };
+        from(&title).or_else(|| {
+            tail.iter()
+                .rev()
+                .filter(|l| !l.trim().is_empty())
+                .take(30)
+                .find_map(|l| {
+                    from(
+                        l.to_lowercase()
+                            .trim_start_matches(|c: char| !c.is_alphanumeric()),
+                    )
+                })
+        })
+    }
+
     /// Key used by the `agentIntegration*` settings.
     pub fn key(self) -> &'static str {
         match self {
@@ -84,7 +118,12 @@ const INPUT_HINTS: &[&str] = &[
     "waiting for your",
 ];
 
-const WORK_HINTS: &[&str] = &["esc to interrupt", "esc interrupt", "ctrl+c to interrupt", "working ("];
+const WORK_HINTS: &[&str] = &[
+    "esc to interrupt",
+    "esc interrupt",
+    "ctrl+c to interrupt",
+    "working (",
+];
 
 /// Classify one poll from the OSC title and the visible tail (any length; only
 /// the last 12 non-empty lines are looked at).
@@ -165,7 +204,10 @@ mod tests {
     #[test]
     fn detects_agents_by_process_name() {
         assert_eq!(Agent::detect("claude"), Some(Agent::ClaudeCode));
-        assert_eq!(Agent::detect("/opt/bin/Claude-2.1.0"), Some(Agent::ClaudeCode));
+        assert_eq!(
+            Agent::detect("/opt/bin/Claude-2.1.0"),
+            Some(Agent::ClaudeCode)
+        );
         assert_eq!(Agent::detect("codex"), Some(Agent::Codex));
         assert_eq!(Agent::detect("pi"), Some(Agent::Pi));
         assert_eq!(Agent::detect("opencode"), Some(Agent::OpenCode));
@@ -174,16 +216,39 @@ mod tests {
     }
 
     #[test]
+    fn detects_agents_from_screen_without_a_process() {
+        assert_eq!(
+            Agent::detect_screen("\u{2733} Claude Code", &[]),
+            Some(Agent::ClaudeCode)
+        );
+        assert_eq!(
+            Agent::detect_screen("", &tail(&["\u{256d}\u{2500} >_ OpenAI Codex (v0.1)"])),
+            Some(Agent::Codex)
+        );
+        assert_eq!(Agent::detect_screen("opencode", &[]), Some(Agent::OpenCode));
+        assert_eq!(
+            Agent::detect_screen("me@host: ~/claude-notes", &tail(&["$ ls"])),
+            None
+        );
+    }
+
+    #[test]
     fn classifies_title_and_tail() {
         assert_eq!(classify("\u{2802} Fix bug", &[]), Raw::Working);
         assert_eq!(classify("\u{2733} Claude Code", &[]), Raw::Idle);
-        assert_eq!(classify("", &tail(&["* Thinking (esc to interrupt)"])), Raw::Working);
+        assert_eq!(
+            classify("", &tail(&["* Thinking (esc to interrupt)"])),
+            Raw::Working
+        );
         assert_eq!(
             classify("", &tail(&["Do you want to proceed?", "> 1. Yes", "", ""])),
             Raw::NeedsInput
         );
         // A prompt wins over a stale spinner title.
-        assert_eq!(classify("\u{2802} x", &tail(&["Allow once?"])), Raw::NeedsInput);
+        assert_eq!(
+            classify("\u{2802} x", &tail(&["Allow once?"])),
+            Raw::NeedsInput
+        );
         assert_eq!(classify("", &tail(&["> ", ""])), Raw::Idle);
     }
 
@@ -195,7 +260,10 @@ mod tests {
         assert_eq!(t.update(Raw::Working), (Some(AgentStatus::Working), false));
         // One idle poll is flicker, not done.
         assert_eq!(t.update(Raw::Idle), (Some(AgentStatus::Working), false));
-        assert_eq!(t.update(Raw::NeedsInput), (Some(AgentStatus::NeedsInput), false));
+        assert_eq!(
+            t.update(Raw::NeedsInput),
+            (Some(AgentStatus::NeedsInput), false)
+        );
         assert_eq!(t.update(Raw::Idle), (Some(AgentStatus::NeedsInput), false));
         assert_eq!(t.update(Raw::Idle), (Some(AgentStatus::Done), true));
         // Finishing notifies once.
