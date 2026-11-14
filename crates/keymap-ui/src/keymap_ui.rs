@@ -919,7 +919,11 @@ fn render_command_row(
                 .icon(if conflicted {
                     IconName::Warning
                 } else {
-                    IconName::Command
+                    match command {
+                        CommandId::SplitRight => IconName::SplitRight,
+                        CommandId::SplitDown => IconName::SplitDown,
+                        _ => IconName::Command,
+                    }
                 })
                 .child(
                     div()
