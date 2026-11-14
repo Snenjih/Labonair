@@ -8,7 +8,8 @@
 use gpui::{App, Hsla};
 
 use crate::metrics::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
-use crate::tokens::{RadiusScale, SurfaceMaterial, Theme};
+use crate::metrics::PaneLayout;
+use crate::tokens::{RadiusScale, SurfaceMaterial, Theme, VibrancyLayer};
 
 /// Token accessor the ui-kit primitives build against.
 ///
@@ -49,6 +50,19 @@ pub trait UiTheme {
             m.background_active,
             m.glass_transparency,
         )
+    }
+
+    /// Fill for a surface that sits *inside* a Comfortable card (editor,
+    /// terminal, SFTP, panel bodies). The window canvas and the card already
+    /// carry the glass; a third fill would stack to near-opaque, so on a
+    /// translucent material in the Comfortable layout it is transparent.
+    fn content_fill(&self, layer: VibrancyLayer, color: Hsla) -> Hsla {
+        let material = self.surface_material();
+        if material != SurfaceMaterial::Opaque && self.metrics().pane_layout == PaneLayout::Comfortable
+        {
+            return Hsla { a: 0.0, ..color };
+        }
+        layer.resolve(color, material)
     }
 
     /// `--muted-foreground`.

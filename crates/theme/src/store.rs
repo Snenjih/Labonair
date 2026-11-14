@@ -800,11 +800,11 @@ impl ThemeStore {
     /// The terminal surface fill. Opaque unless a background image shows
     /// through (the terminal's own opacity setting is applied by the view).
     pub fn terminal_background(&self) -> Hsla {
-        VibrancyLayer::Terminal.resolve(self.theme().terminal.background, self.surface_material())
+        labonair_theme_tokens::UiTheme::content_fill(self, VibrancyLayer::Terminal, self.theme().terminal.background)
     }
 
     pub fn background(&self) -> Hsla {
-        VibrancyLayer::Canvas.resolve(self.theme().core.background, self.surface_material())
+        labonair_theme_tokens::UiTheme::content_fill(self, VibrancyLayer::Canvas, self.theme().core.background)
     }
 
     pub fn foreground(&self) -> Hsla {
