@@ -194,7 +194,7 @@ impl AppShell {
                 );
                 return;
             }
-            CommandId::NewSshTab | CommandId::NewQuickSsh | CommandId::NewSshConnection => {
+            CommandId::NewSshTab => {
                 self.show_command_palette(Some(labonair_command_palette::Page::Hosts), window, cx);
                 return;
             }
@@ -241,8 +241,6 @@ pub(crate) fn attach_action_handlers(
     on!(menu::NewPreviewTab => CommandId::NewPreviewTab);
     on!(menu::NewSshTab => CommandId::NewSshTab);
     on!(menu::NewSftpTab => CommandId::NewSftpTab);
-    on!(menu::NewSshConnection => CommandId::NewSshConnection);
-    on!(menu::NewQuickSsh => CommandId::NewQuickSsh);
     on!(menu::OpenHosts => CommandId::OpenHosts);
     on!(menu::Save => CommandId::Save);
     on!(menu::CloseTab => CommandId::CloseTab);

@@ -6446,6 +6446,25 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Retry a failed SSH terminal or SFTP connection (Retry button / Enter).
+    fn retry_connection(
+        &mut self,
+        ssh_id: &str,
+        is_sftp: bool,
+        tab_id: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
+        self.ssh_prompt = None;
+        if is_sftp {
+            self.ssh_connection.update(cx, |s, cx| s.resume(ssh_id, cx));
+            if let Some(view) = tab_id.and_then(|tid| self.sftp_views.get(&tid).cloned()) {
+                view.update(cx, |v, cx| v.reconnect(cx));
+            }
+        } else {
+            self.retry_ssh(ssh_id, None, None, cx);
+        }
+    }
+
     fn submit_prompt(&mut self, cx: &mut Context<Self>) {
         let Some(prompt) = self.ssh_prompt.take() else {
             return;
@@ -6556,6 +6575,7 @@ impl Workspace {
         let sev_color = severity.color(c);
         let failed = entry.state == ConnectionState::Error;
         let ssh_id = entry.session_id.clone();
+        let key_ssh_id = ssh_id.clone();
         let is_sftp = matches!(entry.kind, ConnectionKind::Sftp);
         let tab_id = self
             .ssh_tabs
@@ -6711,18 +6731,7 @@ impl Workspace {
                     .child(
                         loading_btn("ssh-l-retry", "Retry", c, true).on_click(cx.listener(
                             move |this, _: &ClickEvent, _w, cx| {
-                                this.ssh_prompt = None;
-                                if is_sftp {
-                                    this.ssh_connection
-                                        .update(cx, |s, cx| s.resume(&ssh_id, cx));
-                                    if let Some(tid) = tab_id {
-                                        if let Some(view) = this.sftp_views.get(&tid).cloned() {
-                                            view.update(cx, |v, cx| v.reconnect(cx));
-                                        }
-                                    }
-                                } else {
-                                    this.retry_ssh(&ssh_id, None, None, cx);
-                                }
+                                this.retry_connection(&ssh_id, is_sftp, tab_id, cx)
                             },
                         )),
                     );
@@ -6787,7 +6796,15 @@ impl Workspace {
         let state_card = div()
             .track_focus(&self.prompt_focus)
             .key_context("SshPrompt")
-            .on_key_down(cx.listener(Self::on_prompt_key))
+            .on_key_down({
+                cx.listener(move |this, ev: &KeyDownEvent, window, cx| {
+                    if failed && this.ssh_prompt.is_none() && ev.keystroke.key == "enter" {
+                        this.retry_connection(&key_ssh_id, is_sftp, tab_id, cx);
+                    } else {
+                        this.on_prompt_key(ev, window, cx);
+                    }
+                })
+            })
             .flex()
             .flex_col()
             .gap_2()
@@ -7522,7 +7539,28 @@ impl Render for Workspace {
         if std::mem::take(&mut self.pending_preview_focus) {
             self.focus_active(window, cx);
         }
-        let want_prompt = self.ssh_prompt.is_some();
+        // A failed connection overlay on the active tab also takes focus so
+        // Enter can retry it.
+        let active_failed = self
+            .tabs
+            .read(cx)
+            .active()
+            .map(|a| a.id)
+            .and_then(|id| {
+                self.ssh_tabs
+                    .values()
+                    .find(|t| t.tab_id == id)
+                    .map(|t| t.ssh_id.clone())
+                    .or_else(|| self.sftp_sessions.get(&id).cloned())
+            })
+            .and_then(|sid| {
+                self.ssh_connection
+                    .read(cx)
+                    .get(&sid)
+                    .map(|e| e.state == ConnectionState::Error)
+            })
+            .unwrap_or(false);
+        let want_prompt = self.ssh_prompt.is_some() || active_failed;
         if want_prompt && !self.prompt_shown {
             window.focus(&self.prompt_focus);
         }

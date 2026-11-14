@@ -1151,6 +1151,15 @@ impl SftpView {
                 return;
             }
         }
+        // Dropped/failed connection: Enter reconnects (same as the Retry button).
+        if side == Side::Remote
+            && matches!(self.conn, Conn::Error(_))
+            && ev.keystroke.key == "enter"
+            && !ev.keystroke.modifiers.modified()
+        {
+            self.connect(cx);
+            return;
+        }
         match ev.keystroke.key.as_str() {
             "up" => self.move_list_selection(side, -1, cx),
             "down" => self.move_list_selection(side, 1, cx),
@@ -2941,6 +2950,12 @@ impl SftpView {
                 )
                 .child("Retry")
                 .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.connect(cx))),
+            )
+            .child(
+                div()
+                    .text_color(c.muted)
+                    .text_xs()
+                    .child("Press Enter to reconnect"),
             )
             .into_any_element()
     }

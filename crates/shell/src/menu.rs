@@ -100,8 +100,6 @@ actions!(
         Find,
         // ── Connections ───────────────────────────────────────────────────
         OpenHosts,
-        NewSshConnection,
-        NewQuickSsh,
         // ── Window ────────────────────────────────────────────────────────
         Minimize,
         ZoomWindow,
@@ -238,7 +236,7 @@ fn text_input_bindings() -> Vec<KeyBinding> {
 fn fixed_bindings() -> Vec<KeyBinding> {
     vec![
         KeyBinding::new("cmd-s", Save, None),
-        KeyBinding::new("cmd-shift-n", NewSshConnection, None),
+        KeyBinding::new("cmd-shift-n", NewSshTab, None),
         KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
         KeyBinding::new("cmd-,", OpenSettings, None),
         KeyBinding::new("cmd-m", Minimize, None),
@@ -297,8 +295,6 @@ fn action_for(
         CommandId::ToggleZenMode => Box::new(ToggleZenMode),
         CommandId::ToggleFullScreen => Box::new(ToggleFullScreen),
         CommandId::OpenHosts => Box::new(OpenHosts),
-        CommandId::NewSshConnection => Box::new(NewSshConnection),
-        CommandId::NewQuickSsh => Box::new(NewQuickSsh),
         CommandId::OpenSettings => Box::new(OpenSettings),
         CommandId::OpenProject => Box::new(OpenProject),
         CommandId::ReturnToStandalone => Box::new(ReturnToStandalone),
@@ -465,12 +461,7 @@ fn app_menus() -> Vec<Menu> {
         },
         Menu {
             name: "Connections".into(),
-            items: vec![
-                MenuItem::action("Open Hosts", OpenHosts),
-                MenuItem::separator(),
-                MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
-                MenuItem::action("New Quick SSH\u{2026}", NewQuickSsh),
-            ],
+            items: vec![MenuItem::action("Open Hosts", OpenHosts)],
         },
         Menu {
             name: "Window".into(),
@@ -493,7 +484,7 @@ fn app_menus() -> Vec<Menu> {
 fn dock_menu() -> Vec<MenuItem> {
     vec![
         MenuItem::action("New Terminal Tab", NewTerminalTab),
-        MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
+        MenuItem::action("New SSH Tab", NewSshTab),
         MenuItem::separator(),
         MenuItem::action("Open Hosts", OpenHosts),
     ]

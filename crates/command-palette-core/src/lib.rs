@@ -73,8 +73,6 @@ pub enum CommandId {
     ToggleZenModeHeader,
     ToggleZenModeStatusbar,
     ToggleZenMode,
-    ConnectSsh,
-    OpenSftp,
     ChangeAppTheme,
     ChangeIconTheme,
     ChangeColorMode,
@@ -119,8 +117,6 @@ pub enum CommandId {
     Save,
     NewSshTab,
     NewSftpTab,
-    NewSshConnection,
-    NewQuickSsh,
     FocusNextPane,
     FocusPrevPane,
     FocusPaneLeft,
@@ -730,10 +726,6 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::FocusSourceControl, "git::FocusSourceControl"),
     (CommandId::GitSwitchBranch, "git::SwitchBranch"),
     (CommandId::OpenHosts, "connections::OpenHosts"),
-    (CommandId::NewSshConnection, "connections::NewSshConnection"),
-    (CommandId::NewQuickSsh, "connections::NewQuickSsh"),
-    (CommandId::ConnectSsh, "connections::Connect"),
-    (CommandId::OpenSftp, "connections::OpenSftp"),
     (CommandId::OpenCommandPalette, "command_palette::Toggle"),
     (CommandId::OpenSettings, "settings::Open"),
     (CommandId::OpenProject, "workspace::OpenProject"),
@@ -956,6 +948,14 @@ impl CommandId {
             .map(|(id, _)| *id)
             .or_else(|| (name == "settings::OpenShortcuts").then_some(Self::OpenKeymapJson))
             .or_else(|| (name == "connections::OpenHostSettings").then_some(Self::OpenHosts))
+            .or_else(|| match name {
+                // Removed duplicates of New SSH Tab / New SFTP Tab.
+                "connections::NewSshConnection"
+                | "connections::NewQuickSsh"
+                | "connections::Connect" => Some(Self::NewSshTab),
+                "connections::OpenSftp" => Some(Self::NewSftpTab),
+                _ => None,
+            })
     }
 }
 
@@ -969,9 +969,16 @@ pub fn canonical_action_name(name: &str) -> Option<&'static str> {
 /// are deliberately separate from [`known_action_names`] so they cannot be
 /// presented as discoverable commands.
 pub fn compatibility_action_names() -> std::collections::BTreeSet<&'static str> {
-    ["settings::OpenShortcuts", "connections::OpenHostSettings"]
-        .into_iter()
-        .collect()
+    [
+        "settings::OpenShortcuts",
+        "connections::OpenHostSettings",
+        "connections::NewSshConnection",
+        "connections::NewQuickSsh",
+        "connections::Connect",
+        "connections::OpenSftp",
+    ]
+    .into_iter()
+    .collect()
 }
 
 pub fn known_action_names() -> std::collections::BTreeSet<&'static str> {

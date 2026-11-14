@@ -21,12 +21,7 @@ pub fn register_picker_handlers(
     registry: &mut CommandHandlerRegistry,
     open_picker: HostPickerHandler,
 ) {
-    for id in [
-        CommandId::NewSshTab,
-        CommandId::NewSftpTab,
-        CommandId::NewQuickSsh,
-        CommandId::NewSshConnection,
-    ] {
+    for id in [CommandId::NewSshTab, CommandId::NewSftpTab] {
         let open_picker = open_picker.clone();
         registry
             .register(id, move |window, cx| open_picker(window, cx))
