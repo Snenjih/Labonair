@@ -324,6 +324,7 @@ const GENERAL_GROUPS: &[Group] = &[
         paths!("workspace":
             "commandPaletteOpacity",
             "commandPalettePosition",
+            "commandPaletteSize",
             "commandPaletteShowRecent",
             "commandPaletteHistorySize",
             "commandPaletteSearchMode",

@@ -982,6 +982,11 @@ impl WorkspaceSettings {
         self.0.command_palette_opacity.unwrap_or(95)
     }
 
+    /// Palette size modifier in percent (50..=200).
+    pub fn command_palette_size(&self) -> u32 {
+        self.0.command_palette_size.unwrap_or(100)
+    }
+
     pub fn command_palette_position(&self) -> &str {
         self.0.command_palette_position.as_deref().unwrap_or("top")
     }

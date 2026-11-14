@@ -257,6 +257,8 @@
     "commandPaletteOpacity": 95,
     // "top" | "high" | "center".
     "commandPalettePosition": "top",
+    // Size modifier in percent (50-200).
+    "commandPaletteSize": 100,
     "commandPaletteHistorySize": 5,
     "commandPaletteCloseOnOverlayClick": true,
     "showNavHistoryButtons": false,

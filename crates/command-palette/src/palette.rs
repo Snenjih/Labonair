@@ -79,6 +79,15 @@ fn palette_opacity(cx: &App) -> u32 {
         .unwrap_or(95)
 }
 
+/// Size modifier in percent (50..=200), applied to the whole palette.
+fn palette_scale(cx: &App) -> f32 {
+    WorkspaceSettings::try_get(cx)
+        .map(|s| s.command_palette_size())
+        .unwrap_or(100)
+        .clamp(50, 200) as f32
+        / 100.0
+}
+
 fn palette_position(cx: &App) -> String {
     WorkspaceSettings::try_get(cx)
         .map(|s| s.command_palette_position().to_string())
@@ -1079,7 +1088,21 @@ where
     fn dispatch(&mut self, key: RowKey, window: &mut Window, cx: &mut Context<Self>) {
         match key {
             RowKey::Noop => {}
-            RowKey::Navigate(page) => self.navigate(page, window, cx),
+            RowKey::Navigate(page) => {
+                // Sub-page commands count as "used" too (MRU), only from Root.
+                if self.page() == Page::Root {
+                    if let Some(id) = self
+                        .data
+                        .commands
+                        .iter()
+                        .find(|c| c.sub_page == Some(page))
+                        .map(|c| c.id)
+                    {
+                        self.push_recent(id, cx);
+                    }
+                }
+                self.navigate(page, window, cx)
+            }
             RowKey::Command(id) => {
                 self.push_recent(id, cx);
                 self.close(cx);
@@ -1267,13 +1290,14 @@ where
     W: PaletteWorkspace + 'static,
     Th: UiTheme + 'static,
 {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.open {
             return div().into_any_element();
         }
 
         let opacity = (palette_opacity(cx) as f32 / 100.0).clamp(0.35, 1.0);
         let position = palette_position(cx);
+        let k = palette_scale(cx);
         let close_on_overlay = palette_close_on_overlay_click(cx);
         let mode = self.search_mode(cx);
 
@@ -1304,16 +1328,17 @@ where
             .id("palette-list")
             .flex()
             .flex_col()
-            .p(px(4.0))
-            .max_h(px(400.0))
+            .gap(px(2.0 * k))
+            .p(px(4.0 * k))
+            .max_h(px(400.0 * k))
             .overflow_y_scroll();
         if result_count == 0 {
             list = list.child(
                 div()
-                    .py(px(24.0))
+                    .py(px(24.0 * k))
                     .flex()
                     .justify_center()
-                    .text_size(px(12.0))
+                    .text_size(px(12.0 * k))
                     .text_color(muted)
                     .child("No results found."),
             );
@@ -1323,10 +1348,10 @@ where
             if last_section.as_deref() != Some(row.section.as_str()) {
                 list = list.child(
                     div()
-                        .px(px(8.0))
-                        .pt(px(if i == 0 { 2.0 } else { 8.0 }))
-                        .pb(px(2.0))
-                        .text_size(px(10.0))
+                        .px(px(8.0 * k))
+                        .pt(px(if i == 0 { 2.0 * k } else { 8.0 * k }))
+                        .pb(px(2.0 * k))
+                        .text_size(px(10.0 * k))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(muted.opacity(0.7))
                         .child(SharedString::from(row.section.to_uppercase())),
@@ -1346,10 +1371,10 @@ where
                 .id(("palette-row", i))
                 .flex()
                 .items_center()
-                .gap(px(8.0))
-                .px(px(8.0))
-                .h(px(30.0))
-                .rounded(px(6.0))
+                .gap(px(8.0 * k))
+                .px(px(8.0 * k))
+                .h(px(34.0 * k))
+                .rounded(px(6.0 * k))
                 .text_color(fg)
                 // Ciel §8: the selected row is a sunken fill + semibold label,
                 // not an accent bar.
@@ -1359,18 +1384,18 @@ where
                 .when(actionable && !is_sel, |d| d.hover(|s| s.bg(hover_fill)));
 
             if let Some(icon) = row.icon {
-                r = r.child(icon.svg(muted).size(px(14.0)).flex_none());
+                r = r.child(icon.svg(muted).size(px(14.0 * k)).flex_none());
             }
 
             let mut text_col = div()
                 .flex()
                 .items_center()
-                .gap(px(8.0))
+                .gap(px(8.0 * k))
                 .flex_1()
                 .min_w_0()
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(px(13.0 * k))
                         .truncate()
                         .child(SharedString::from(row.title.clone())),
                 );
@@ -1379,7 +1404,7 @@ where
                     div()
                         .flex_1()
                         .min_w_0()
-                        .text_size(px(11.0))
+                        .text_size(px(11.0 * k))
                         .text_color(muted)
                         .truncate()
                         .child(SharedString::from(sub.clone())),
@@ -1387,12 +1412,12 @@ where
             }
             r = r.child(text_col);
 
-            let mut right = div().flex().items_center().gap(px(4.0)).flex_none();
+            let mut right = div().flex().items_center().gap(px(4.0 * k)).flex_none();
             if let Some(label) = &row.right_label {
                 let on = label == "ON" || label == "active";
                 right = right.child(
                     div()
-                        .text_size(px(10.0))
+                        .text_size(px(10.0 * k))
                         .text_color(if on { success } else { muted })
                         .child(SharedString::from(label.to_uppercase())),
                 );
@@ -1401,7 +1426,7 @@ where
                 right = right.child(kbd(k.clone(), c));
             }
             if row.has_sub {
-                right = right.child(IconName::ChevronRight.svg(muted).size(px(12.0)));
+                right = right.child(IconName::ChevronRight.svg(muted).size(px(12.0 * k)));
             }
             r = r.child(right);
 
@@ -1416,21 +1441,21 @@ where
 
         // ── header (breadcrumb or search icon + input) ───────────────────────
         let mut header = div()
-            .h(px(44.0))
+            .h(px(44.0 * k))
             .flex()
             .items_center()
-            .gap(px(8.0))
-            .px(px(12.0))
+            .gap(px(8.0 * k))
+            .px(px(12.0 * k))
             .border_b_1()
             .border_color(border);
         if self.pages.len() > 1 {
-            let mut crumbs = div().flex().items_center().gap(px(4.0)).flex_none();
+            let mut crumbs = div().flex().items_center().gap(px(4.0 * k)).flex_none();
             let last = self.pages.len() - 1;
             for (idx, pg) in self.pages.clone().into_iter().enumerate() {
                 if idx > 0 {
                     crumbs = crumbs.child(
                         div()
-                            .text_size(px(10.0))
+                            .text_size(px(10.0 * k))
                             .text_color(muted)
                             .child("\u{203a}"),
                     );
@@ -1457,14 +1482,14 @@ where
             }
             header = header.child(crumbs);
         } else {
-            header = header.child(IconName::Search.svg(muted).size(px(14.0)).flex_none());
+            header = header.child(IconName::Search.svg(muted).size(px(14.0 * k)).flex_none());
         }
         let query_input = self
             .query_input
             .as_ref()
             .map(|input| {
                 search_input(input, c)
-                    .text_size(px(14.0))
+                    .text_size(px(14.0 * k))
                     .into_any_element()
             })
             .unwrap_or_else(|| div().into_any_element());
@@ -1484,7 +1509,7 @@ where
         );
 
         // ── footer ───────────────────────────────────────────────────────────
-        let mut hints = div().flex().items_center().gap(px(8.0)).ml_auto();
+        let mut hints = div().flex().items_center().gap(px(8.0 * k)).ml_auto();
         hints = hints
             .child(keybinding_hint("navigate", ["\u{2191}\u{2193}"], c))
             .child(keybinding_hint("select", ["\u{21b5}"], c));
@@ -1502,9 +1527,9 @@ where
         let footer = div()
             .flex()
             .items_center()
-            .gap(px(8.0))
-            .px(px(8.0))
-            .py(px(4.0))
+            .gap(px(8.0 * k))
+            .px(px(8.0 * k))
+            .py(px(4.0 * k))
             .border_t_1()
             .border_color(border)
             .child(
@@ -1519,7 +1544,7 @@ where
             )
             .child(
                 div()
-                    .text_size(px(11.0))
+                    .text_size(px(11.0 * k))
                     .text_color(muted)
                     .child(SharedString::from(format!(
                         "{result_count} {}",
@@ -1532,10 +1557,13 @@ where
             )
             .child(hints);
 
-        let top = match position.as_str() {
-            "high" => px(40.0),
-            "center" => px(140.0),
-            _ => px(80.0),
+        // "top" hugs the titlebar, "high" sits in the upper fifth, "center"
+        // is vertically centred in the window.
+        let viewport = window.viewport_size();
+        let (top, centered) = match position.as_str() {
+            "center" => (px(0.0), true),
+            "high" => (viewport.height * 0.2, false),
+            _ => (px(40.0 * k), false),
         };
 
         div()
@@ -1544,8 +1572,8 @@ where
             .inset_0()
             .flex()
             .justify_center()
-            .items_start()
-            .pt(top)
+            .when(centered, |d| d.items_center())
+            .when(!centered, |d| d.items_start().pt(top))
             .bg(modal_scrim())
             .track_focus(&palette_focus)
             .key_context("CommandPalette")
@@ -1565,12 +1593,12 @@ where
                 div()
                     .id("palette-card")
                     .occlude()
-                    .w(px(560.0))
-                    .max_h(px(500.0))
+                    .w(px(560.0 * k).min(viewport.width - px(32.0)))
+                    .max_h((px(500.0 * k)).min(viewport.height - px(64.0)))
                     .flex()
                     .flex_col()
                     .overflow_hidden()
-                    .rounded(px(12.0))
+                    .rounded(px(12.0 * k))
                     .bg(card)
                     .border_1()
                     .border_color(border.opacity(0.6))
@@ -1800,7 +1828,7 @@ mod tests {
         palette.update_in(cx, |p, w, cx| p.open(w, cx));
         cx.run_until_parked();
         events.borrow_mut().clear();
-        cx.simulate_click(gpui::point(px(900.0), px(160.0)), gpui::Modifiers::none());
+        cx.simulate_click(gpui::point(px(900.0), px(120.0)), gpui::Modifiers::none());
         cx.run_until_parked();
         let (open, pages) = palette.read_with(cx, |p, _| (p.open, p.pages.clone()));
         assert!(open && pages == [Page::Root, Page::ColorMode]);

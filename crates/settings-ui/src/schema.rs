@@ -1668,6 +1668,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Where the palette opens vertically."
         ),
         field!(
+            workspace.command_palette_size,
+            "commandPaletteSize",
+            Int { min: 50, max: 200, step: 10 },
+            "Size",
+            "Scale the whole palette (%), 100 = default."
+        ),
+        field!(
             workspace.command_palette_history_size,
             "commandPaletteHistorySize",
             Int { min: 0, max: 20, step: 1 },

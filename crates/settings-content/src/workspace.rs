@@ -33,6 +33,8 @@ pub struct WorkspaceContent {
     pub command_palette_opacity: Option<u32>,
     /// `"top"` | `"high"` | `"center"`.
     pub command_palette_position: Option<String>,
+    /// Palette size modifier in percent, 50..=200.
+    pub command_palette_size: Option<u32>,
     pub command_palette_history_size: Option<u32>,
     pub command_palette_close_on_overlay_click: Option<bool>,
 
@@ -56,6 +58,7 @@ impl WorkspaceContent {
             command_palette_show_recent: Some(true),
             command_palette_opacity: Some(95),
             command_palette_position: Some("top".to_string()),
+            command_palette_size: Some(100),
             command_palette_history_size: Some(5),
             command_palette_close_on_overlay_click: Some(true),
             show_nav_history_buttons: Some(false),
