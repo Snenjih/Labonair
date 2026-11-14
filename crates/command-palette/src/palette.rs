@@ -454,6 +454,24 @@ pub struct PaletteData {
     pub submenus: SubmenuRegistry,
 }
 
+/// Move `id` to the front of the MRU list: deduplicated, capped at `max`.
+fn mru_push(list: &mut Vec<CommandId>, id: CommandId, max: usize) {
+    list.retain(|&r| r != id);
+    list.insert(0, id);
+    list.truncate(max);
+}
+
+/// Vertical placement of the palette card: top padding and whether it is
+/// centred in the window. "top" hugs the titlebar, "high" sits in the upper
+/// fifth, "center" is vertically centred.
+fn overlay_top(position: &str, viewport_height: gpui::Pixels, k: f32) -> (gpui::Pixels, bool) {
+    match position {
+        "center" => (px(0.0), true),
+        "high" => (viewport_height * 0.2, false),
+        _ => (px(40.0 * k), false),
+    }
+}
+
 /// Persisted "recently used" command ids (mirrors the reference
 /// `labonair-palette-recent` localStorage list). Stored as debug-formatted
 /// Stable action names in `command-palette-recent.json` in the config dir.
@@ -465,17 +483,25 @@ mod recent {
     }
 
     pub fn load() -> Vec<CommandId> {
-        let Ok(raw) = std::fs::read_to_string(path()) else {
+        load_from(&path())
+    }
+
+    pub fn save(ids: &[CommandId]) {
+        save_to(&path(), ids);
+    }
+
+    pub(super) fn load_from(path: &std::path::Path) -> Vec<CommandId> {
+        let Ok(raw) = std::fs::read_to_string(path) else {
             return Vec::new();
         };
         let ids: Vec<String> = serde_json::from_str(&raw).unwrap_or_default();
         ids.iter().filter_map(|s| from_slug(s)).collect()
     }
 
-    pub fn save(ids: &[CommandId]) {
+    pub(super) fn save_to(path: &std::path::Path, ids: &[CommandId]) {
         let slugs: Vec<&str> = ids.iter().map(|id| id.action_name()).collect();
         if let Ok(json) = serde_json::to_string(&slugs) {
-            let _ = std::fs::write(path(), json);
+            let _ = std::fs::write(path, json);
         }
     }
 
@@ -795,10 +821,11 @@ where
     }
 
     fn push_recent(&mut self, id: CommandId, cx: &App) {
-        let max = palette_history_size(cx).max(1) as usize;
-        self.recent.retain(|&r| r != id);
-        self.recent.insert(0, id);
-        self.recent.truncate(max);
+        mru_push(
+            &mut self.recent,
+            id,
+            palette_history_size(cx).max(1) as usize,
+        );
         recent::save(&self.recent);
     }
 
@@ -1572,11 +1599,7 @@ where
         // "top" hugs the titlebar, "high" sits in the upper fifth, "center"
         // is vertically centred in the window.
         let viewport = window.viewport_size();
-        let (top, centered) = match position.as_str() {
-            "center" => (px(0.0), true),
-            "high" => (viewport.height * 0.2, false),
-            _ => (px(40.0 * k), false),
-        };
+        let (top, centered) = overlay_top(&position, viewport.height, k);
 
         div()
             .id("palette-overlay")
@@ -1631,6 +1654,53 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn executing_commands_reorders_recents_mru_deduped_and_capped() {
+        use CommandId::*;
+        let mut recent = Vec::new();
+        for id in [NewTerminalTab, SplitRight, GoToSymbol] {
+            mru_push(&mut recent, id, 3);
+        }
+        assert_eq!(recent, vec![GoToSymbol, SplitRight, NewTerminalTab]);
+        // Re-running an older entry moves it to the top without duplicating.
+        mru_push(&mut recent, NewTerminalTab, 3);
+        assert_eq!(recent, vec![NewTerminalTab, GoToSymbol, SplitRight]);
+        // A new entry evicts the oldest once the cap is reached.
+        mru_push(&mut recent, Find, 3);
+        assert_eq!(recent, vec![Find, NewTerminalTab, GoToSymbol]);
+        // The cap also shrinks an over-long list.
+        mru_push(&mut recent, Find, 1);
+        assert_eq!(recent, vec![Find]);
+    }
+
+    #[test]
+    fn recents_persist_in_order_across_reload() {
+        use CommandId::*;
+        let dir = std::env::temp_dir().join(format!("lb-recent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("command-palette-recent.json");
+        let mut recent = Vec::new();
+        for id in [NewTerminalTab, SplitRight, NewTerminalTab, GoToSymbol] {
+            mru_push(&mut recent, id, 10);
+            recent::save_to(&file, &recent);
+        }
+        assert_eq!(
+            recent::load_from(&file),
+            vec![GoToSymbol, NewTerminalTab, SplitRight]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn overlay_position_top_high_center() {
+        let h = px(1000.0);
+        assert_eq!(overlay_top("top", h, 1.0), (px(40.0), false));
+        assert_eq!(overlay_top("high", h, 1.0), (px(200.0), false));
+        assert_eq!(overlay_top("center", h, 1.0), (px(0.0), true));
+        // Unknown values fall back to "top"; "top" scales with the UI scale.
+        assert_eq!(overlay_top("bogus", h, 1.5), (px(60.0), false));
+    }
 
     fn palette_commands() -> Vec<Command> {
         vec![
