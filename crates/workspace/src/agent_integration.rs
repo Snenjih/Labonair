@@ -53,7 +53,6 @@ pub(crate) fn badge(status: AgentStatus, c: &Palette) -> AnyElement {
 impl Workspace {
     /// The agent to show for a tab: the pane with the most urgent status
     /// (NeedsInput > Working > Done > no badge) among all of the tab's panes.
-    #[allow(dead_code)] // consumed by tab_strip.rs (owned by another change set)
     pub(crate) fn tab_agent(&self, tab_id: u64) -> Option<&AgentPane> {
         let rank = |a: &AgentPane| match a.status {
             Some(AgentStatus::NeedsInput) => 3,

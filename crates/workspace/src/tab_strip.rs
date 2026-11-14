@@ -96,14 +96,13 @@ pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisp
     });
     // Agent integration: a single-pane terminal tab running a coding agent
     // swaps its icon for the agent's logo and shows its status.
-    let agent = (group.is_none())
-        .then(|| workspace.layouts.get(&tab.id).and_then(|l| l.active))
-        .flatten()
-        .and_then(|pane| workspace.agents.get(&pane));
-    let tile = group.is_none().then(|| match agent {
-        Some(a) => agent_tile(a.agent),
-        None => kind_tile(tab.kind, tab.data.host_id.is_some()),
-    });
+    let agent = workspace.tab_agent(tab.id);
+    let tile = match agent {
+        Some(a) => Some(agent_tile(a.agent)),
+        None => group
+            .is_none()
+            .then(|| kind_tile(tab.kind, tab.data.host_id.is_some())),
+    };
     TabDisplay {
         tile,
         agent_status: agent.and_then(|a| a.status),
@@ -1314,7 +1313,10 @@ mod tests {
     #[test]
     fn ssh_terminal_tab_uses_ssh_tile_and_local_uses_terminal_tile() {
         assert_eq!(kind_tile(TabKind::Workspace, true), TabTileSpec::ssh());
-        assert_eq!(kind_tile(TabKind::Workspace, false), TabTileSpec::terminal());
+        assert_eq!(
+            kind_tile(TabKind::Workspace, false),
+            TabTileSpec::terminal()
+        );
         assert_ne!(kind_tile(TabKind::Editor, false), TabTileSpec::terminal());
     }
 

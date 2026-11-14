@@ -522,7 +522,9 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                             .flex()
                             .items_center()
                             .justify_center()
-                            .when(on, |s| s.child(IconName::Check.svg(c.primary).size(px(14.0)))),
+                            .when(on, |s| {
+                                s.child(IconName::Check.svg(c.primary).size(px(14.0)))
+                            }),
                     )
                 })
                 .when(toggled.is_none() && (checked || icon.is_some()), |d| {

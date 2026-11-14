@@ -860,9 +860,8 @@ mod tests {
     fn collect(body: &PageBody, paths: &mut Vec<&'static str>) {
         let PageBody::Generated(items) = body;
         for item in items {
-            match item {
-                SettingsPageItem::Item(path) => paths.push(path),
-                _ => {}
+            if let SettingsPageItem::Item(path) = item {
+                paths.push(path);
             }
         }
     }

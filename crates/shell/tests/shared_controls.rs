@@ -23,6 +23,7 @@ const ALLOWED: &[(&str, usize)] = &[
     ("command-palette/src/palette.rs", 1),
     ("editor-ui/src/editor.rs", 2),
     ("hosts-ui/src/hosts/page.rs", 3),
+    ("settings-ui/src/panes/generic.rs", 1),
     ("panel-git-graph/src/panel_git_graph.rs", 1),
     ("panel-scm/src/git_change_row.rs", 1),
     ("panel-scm/src/panel_scm.rs", 1),
