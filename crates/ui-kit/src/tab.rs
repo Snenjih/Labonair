@@ -10,8 +10,8 @@ use gpui::{
 
 use crate::animation::{state_fill, MotionExt};
 use crate::{
-    icon_button_builder, indicator, ButtonSize, ButtonVariant, IconButtonShape, IconName,
-    IndicatorSize, Palette, DISABLED_OPACITY,
+    icon_button_builder, indicator, tab_tile, ButtonSize, ButtonVariant, IconButtonShape, IconName,
+    IndicatorSize, Palette, TabTileSpec, DISABLED_OPACITY,
 };
 
 type TabAction = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -52,6 +52,7 @@ pub struct TabItemBuilder {
     label: SharedString,
     label_content: Option<AnyElement>,
     leading: Option<IconName>,
+    leading_tile: Option<TabTileSpec>,
     layout: TabLayout,
     style: TabStyle,
     selected: bool,
@@ -81,6 +82,7 @@ pub fn tab_item(
         label: label.into(),
         label_content: None,
         leading: None,
+        leading_tile: None,
         layout: TabLayout::Horizontal,
         style: TabStyle::Classic,
         selected: false,
@@ -112,6 +114,12 @@ impl TabItemBuilder {
 
     pub fn leading(mut self, icon: IconName) -> Self {
         self.leading = Some(icon);
+        self
+    }
+
+    /// A Gorex-style program tile in place of the plain leading glyph.
+    pub fn leading_tile(mut self, tile: TabTileSpec) -> Self {
+        self.leading_tile = Some(tile);
         self
     }
 
@@ -207,6 +215,7 @@ impl TabItemBuilder {
             label,
             label_content,
             leading,
+            leading_tile,
             layout,
             style,
             selected,
@@ -313,7 +322,9 @@ impl TabItemBuilder {
             ))
         };
 
-        if let Some(icon) = leading {
+        if let Some(tile) = leading_tile {
+            row = row.child(tab_tile(tile, &palette));
+        } else if let Some(icon) = leading {
             row = row.child(
                 div().flex_shrink_0().child(
                     icon.svg(if selected { palette.fg } else { palette.muted })
@@ -557,6 +568,7 @@ mod tests {
                     let _ = tab_item("tab", test_palette(), "Editor")
                         .layout(layout)
                         .leading(IconName::SquarePen)
+                        .leading_tile(TabTileSpec::editor())
                         .selected(selected)
                         .disabled(disabled)
                         .dirty(true)

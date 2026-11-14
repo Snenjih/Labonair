@@ -18,7 +18,8 @@ use labonair_settings::{Settings as _, WorkspaceSettings};
 use labonair_ui_kit::{
     caret, context_menu_with_exit, divider, floating_tab_strip, icon_button_builder,
     tab_drop_marker, tab_group_gap, tab_item, Axis, ButtonSize, Density, IconButtonShape, IconName,
-    MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDropSide, TabLayout, TabStyle, Tooltip,
+    MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDropSide, TabLayout, TabStyle,
+    TabTileSpec, Tooltip,
 };
 
 use crate::pane_dnd::Payload;
@@ -38,6 +39,8 @@ pub(crate) struct TabDisplay {
     pub tooltip: SharedString,
     /// Kind icon, shown on non-editor tabs and in the sidebar.
     pub icon: IconName,
+    /// Gorex-style program tile for a single-pane tab (`None` for groups).
+    pub tile: Option<TabTileSpec>,
     /// Git status marker of an editor tab, when enabled in settings.
     pub status_color: Option<Hsla>,
     /// Diagnostics marker of an editor tab, when enabled in settings.
@@ -97,18 +100,56 @@ pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisp
         .then(|| workspace.layouts.get(&tab.id).and_then(|l| l.active))
         .flatten()
         .and_then(|pane| workspace.agents.get(&pane));
+    let tile = group.is_none().then(|| match agent {
+        Some(a) => agent_tile(a.agent),
+        None => kind_tile(tab.kind, tab.data.host_id.is_some()),
+    });
     TabDisplay {
+        tile,
         agent_status: agent.and_then(|a| a.status),
         tooltip: label.clone(),
         label,
         icon: group.map_or_else(
-            || agent.map_or_else(|| tab.kind.indicator(), |a| crate::agent_integration::icon(a.agent)),
+            || {
+                agent.map_or_else(
+                    || tab.kind.indicator(),
+                    |a| crate::agent_integration::icon(a.agent),
+                )
+            },
             |g| g.icon,
         ),
         status_color,
         diagnostic_color,
         pane_count,
         dirty: tab.dirty && (tab.kind == TabKind::Editor || pane_count > 1),
+    }
+}
+
+/// Tile of a detected coding agent.
+pub(crate) fn agent_tile(agent: labonair_terminal::agent::Agent) -> TabTileSpec {
+    use labonair_terminal::agent::Agent;
+    match agent {
+        Agent::ClaudeCode => TabTileSpec::claude(),
+        Agent::Codex => TabTileSpec::codex(),
+        Agent::Pi => TabTileSpec::pi(),
+        Agent::OpenCode => TabTileSpec::opencode(),
+    }
+}
+
+/// Tile of a tab kind; a terminal tab backed by a host uses the SSH colour.
+pub(crate) fn kind_tile(kind: TabKind, ssh: bool) -> TabTileSpec {
+    match kind {
+        TabKind::Workspace if ssh => TabTileSpec::ssh(),
+        TabKind::Workspace => TabTileSpec::terminal(),
+        TabKind::Editor => TabTileSpec::editor(),
+        TabKind::Preview => TabTileSpec::preview(),
+        TabKind::AiDiff => TabTileSpec::ai_diff(),
+        TabKind::Sftp => TabTileSpec::sftp(),
+        TabKind::GitGraph => TabTileSpec::git_graph(),
+        TabKind::Diff => TabTileSpec::diff(),
+        TabKind::CommitDiff => TabTileSpec::commit_diff(),
+        TabKind::Keymap => TabTileSpec::keymap(),
+        TabKind::Onboarding => TabTileSpec::onboarding(),
     }
 }
 
@@ -225,7 +266,10 @@ impl Workspace {
         let view = cx.entity();
         let mut tab_item = tab_item(format!("workspace-tab-{id}"), c, label.clone());
         if sidebar || tab.kind != TabKind::Editor || display.pane_count > 1 {
-            tab_item = tab_item.leading(display.icon);
+            tab_item = match display.tile {
+                Some(tile) => tab_item.leading_tile(tile),
+                None => tab_item.leading(display.icon),
+            };
         }
         if let Some(status) = display.agent_status {
             tab_item = tab_item.badge(crate::agent_integration::badge(status, &c));
@@ -270,6 +314,7 @@ impl Workspace {
                 view.update(app, |this, cx| this.request_close(id, window, cx));
             });
         }
+        let tile = display.tile;
         let renaming = self.rename_tab.as_ref().is_some_and(|(rid, _)| *rid == id);
         let (join, strip_end) = self.tab_drop_hints(id, cx);
         let marker = self
@@ -331,7 +376,9 @@ impl Workspace {
                     icon: display.icon,
                 },
                 move |dragged, grab, _, cx| {
-                    cx.new(|_| PaneDragChip::new(dragged.label.clone(), dragged.icon, c, grab))
+                    cx.new(|_| {
+                        PaneDragChip::new(dragged.label.clone(), dragged.icon, c, grab).tile(tile)
+                    })
                 },
             )
             .on_drag_move(
@@ -1263,6 +1310,13 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ssh_terminal_tab_uses_ssh_tile_and_local_uses_terminal_tile() {
+        assert_eq!(kind_tile(TabKind::Workspace, true), TabTileSpec::ssh());
+        assert_eq!(kind_tile(TabKind::Workspace, false), TabTileSpec::terminal());
+        assert_ne!(kind_tile(TabKind::Editor, false), TabTileSpec::terminal());
+    }
 
     // (id, space id, pinned) in store order.
     const TABS: [(u64, u64, bool); 5] = [

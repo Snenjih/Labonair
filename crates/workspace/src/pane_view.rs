@@ -43,6 +43,7 @@ pub struct PaneDragChip {
     label: SharedString,
     icon: IconName,
     palette: Palette,
+    tile: Option<labonair_ui_kit::TabTileSpec>,
     /// Where the pointer grabbed the dragged element. GPUI places the drag
     /// image at the grab origin, so the chip is shifted by this much plus a
     /// small gap to sit just below-right of the pointer.
@@ -55,8 +56,15 @@ impl PaneDragChip {
             label,
             icon,
             palette,
+            tile: None,
             grab,
         }
+    }
+
+    /// Show a program tile instead of the plain icon.
+    pub fn tile(mut self, tile: Option<labonair_ui_kit::TabTileSpec>) -> Self {
+        self.tile = tile;
+        self
     }
 }
 
@@ -80,7 +88,10 @@ impl Render for PaneDragChip {
             .border_color(c.line_strong)
             .text_color(c.popover_fg)
             .text_xs()
-            .child(self.icon.svg(c.muted))
+            .child(match self.tile {
+                Some(tile) => labonair_ui_kit::tab_tile(tile, &c).into_any_element(),
+                None => self.icon.svg(c.muted).into_any_element(),
+            })
             .child(self.label.clone())
     }
 }

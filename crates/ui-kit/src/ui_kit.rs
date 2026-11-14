@@ -75,6 +75,7 @@ mod slider;
 mod stack;
 mod switch;
 mod tab;
+mod tab_tile;
 #[cfg(test)]
 mod test_support;
 mod text_field;
@@ -139,6 +140,7 @@ pub use tab::{
     floating_tab_strip, tab_drop_marker, tab_group_gap, tab_item, TabDropSide, TabItemBuilder,
     TabLayout, TabStyle,
 };
+pub use tab_tile::{tab_tile, tile_colors, tile_rim, TabTileSpec, TILE_SIZE};
 pub use text_field::{
     caret, field_input, text_area_surface, text_field, text_field_surface,
     text_field_surface_sized, text_input, BlinkCursor, InputEvent, InputState, TextFieldSize,
