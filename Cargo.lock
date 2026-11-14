@@ -4717,6 +4717,7 @@ dependencies = [
  "labonair-command-palette-runtime",
  "labonair-editor",
  "labonair-editor-ui",
+ "labonair-errors",
  "labonair-events",
  "labonair-explorer-host",
  "labonair-filesystem",

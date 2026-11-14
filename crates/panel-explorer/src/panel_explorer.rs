@@ -1478,10 +1478,6 @@ impl ExplorerView {
         cx: &mut Context<Self>,
     ) {
         self.context_menu = None;
-        if self.is_remote() {
-            self.notify_remote_unsupported("Creating files", cx);
-            return;
-        }
         self.model.expanded.insert(parent.clone());
         self.load_dir(parent.clone(), false, cx);
         self.model.pending_create = Some(PendingCreate { parent, is_dir });
@@ -1493,10 +1489,6 @@ impl ExplorerView {
 
     fn begin_rename(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.context_menu = None;
-        if self.is_remote() {
-            self.notify_remote_unsupported("Renaming", cx);
-            return;
-        }
         self.edit_buffer = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -1534,18 +1526,29 @@ impl ExplorerView {
                 }
                 let target = pc.parent.join(&name);
                 let is_dir = pc.is_dir;
-                self.run_fs_op(
-                    pc.parent.clone(),
-                    move || {
-                        let p = target.to_string_lossy().to_string();
-                        if is_dir {
-                            mutate::create_dir_sync(&p)
-                        } else {
-                            mutate::create_file_sync(&p)
-                        }
-                    },
-                    cx,
-                );
+                if let Some(ssh_id) = self.model.remote_ssh_id.clone() {
+                    let remote = self.host.remote_service();
+                    let path = target.to_string_lossy().to_string();
+                    self.run_remote_op(
+                        pc.parent.clone(),
+                        "Create",
+                        async move { remote.create(ssh_id, path, is_dir).await },
+                        cx,
+                    );
+                } else {
+                    self.run_fs_op(
+                        pc.parent.clone(),
+                        move || {
+                            let p = target.to_string_lossy().to_string();
+                            if is_dir {
+                                mutate::create_dir_sync(&p)
+                            } else {
+                                mutate::create_file_sync(&p)
+                            }
+                        },
+                        cx,
+                    );
+                }
             }
             EditMode::Rename(from) => {
                 if name.is_empty()
@@ -1561,11 +1564,27 @@ impl ExplorerView {
                 let to = parent.join(&name);
                 let from_c = from.clone();
                 self.model.expanded.remove(&from);
-                self.run_fs_op(
-                    parent,
-                    move || mutate::rename_sync(&from_c.to_string_lossy(), &to.to_string_lossy()),
-                    cx,
-                );
+                if let Some(ssh_id) = self.model.remote_ssh_id.clone() {
+                    let remote = self.host.remote_service();
+                    let (f, t) = (
+                        from_c.to_string_lossy().to_string(),
+                        to.to_string_lossy().to_string(),
+                    );
+                    self.run_remote_op(
+                        parent,
+                        "Rename",
+                        async move { remote.rename(ssh_id, f, t).await },
+                        cx,
+                    );
+                } else {
+                    self.run_fs_op(
+                        parent,
+                        move || {
+                            mutate::rename_sync(&from_c.to_string_lossy(), &to.to_string_lossy())
+                        },
+                        cx,
+                    );
+                }
             }
         }
         self.edit_buffer.clear();
@@ -1575,10 +1594,6 @@ impl ExplorerView {
 
     fn request_delete(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.context_menu = None;
-        if self.is_remote() {
-            self.notify_remote_unsupported("Deleting", cx);
-            return;
-        }
         self.confirm_delete.open(path);
         cx.notify();
     }
@@ -1608,11 +1623,22 @@ impl ExplorerView {
         self.model.nodes.remove(&path);
         self.selection.clear();
         let path_c = path.clone();
-        self.run_fs_op(
-            parent,
-            move || mutate::delete_sync(&path_c.to_string_lossy()),
-            cx,
-        );
+        if let Some(ssh_id) = self.model.remote_ssh_id.clone() {
+            let remote = self.host.remote_service();
+            let p = path_c.to_string_lossy().to_string();
+            self.run_remote_op(
+                parent,
+                "Delete",
+                async move { remote.delete(ssh_id, p).await },
+                cx,
+            );
+        } else {
+            self.run_fs_op(
+                parent,
+                move || mutate::delete_sync(&path_c.to_string_lossy()),
+                cx,
+            );
+        }
         cx.notify();
     }
 
@@ -1623,10 +1649,6 @@ impl ExplorerView {
     where
         F: FnOnce() -> Result<(), String> + Send + 'static,
     {
-        if self.is_remote() {
-            self.notify_remote_unsupported("This operation", cx);
-            return;
-        }
         cx.spawn(async move |view, cx| {
             let result = cx.background_executor().spawn(async move { op() }).await;
             let _ = view.update(cx, |this, cx| match result {
@@ -1635,6 +1657,41 @@ impl ExplorerView {
                     notification_center(cx).update(cx, |c, cx| {
                         c.push(Notification::error("File operation failed", message), cx);
                     });
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Remote counterpart of [`Self::run_fs_op`]: runs `op` on the tokio
+    /// runtime, then reloads `reload` or publishes an error notification
+    /// naming the failed `action`.
+    fn run_remote_op(
+        &mut self,
+        reload: PathBuf,
+        action: &'static str,
+        op: impl std::future::Future<Output = Result<(), String>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let jh = self.tokio.spawn(op);
+        cx.spawn(async move |view, cx| {
+            let result = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let _ = view.update(cx, |this, cx| match result {
+                Ok(()) => this.load_dir(reload, true, cx),
+                Err(message) => {
+                    notification_center(cx).update(cx, |c, cx| {
+                        c.push(
+                            Notification::error(
+                                format!("{action} failed"),
+                                "The remote file operation failed.",
+                            )
+                            .source("explorer")
+                            .details(message),
+                            cx,
+                        );
+                    });
+                    // Resync with the server; the optimistic edit may be stale.
+                    this.load_dir(reload, true, cx);
                 }
             });
         })
@@ -1658,8 +1715,11 @@ impl ExplorerView {
 
     fn open_in_terminal(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.context_menu = None;
-        if self.is_remote() {
-            self.notify_remote_unsupported("Opening a terminal here", cx);
+        if let Some(ssh_id) = self.model.remote_ssh_id.clone() {
+            let dir = dir.to_string_lossy().to_string();
+            if !self.host.open_remote_terminal(ssh_id, dir, window, cx) {
+                self.notify_remote_unsupported("Opening a terminal here", cx);
+            }
             return;
         }
         let cwd = dir.to_string_lossy().to_string();
@@ -1876,20 +1936,21 @@ impl Render for ExplorerView {
                     })),
             );
         if let Some(follows) = self.host.follows(cx) {
-            toolbar = toolbar.child(
-                icon_button_builder("explorer-follow", c.palette, IconName::Link)
-                    .size(ButtonSize::IconXs)
-                    .selected(follows)
-                    .tooltip(if follows {
-                        "Following this pane's folder — click to stay here"
-                    } else {
-                        "Staying put — click to follow this pane's folder"
-                    })
-                    .render()
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.host.toggle_follow(cx)
-                    })),
-            );
+            toolbar =
+                toolbar.child(
+                    icon_button_builder("explorer-follow", c.palette, IconName::Link)
+                        .size(ButtonSize::IconXs)
+                        .selected(follows)
+                        .tooltip(if follows {
+                            "Following this pane's folder — click to stay here"
+                        } else {
+                            "Staying put — click to follow this pane's folder"
+                        })
+                        .render()
+                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                            this.host.toggle_follow(cx)
+                        })),
+                );
         }
 
         if show_inline_actions {
@@ -3494,5 +3555,146 @@ mod tests {
                 "frame cost is viewport-bounded at {start}"
             );
         }
+    }
+
+    /// Fake SFTP transport: records ops; fails `delete` when `fail` is set.
+    #[derive(Default)]
+    struct FakeRemote {
+        ops: std::sync::Mutex<Vec<String>>,
+        fail: bool,
+    }
+
+    impl labonair_explorer_host::RemoteExplorerService for FakeRemote {
+        fn read_dir(
+            &self,
+            _: String,
+            _: String,
+        ) -> labonair_explorer_host::RemoteExplorerFuture<
+            Vec<labonair_explorer_host::RemoteExplorerEntry>,
+        > {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+        fn create(
+            &self,
+            _: String,
+            path: String,
+            is_dir: bool,
+        ) -> labonair_explorer_host::RemoteExplorerFuture<()> {
+            self.ops
+                .lock()
+                .unwrap()
+                .push(format!("create {path} {is_dir}"));
+            Box::pin(async { Ok(()) })
+        }
+        fn rename(
+            &self,
+            _: String,
+            from: String,
+            to: String,
+        ) -> labonair_explorer_host::RemoteExplorerFuture<()> {
+            self.ops.lock().unwrap().push(format!("rename {from} {to}"));
+            Box::pin(async { Ok(()) })
+        }
+        fn delete(
+            &self,
+            _: String,
+            path: String,
+        ) -> labonair_explorer_host::RemoteExplorerFuture<()> {
+            self.ops.lock().unwrap().push(format!("delete {path}"));
+            let fail = self.fail;
+            Box::pin(async move {
+                if fail {
+                    Err("denied".into())
+                } else {
+                    Ok(())
+                }
+            })
+        }
+    }
+
+    fn remote_view(
+        cx: &mut gpui::TestAppContext,
+        remote: Arc<FakeRemote>,
+        rt: &tokio::runtime::Runtime,
+    ) -> Entity<ExplorerView> {
+        cx.update(|cx| {
+            labonair_notifications::init(cx);
+            let theme = cx.new(|_| labonair_theme::ThemeStore::new(gpui::WindowAppearance::Dark));
+            let host = ExplorerHost::with_remote_service(
+                |_, _, _, _| {},
+                |_, _, _| {},
+                |_, _, _| {},
+                |_| None,
+                remote,
+            );
+            let handle = rt.handle().clone();
+            let view = cx.new(|cx| ExplorerView::new(theme, host, handle, cx));
+            view.update(cx, |v, cx| {
+                v.set_root_str(Some("/srv".into()), Some("ssh-1".into()), cx)
+            });
+            view
+        })
+    }
+
+    fn settle(cx: &mut gpui::TestAppContext) {
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            cx.run_until_parked();
+        }
+    }
+
+    #[gpui::test]
+    fn remote_create_rename_delete_reach_the_transport(cx: &mut gpui::TestAppContext) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let remote = Arc::new(FakeRemote::default());
+        let view = remote_view(cx, remote.clone(), &rt);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.model.pending_create = Some(PendingCreate {
+                    parent: PathBuf::from("/srv"),
+                    is_dir: true,
+                });
+                v.model.edit_mode = EditMode::Create;
+                v.edit_buffer = "new".into();
+                v.commit_edit(cx);
+
+                v.model.edit_mode = EditMode::Rename(PathBuf::from("/srv/a"));
+                v.edit_buffer = "b".into();
+                v.commit_edit(cx);
+
+                v.confirm_delete.open(PathBuf::from("/srv/b"));
+                v.confirm_delete_now(cx);
+            });
+        });
+        settle(cx);
+        assert_eq!(
+            *remote.ops.lock().unwrap(),
+            vec![
+                "create /srv/new true",
+                "rename /srv/a /srv/b",
+                "delete /srv/b"
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn remote_failure_publishes_notification(cx: &mut gpui::TestAppContext) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let remote = Arc::new(FakeRemote {
+            fail: true,
+            ..Default::default()
+        });
+        let view = remote_view(cx, remote, &rt);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.confirm_delete.open(PathBuf::from("/srv/x"));
+                v.confirm_delete_now(cx);
+            });
+        });
+        settle(cx);
+        cx.update(|cx| {
+            let snaps = notification_center(cx).read(cx).snapshots();
+            assert!(snaps.iter().any(|n| n.title.contains("Delete failed")));
+        });
     }
 }

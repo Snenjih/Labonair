@@ -2576,6 +2576,21 @@ impl Workspace {
         }
     }
 
+    /// Explorer "Open terminal here" for a remote root: `cd` the active SSH
+    /// terminal into `dir`. Only when that terminal belongs to `ssh_id`.
+    pub fn cd_ssh_terminal(
+        &mut self,
+        ssh_id: &str,
+        dir: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.active_ssh_session_id(cx).as_deref() == Some(ssh_id) {
+            let quoted = labonair_explorer_host::shell_quote(std::path::Path::new(dir));
+            self.run_in_active_terminal(format!("cd {quoted}"), window, cx);
+        }
+    }
+
     /// Open a new local terminal tab in `cwd` and run `command` in it —
     /// snippet "terminal" mode, local target.
     pub fn run_snippet_local(

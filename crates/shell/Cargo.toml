@@ -87,3 +87,4 @@ labonair-events = { path = "../events" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+labonair-errors = { path = "../errors" }

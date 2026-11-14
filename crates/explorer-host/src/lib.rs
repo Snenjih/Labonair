@@ -27,6 +27,7 @@ type OpenFileFn = Rc<dyn Fn(String, bool, &mut Window, &mut App)>;
 type OpenTerminalFn = Rc<dyn Fn(String, &mut Window, &mut App)>;
 type OpenPreviewFn = Rc<dyn Fn(String, &mut Window, &mut App)>;
 type OpenRemoteFileFn = Rc<dyn Fn(String, String, &mut Window, &mut App)>;
+type RemoteTerminalFn = Rc<dyn Fn(String, String, &mut Window, &mut App)>;
 type ActiveFilePathFn = Rc<dyn Fn(&App) -> Option<String>>;
 type FollowStateFn = Rc<dyn Fn(&App) -> bool>;
 type ToggleFollowFn = Rc<dyn Fn(&mut App)>;
@@ -48,7 +49,7 @@ pub struct RemoteExplorerEntry {
     pub permissions: String,
 }
 
-/// The only remote filesystem operation required by the Explorer panel.
+/// Remote filesystem operations required by the Explorer panel.
 ///
 /// Concrete SSH/SFTP services are composed by `labonair-shell` and injected
 /// through this contract. The Explorer does not know the transport, session
@@ -59,6 +60,18 @@ pub trait RemoteExplorerService: Send + Sync {
         session_id: String,
         path: String,
     ) -> RemoteExplorerFuture<Vec<RemoteExplorerEntry>>;
+
+    /// Create an empty file or a directory at `path`.
+    fn create(&self, session_id: String, path: String, is_dir: bool) -> RemoteExplorerFuture<()>;
+
+    fn rename(&self, session_id: String, from: String, to: String) -> RemoteExplorerFuture<()>;
+
+    /// Delete a file or a directory (recursively).
+    fn delete(&self, session_id: String, path: String) -> RemoteExplorerFuture<()>;
+}
+
+fn unavailable<T: Send + 'static>() -> RemoteExplorerFuture<T> {
+    Box::pin(async { Err("The remote Explorer service is unavailable.".to_string()) })
 }
 
 struct DisconnectedRemoteExplorer;
@@ -69,7 +82,19 @@ impl RemoteExplorerService for DisconnectedRemoteExplorer {
         _session_id: String,
         _path: String,
     ) -> RemoteExplorerFuture<Vec<RemoteExplorerEntry>> {
-        Box::pin(async { Err("The remote Explorer service is unavailable.".to_string()) })
+        unavailable()
+    }
+
+    fn create(&self, _: String, _: String, _: bool) -> RemoteExplorerFuture<()> {
+        unavailable()
+    }
+
+    fn rename(&self, _: String, _: String, _: String) -> RemoteExplorerFuture<()> {
+        unavailable()
+    }
+
+    fn delete(&self, _: String, _: String) -> RemoteExplorerFuture<()> {
+        unavailable()
     }
 }
 
@@ -85,6 +110,7 @@ pub struct ExplorerHost {
     active_file_path: ActiveFilePathFn,
     remote: Arc<dyn RemoteExplorerService>,
     open_remote_file: Option<OpenRemoteFileFn>,
+    open_remote_terminal: Option<RemoteTerminalFn>,
     follow: Option<(FollowStateFn, ToggleFollowFn)>,
 }
 
@@ -122,6 +148,7 @@ impl ExplorerHost {
             active_file_path: Rc::new(active_file_path),
             remote,
             open_remote_file: None,
+            open_remote_terminal: None,
             follow: None,
         }
     }
@@ -148,6 +175,32 @@ impl ExplorerHost {
         match &self.open_remote_file {
             Some(open) => {
                 open(ssh_id, path, window, cx);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Wire "open a terminal here" for a remote root: `(ssh id, remote dir)`.
+    pub fn with_open_remote_terminal(
+        mut self,
+        open: impl Fn(String, String, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.open_remote_terminal = Some(Rc::new(open));
+        self
+    }
+
+    /// Returns `false` when the host has no remote-terminal wiring.
+    pub fn open_remote_terminal(
+        &self,
+        ssh_id: String,
+        dir: String,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        match &self.open_remote_terminal {
+            Some(open) => {
+                open(ssh_id, dir, window, cx);
                 true
             }
             None => false,
