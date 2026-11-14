@@ -39,6 +39,8 @@
     "bufferFontFamily": "",
     "bufferFontSize": 13,
     "bufferLineHeight": 1.55,
+    // "system" | "none" | "light" | "medium" | "strong" — macOS text smoothing.
+    "fontSmoothing": "system",
     // "compact" | "default" | "comfortable" — spacing/size density.
     "uiDensity": "default",
     // Multiplier on the active theme's corner-radius scale (1.0 = unchanged).
@@ -103,6 +105,14 @@
     "resumeCommands": {},
     // Scrollback rows the detached session host keeps per session.
     "detachedScrollbackLines": 5000
+    // Agent integrations: tab logo + status marker + finished notification for
+    // coding agents running in a terminal (Resume settings above belong here too).
+    "agentIntegrations": true,
+    "agentIntegrationClaudeCode": true,
+    "agentIntegrationCodex": true,
+    "agentIntegrationPi": true,
+    "agentIntegrationOpenCode": true,
+    "agentIntegrationNotify": true,
   },
 
   "editor": {

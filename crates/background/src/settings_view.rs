@@ -11,16 +11,16 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, px, App, AppContext, Context, Div, ElementId, Entity, InteractiveElement, IntoElement,
-    KeyDownEvent, ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement,
-    Image, ObjectFit, Styled, StyledImage, Subscription, Task, Timer, Window,
+    div, img, px, App, AppContext, Context, Div, ElementId, Entity, Image, InteractiveElement,
+    IntoElement, KeyDownEvent, ObjectFit, ParentElement, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Timer, Window,
 };
 use labonair_theme::ThemeStore;
 use labonair_ui_kit::{
     button, button_disabled, divider, field_input, segmented_control, settings_row, slider_row,
     text_field, text_field_surface, Axis, ButtonSize, ButtonVariant, InputEvent, InputState,
-    Palette, SegmentSize, SegmentVariant, SettingsRow, SliderEvent, SliderState,
-    SliderValue, TextFieldState,
+    Palette, SegmentSize, SegmentVariant, SettingsRow, SliderEvent, SliderState, SliderValue,
+    TextFieldState,
 };
 
 use crate::{

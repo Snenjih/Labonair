@@ -12,12 +12,12 @@
 mod apply;
 mod background_host;
 pub mod command_provider;
+mod editor_preview;
 mod pages;
 mod panes;
 mod schema;
 mod search;
 mod services;
-mod editor_preview;
 mod terminal_preview;
 mod view;
 mod window;

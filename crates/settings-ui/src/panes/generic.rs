@@ -826,12 +826,7 @@ impl SettingsView {
             let disabled = field_disabled_in_scope(self.scope, field.json_path);
             let control = self.tile_group_control(field, value, disabled, c, cx);
             if i > 0 {
-                row = row.child(
-                    div()
-                        .w(px(1.0))
-                        .mx(c.space(20.0))
-                        .bg(c.border),
-                );
+                row = row.child(div().w(px(1.0)).mx(c.space(20.0)).bg(c.border));
             }
             row = row.child(
                 v_stack()
@@ -1167,6 +1162,22 @@ impl SettingsView {
             Vec::new()
         };
         let mut blocks = section_blocks(items, &self.all_fields, &leftover);
+        // Sub-page links resolve against the active page's sub-pages.
+        let links: Vec<(&'static str, &'static str, &'static str)> = self.pages[self.active_area]
+            .sub_pages
+            .iter()
+            .map(|p| (p.slug, p.title, p.description))
+            .collect();
+        for block in &mut blocks {
+            for item in &mut block.items {
+                if let SectionItem::SubPageLink(slug, title, description) = item {
+                    if let Some((_, t, d)) = links.iter().find(|(s, _, _)| s == slug) {
+                        *title = t;
+                        *description = d;
+                    }
+                }
+            }
+        }
         // The Terminal page opens its Font card with a live sample of the
         // terminal, so typography edits show up right where they are made.
         if self.pages[self.active_area].key == "editor" && self.active_subpage.is_none() {
@@ -1178,8 +1189,14 @@ impl SettingsView {
             if let Some(font) = blocks.iter_mut().find(|b| b.title == Some("Font")) {
                 font.items.insert(0, SectionItem::TerminalPreview);
             }
-            // The background session host's live status and session list close
-            // its group (unix only: without a service there are no rows).
+        }
+        // The Background Hosts sub-page opens with the host's live status and
+        // session list (unix only: without a service there are no rows).
+        if self.pages[self.active_area].key == "terminal"
+            && self.active_subpage.is_some_and(|i| {
+                self.pages[self.active_area].sub_pages[i].slug == "background-hosts"
+            })
+        {
             let live = self.background_host_items(cx);
             if let Some(group) = blocks
                 .iter_mut()
@@ -1343,6 +1360,9 @@ impl SettingsView {
                 SectionItem::OwnerSurface(id) => {
                     self.render_owner_surface_row(*id, embed, window, c, cx)
                 }
+                SectionItem::SubPageLink(slug, title, description) => {
+                    self.render_subpage_link(slug, title, description, c, cx)
+                }
                 SectionItem::TileRow(fields) => self.render_tile_row(fields, c, cx),
                 SectionItem::BackgroundHost(item) => self.render_host_item(item, c, cx),
                 SectionItem::EditorPreview => {
@@ -1458,6 +1478,74 @@ impl SettingsView {
         .into_any_element()
     }
 
+    /// A full-width button row that opens a sub-page (the reusable entry point
+    /// for power-user / advanced areas, Hosts-page style).
+    fn render_subpage_link(
+        &mut self,
+        slug: &'static str,
+        title: &'static str,
+        description: &'static str,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let c = *c;
+        let open = move |this: &mut Self, cx: &mut Context<Self>| {
+            if let Some(i) = this.pages[this.active_area]
+                .sub_pages
+                .iter()
+                .position(|p| p.slug == slug)
+            {
+                let area = this.active_area;
+                this.navigate(area, Some(i));
+                cx.notify();
+            }
+        };
+        div()
+            .id(SharedString::from(format!("settings-subpage-{slug}")))
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(c.space(12.0))
+            .px(c.control_space(16.0))
+            .py(c.control_space(12.0))
+            .cursor_pointer()
+            .hover(move |s| s.bg(c.hover_strong))
+            .tab_index(0)
+            .focus(move |s| s.bg(c.hover_strong))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| open(this, cx)))
+            .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _w, cx| {
+                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                    open(this, cx);
+                    cx.stop_propagation();
+                }
+            }))
+            .child(
+                v_stack()
+                    .flex_1()
+                    .min_w_0()
+                    .items_start()
+                    .gap(c.space(2.0))
+                    .child(
+                        div()
+                            .text_size(c.control_space(13.0))
+                            .text_color(c.fg)
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .text_size(c.control_space(12.0))
+                            .text_color(c.muted)
+                            .child(description),
+                    ),
+            )
+            .child(
+                IconName::ChevronRight
+                    .svg(c.muted)
+                    .size(c.control_space(16.0)),
+            )
+            .into_any_element()
+    }
+
     /// Navigate to the page section that hosts `id` (inline surfaces opened
     /// from a search hit).
     pub(crate) fn show_surface(&mut self, id: SettingsSurfaceId, cx: &mut Context<Self>) {
@@ -1482,6 +1570,8 @@ enum SectionItem {
     EditorPreview,
     /// Live terminal sample (`crate::terminal_preview`).
     TerminalPreview,
+    /// `(slug, title, description)` of a sub-page entry row.
+    SubPageLink(&'static str, &'static str, &'static str),
     /// Two or more adjacent tile-group fields shown side by side.
     TileRow(Vec<AnyField>),
     /// A live row of the background-host group (`crate::background_host`).
@@ -1518,6 +1608,11 @@ fn section_blocks(
                     current(&mut blocks).items.push(SectionItem::Field(*field));
                 }
             }
+            SettingsPageItem::SubPageLink(slug) => {
+                current(&mut blocks)
+                    .items
+                    .push(SectionItem::SubPageLink(slug, slug, ""));
+            }
             SettingsPageItem::OwnerSurface(id) => {
                 current(&mut blocks)
                     .items
@@ -1540,9 +1635,7 @@ fn section_blocks(
 
 /// Replace runs of 2+ adjacent `Tiles` fields with one [`SectionItem::TileRow`].
 fn merge_tile_rows(items: &mut Vec<SectionItem>) {
-    let is_tiles = |item: &SectionItem| {
-        matches!(item, SectionItem::Field(f) if matches!(f.control, FieldControl::Tiles(_)))
-    };
+    let is_tiles = |item: &SectionItem| matches!(item, SectionItem::Field(f) if matches!(f.control, FieldControl::Tiles(_)));
     let mut out = Vec::with_capacity(items.len());
     let mut run: Vec<AnyField> = Vec::new();
     let flush = |run: &mut Vec<AnyField>, out: &mut Vec<SectionItem>| match run.len() {

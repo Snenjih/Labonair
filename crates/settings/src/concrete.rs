@@ -396,6 +396,30 @@ impl TerminalSettings {
         self.0.resume_commands.clone().unwrap_or_default()
     }
 
+    /// Whether agent integrations (tab logo/status/notification) are on.
+    pub fn agent_integrations(&self) -> bool {
+        self.0.agent_integrations.unwrap_or(true)
+    }
+
+    /// Whether `agent` (`claude`, `codex`, `pi`, `opencode`) is enabled
+    /// individually; `false` when the master switch is off.
+    pub fn agent_integration_enabled(&self, agent: &str) -> bool {
+        self.agent_integrations()
+            && match agent {
+                "claude" => self.0.agent_integration_claude_code,
+                "codex" => self.0.agent_integration_codex,
+                "pi" => self.0.agent_integration_pi,
+                "opencode" => self.0.agent_integration_open_code,
+                _ => None,
+            }
+            .unwrap_or(true)
+    }
+
+    /// Native notification when an agent finishes.
+    pub fn agent_integration_notify(&self) -> bool {
+        self.0.agent_integration_notify.unwrap_or(true)
+    }
+
     /// Scrollback rows the detached session host keeps per session.
     pub fn detached_scrollback_lines(&self) -> u32 {
         self.0.detached_scrollback_lines.unwrap_or(5_000)

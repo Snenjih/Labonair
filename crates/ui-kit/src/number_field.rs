@@ -169,8 +169,7 @@ impl NumberField {
                 d.cursor_pointer()
                     .hover(move |s| s.bg(c.hover_strong))
                     .when(handler.is_some(), |d| {
-                        d.tab_index(0)
-                            .focus(|style| style.bg(c.hover_strong))
+                        d.tab_index(0).focus(|style| style.bg(c.hover_strong))
                     })
             })
             .child(glyph)

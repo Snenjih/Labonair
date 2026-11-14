@@ -2,8 +2,8 @@
 //! sample set in the same font, size and line height the editor uses.
 
 use gpui::{
-    div, px, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, Styled, Window,
+    div, px, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    Styled, Window,
 };
 use labonair_theme::ThemeStore;
 
@@ -31,7 +31,9 @@ impl Render for EditorPreview {
         let store = self.theme.read(cx);
         let core = &store.theme().core;
         let font_px = store.buffer_font_size();
-        let line_px = (font_px * store.metrics().buffer_line_height).ceil().max(1.0);
+        let line_px = (font_px * store.metrics().buffer_line_height)
+            .ceil()
+            .max(1.0);
         div()
             .id("editor-settings-preview")
             .w_full()

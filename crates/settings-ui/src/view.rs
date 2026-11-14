@@ -1708,9 +1708,9 @@ impl SettingsView {
         let mut sections = self.section_labels_for_area(i);
         if searching {
             sections.retain(|label| {
-                self.search_results.iter().any(|row| {
-                    row.page_index == i && row.section.unwrap_or("Other") == *label
-                })
+                self.search_results
+                    .iter()
+                    .any(|row| row.page_index == i && row.section.unwrap_or("Other") == *label)
             });
         }
         let has_sections = !sections.is_empty();
@@ -1946,7 +1946,9 @@ impl Render for SettingsView {
         let sidebar = div()
             .id("settings-sidebar")
             // Responsive rail: ~22% of the window, clamped to a sane range.
-            .w(px((f32::from(window.viewport_size().width) * 0.22).clamp(226.0, 320.0)))
+            .w(px(
+                (f32::from(window.viewport_size().width) * 0.22).clamp(226.0, 320.0)
+            ))
             .flex_shrink_0()
             .flex()
             .flex_col()

@@ -16,6 +16,9 @@ pub enum SettingsPageItem {
     Item(&'static str),
     /// Navigate to the canonical feature-owned surface for this preference.
     OwnerSurface(SettingsSurfaceId),
+    /// A full-width button row opening the page's sub-page with this slug
+    /// (the Hosts-style entry point to a power-user / advanced area).
+    SubPageLink(&'static str),
 }
 
 /// What a page or sub-page renders below the standard chrome.
@@ -29,6 +32,8 @@ pub struct SubPage {
     pub title: &'static str,
     /// Deep-link slug suffix, e.g. `"advanced"` under `terminal/advanced`.
     pub slug: &'static str,
+    /// One-line summary shown on the [`SettingsPageItem::SubPageLink`] row.
+    pub description: &'static str,
     pub body: PageBody,
 }
 
@@ -82,7 +87,19 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
         // into these sections by `compose_owner_surfaces`; the page owns no
         // persisted fields.
         page("themes", "Themes", &[], THEMES_SECTIONS, vec![]),
-        page("editor", "Editor", &["editor"], EDITOR_GROUPS, vec![]),
+        SettingsPage {
+            key: "editor",
+            title: "Editor",
+            slug: "editor",
+            fallback_areas: &["editor"],
+            body: PageBody::Generated(with_links(items_from_groups(EDITOR_GROUPS), &["advanced"])),
+            sub_pages: vec![SubPage {
+                title: "Advanced",
+                slug: "advanced",
+                description: "Minimap, scrollbar, toolbar and Git decorations.",
+                body: PageBody::Generated(items_from_groups(EDITOR_ADVANCED)),
+            }],
+        },
         page(
             "languages-tools",
             "Languages & Tools",
@@ -102,16 +119,41 @@ pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
             title: "Terminal",
             slug: "terminal",
             fallback_areas: &["terminal", "connections"],
-            body: PageBody::Generated(items_from_groups(TERMINAL_MAIN)),
-            sub_pages: vec![SubPage {
-                title: "Advanced",
-                slug: "advanced",
-                body: PageBody::Generated(items_from_groups(TERMINAL_ADVANCED)),
-            }],
+            body: PageBody::Generated(with_links(
+                items_from_groups(TERMINAL_MAIN),
+                &[
+                    // The background session host is unix-only.
+                    #[cfg(unix)]
+                    "background-hosts",
+                    "advanced",
+                ],
+            )),
+            sub_pages: vec![
+                #[cfg(unix)]
+                SubPage {
+                    title: "Background Hosts",
+                    slug: "background-hosts",
+                    description: "Host status and the sessions running in the background.",
+                    body: PageBody::Generated(items_from_groups(TERMINAL_BACKGROUND_HOST)),
+                },
+                SubPage {
+                    title: "Advanced",
+                    slug: "advanced",
+                    description: "Input behaviour, tab confirmation and environment variables.",
+                    body: PageBody::Generated(items_from_groups(TERMINAL_ADVANCED)),
+                },
+            ],
         },
     ];
     compose_owner_surfaces(&mut pages, surfaces);
     pages
+}
+
+/// Append a "More settings" section of [`SettingsPageItem::SubPageLink`] rows.
+fn with_links(mut items: Vec<SettingsPageItem>, slugs: &[&'static str]) -> Vec<SettingsPageItem> {
+    items.push(SettingsPageItem::SectionHeader("More settings"));
+    items.extend(slugs.iter().map(|slug| SettingsPageItem::SubPageLink(slug)));
+    items
 }
 
 fn page(
@@ -295,7 +337,7 @@ fn section_for_path(items: &[SettingsPageItem], json_path: &str) -> Option<&'sta
         match item {
             SettingsPageItem::SectionHeader(label) => section = Some(*label),
             SettingsPageItem::Item(path) if *path == json_path => return section,
-            SettingsPageItem::Item(_) | SettingsPageItem::OwnerSurface(_) => {}
+            _ => {}
         }
     }
     None
@@ -449,6 +491,17 @@ const EDITOR_GROUPS: &[Group] = &[
         ),
     ),
     (
+        "Caret",
+        paths!("editor":
+            "editorCursorStyle",
+            "editorCursorBlink",
+            "editorCursorBlinkIntervalMs"
+        ),
+    ),
+];
+
+const EDITOR_ADVANCED: &[Group] = &[
+    (
         "Minimap",
         paths!("editor":
             "editorMinimap",
@@ -481,14 +534,6 @@ const EDITOR_GROUPS: &[Group] = &[
             "editorSelectionsMenu",
             "editorToolbarCodeActions",
             "editorShowOutline"
-        ),
-    ),
-    (
-        "Caret",
-        paths!("editor":
-            "editorCursorStyle",
-            "editorCursorBlink",
-            "editorCursorBlinkIntervalMs"
         ),
     ),
     (
@@ -602,12 +647,6 @@ const TERMINAL_MAIN: &[Group] = &[
         ),
     ),
     ("Sessions", paths!("terminal": "resumeOnRestore")),
-    // The background session host is unix-only (see `schema::all_fields`).
-    #[cfg(unix)]
-    (
-        "Background host",
-        paths!("terminal": "sessionHost", "detachedScrollbackLines"),
-    ),
     ("Bell", paths!("terminal": "terminalBell")),
     ("Appearance", paths!("terminal": "terminalOpacity")),
     (
@@ -619,6 +658,12 @@ const TERMINAL_MAIN: &[Group] = &[
         ),
     ),
 ];
+
+#[cfg(unix)]
+const TERMINAL_BACKGROUND_HOST: &[Group] = &[(
+    "Background host",
+    paths!("terminal": "sessionHost", "detachedScrollbackLines"),
+)];
 
 const TERMINAL_ADVANCED: &[Group] = &[
     (
@@ -702,7 +747,7 @@ mod tests {
         for item in items {
             match item {
                 SettingsPageItem::Item(path) => paths.push(path),
-                SettingsPageItem::SectionHeader(_) | SettingsPageItem::OwnerSurface(_) => {}
+                _ => {}
             }
         }
     }
@@ -793,7 +838,7 @@ mod tests {
         );
         assert_eq!(
             place("appearance.translucentSurfaces"),
-            Some(("appearance", Some("Interface Style")))
+            Some(("appearance", Some("Interface")))
         );
         assert_eq!(
             place("appearance.paneLayout"),
@@ -860,6 +905,7 @@ mod tests {
                 SettingsPageItem::SectionHeader(label) => section = label,
                 SettingsPageItem::OwnerSurface(id) => placed.push((section, *id)),
                 SettingsPageItem::Item(path) => panic!("Themes owns no field rows: `{path}`"),
+                SettingsPageItem::SubPageLink(_) => {}
             }
         }
         assert_eq!(
@@ -878,7 +924,7 @@ mod tests {
             .all(|item| !matches!(item, SettingsPageItem::OwnerSurface(_))));
         assert_eq!(
             section_label_for_field(&pages, "general.theme").map(|location| location.section),
-            Some(Some("Color Scheme"))
+            Some(Some("Interface"))
         );
     }
 
@@ -941,7 +987,7 @@ mod tests {
         );
         assert_eq!(
             resolve_slug(&pages, "terminal/advanced"),
-            Some((6, Some(0)))
+            Some((6, Some(1)))
         );
     }
 }
