@@ -176,6 +176,18 @@ impl ThemeFileConversion for Theme {
             }
         }
 
+        // A theme that doesn't set the canvas gradient would inherit the
+        // built-in purple→gold one; derive it from its own hues instead.
+        if !variant.colors.keys().any(|k| norm(k).starts_with("canvas.")) {
+            let (bg, tint) = (theme.core.background, theme.core.primary);
+            let mix = |t: f32| bg.blend(tint.opacity(t));
+            theme.float.canvas_top = mix(0.10);
+            theme.float.canvas_mid = mix(0.05);
+            theme.float.canvas_low = bg;
+            theme.float.canvas_bottom = mix(0.07);
+            theme.float.canvas_tint = tint.opacity(0.08);
+        }
+
         Ok((theme, warnings))
     }
 
