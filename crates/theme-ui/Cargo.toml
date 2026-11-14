@@ -27,6 +27,11 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSWindow",
 ] }
 raw-window-handle = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSString",
+    "NSUserDefaults",
+] }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

@@ -190,8 +190,36 @@ pub fn apply_theme_metrics(theme: &Entity<ThemeStore>, cx: &mut App) {
     if let Some(metrics) = theme_metrics_from_settings(cx) {
         theme.update(cx, |t, cx| t.set_metrics(metrics, cx));
         apply_window_material(cx);
+        apply_font_smoothing(cx);
     }
 }
+
+/// Apply `appearance.fontSmoothing` app-wide. GPUI 0.2.2 has no smoothing
+/// option; CoreText reads the per-app `AppleFontSmoothing` default (0 none ..
+/// 3 strong, unset = system), which new glyph rasterisations pick up.
+#[cfg(target_os = "macos")]
+fn apply_font_smoothing(cx: &App) {
+    use objc2_foundation::{ns_string, NSUserDefaults};
+    let Some(s) = ThemeSettings::try_get(cx) else {
+        return;
+    };
+    let level = match s.font_smoothing() {
+        "none" => Some(0),
+        "light" => Some(1),
+        "medium" => Some(2),
+        "strong" => Some(3),
+        _ => None,
+    };
+    let defaults = NSUserDefaults::standardUserDefaults();
+    let key = ns_string!("AppleFontSmoothing");
+    match level {
+        Some(level) => defaults.setInteger_forKey(level, key),
+        None => defaults.removeObjectForKey(key),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_font_smoothing(_cx: &App) {}
 
 /// Push the font + editor-syntax-theme preferences into the [`ThemeStore`], and
 /// (re)load + activate the persisted registry theme (T20-005). Used at startup

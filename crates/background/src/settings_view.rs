@@ -4,20 +4,22 @@
 //! stack of `settings_row`s separated by hairlines; the Settings page supplies
 //! the surrounding card, so nothing here draws its own panel.
 
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, App, AppContext, Context, Div, ElementId, Entity, InteractiveElement, IntoElement,
+    div, img, px, App, AppContext, Context, Div, ElementId, Entity, InteractiveElement, IntoElement,
     KeyDownEvent, ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, Subscription, Task, Timer, Window,
+    Image, ObjectFit, Styled, StyledImage, Subscription, Task, Timer, Window,
 };
 use labonair_theme::ThemeStore;
 use labonair_ui_kit::{
     button, button_disabled, divider, field_input, segmented_control, settings_row, slider_row,
     text_field, text_field_surface, Axis, ButtonSize, ButtonVariant, InputEvent, InputState,
-    ListItem, Palette, SegmentSize, SegmentVariant, SettingsRow, SliderEvent, SliderState,
+    Palette, SegmentSize, SegmentVariant, SettingsRow, SliderEvent, SliderState,
     SliderValue, TextFieldState,
 };
 
@@ -57,6 +59,9 @@ pub struct BackgroundSettingsView {
     opacity_commit: Task<()>,
     blur_commit: Task<()>,
     tint_opacity_commit: Task<()>,
+    /// Downscaled grid previews by filename (never the full image).
+    thumbs: HashMap<String, Arc<Image>>,
+    thumbs_pending: HashSet<String>,
     report_error: ErrorSink,
     _subscriptions: Vec<Subscription>,
 }
@@ -175,6 +180,8 @@ impl BackgroundSettingsView {
             opacity_commit: Task::ready(()),
             blur_commit: Task::ready(()),
             tint_opacity_commit: Task::ready(()),
+            thumbs: HashMap::new(),
+            thumbs_pending: HashSet::new(),
             report_error,
             _subscriptions: subscriptions,
         }
@@ -343,23 +350,87 @@ impl Render for BackgroundSettingsView {
             BackgroundTarget::Terminal => "terminal",
         };
 
-        let mut image_rows = vec![ListItem::new("background-image-none", c)
-            .selected(selected.is_empty())
-            .child("None")
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.update_setting(cx, |store, cx| store.set_image("", cx));
-                this.confirm_delete = None;
-            }))
-            .into_any_element()];
+        // Kick off thumbnail decodes for tiles that don't have one yet.
+        for image in &images {
+            if self.thumbs.contains_key(&image.filename)
+                || !self.thumbs_pending.insert(image.filename.clone())
+            {
+                continue;
+            }
+            let filename = image.filename.clone();
+            let job = {
+                let filename = filename.clone();
+                cx.background_executor()
+                    .spawn(async move { crate::load_thumbnail(&filename) })
+            };
+            cx.spawn(async move |this, cx| {
+                let result = job.await;
+                let _ = this.update(cx, |this, cx| {
+                    this.thumbs_pending.remove(&filename);
+                    if let Ok(image) = result {
+                        this.thumbs.insert(filename, Arc::new(image));
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+
+        let tile = |id: ElementId, label: SharedString, thumb: Option<Arc<Image>>, active: bool| {
+            let preview = div()
+                .w(px(132.0))
+                .h(px(82.0))
+                .overflow_hidden()
+                .rounded(px(c.radius.md))
+                .border_2()
+                .border_color(if active { c.primary } else { c.border })
+                .bg(c.muted_bg)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(c.control_space(11.0))
+                .text_color(c.muted)
+                .map(|d| match thumb {
+                    Some(image) => d.child(img(image).object_fit(ObjectFit::Cover).size_full()),
+                    None => d.child("None"),
+                });
+            div()
+                .id(id)
+                .flex()
+                .flex_col()
+                .gap(c.space(4.0))
+                .w(px(132.0))
+                .cursor_pointer()
+                .child(preview)
+                .child(
+                    div()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_size(c.control_space(11.0))
+                        .text_color(if active { c.fg } else { c.muted })
+                        .child(label),
+                )
+        };
+        let mut image_rows = vec![tile(
+            "background-image-none".into(),
+            "None".into(),
+            None,
+            selected.is_empty(),
+        )
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.update_setting(cx, |store, cx| store.set_image("", cx));
+            this.confirm_delete = None;
+        }))
+        .into_any_element()];
         image_rows.extend(images.into_iter().map(|image| {
             let filename = image.filename;
             let action = filename.clone();
-            ListItem::new(
+            tile(
                 ElementId::Name(format!("background-image-{filename}").into()),
-                c,
+                filename.clone().into(),
+                self.thumbs.get(&filename).cloned(),
+                selected == filename,
             )
-            .selected(selected == filename)
-            .child(div().min_w_0().overflow_hidden().child(filename))
             .on_click(cx.listener(move |this, _, _window, cx| {
                 this.update_setting(cx, |store, cx| store.set_image(action.clone(), cx));
                 this.confirm_delete = None;
@@ -485,9 +556,10 @@ impl Render for BackgroundSettingsView {
                 div()
                     .id("background-image-list")
                     .flex()
-                    .flex_col()
-                    .gap(c.space(2.0))
-                    .max_h(c.space(220.0))
+                    .flex_row()
+                    .flex_wrap()
+                    .gap(c.space(10.0))
+                    .max_h(c.space(300.0))
                     .overflow_y_scroll()
                     .px(c.control_space(12.0))
                     .pb(c.control_space(12.0))

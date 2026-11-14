@@ -1169,6 +1169,11 @@ impl SettingsView {
         let mut blocks = section_blocks(items, &self.all_fields, &leftover);
         // The Terminal page opens its Font card with a live sample of the
         // terminal, so typography edits show up right where they are made.
+        if self.pages[self.active_area].key == "editor" && self.active_subpage.is_none() {
+            if let Some(font) = blocks.iter_mut().find(|b| b.title == Some("Font")) {
+                font.items.insert(0, SectionItem::EditorPreview);
+            }
+        }
         if self.pages[self.active_area].key == "terminal" && self.active_subpage.is_none() {
             if let Some(font) = blocks.iter_mut().find(|b| b.title == Some("Font")) {
                 font.items.insert(0, SectionItem::TerminalPreview);
@@ -1340,6 +1345,20 @@ impl SettingsView {
                 }
                 SectionItem::TileRow(fields) => self.render_tile_row(fields, c, cx),
                 SectionItem::BackgroundHost(item) => self.render_host_item(item, c, cx),
+                SectionItem::EditorPreview => {
+                    let theme = self.theme.clone();
+                    let preview = self
+                        .editor_preview
+                        .get_or_insert_with(|| {
+                            cx.new(|_| crate::editor_preview::EditorPreview::new(theme))
+                        })
+                        .clone();
+                    div()
+                        .w_full()
+                        .p(c.space(12.0))
+                        .child(preview)
+                        .into_any_element()
+                }
                 SectionItem::TerminalPreview => {
                     let theme = self.theme.clone();
                     let preview = self
@@ -1459,6 +1478,8 @@ struct SectionBlock {
 enum SectionItem {
     Field(AnyField),
     OwnerSurface(SettingsSurfaceId),
+    /// Live editor-font sample (`crate::editor_preview`).
+    EditorPreview,
     /// Live terminal sample (`crate::terminal_preview`).
     TerminalPreview,
     /// Two or more adjacent tile-group fields shown side by side.

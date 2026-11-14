@@ -201,6 +201,11 @@ impl ThemeSettings {
         self.0.buffer_line_height.unwrap_or(1.55)
     }
 
+    /// Font smoothing token (`"system"` | `"none"` | `"light"` | `"medium"` | `"strong"`).
+    pub fn font_smoothing(&self) -> &str {
+        self.0.font_smoothing.as_deref().unwrap_or("system")
+    }
+
     /// UI density token (`"compact"` | `"default"` | `"comfortable"`).
     pub fn ui_density(&self) -> &str {
         self.0.ui_density.as_deref().unwrap_or("default")

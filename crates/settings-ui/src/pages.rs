@@ -363,6 +363,7 @@ const APPEARANCE_GROUPS: &[Group] = &[
         "Typography",
         paths!("appearance":
             "appFontFamily",
+            "fontSmoothing",
             "appFontSize",
             "appLineHeight",
             "bufferFontFamily",

@@ -354,6 +354,19 @@ pub fn all_fields() -> Vec<AnyField> {
             "0% is invisible, 100% is fully opaque."
         ),
         field!(
+            appearance.font_smoothing,
+            "fontSmoothing",
+            Select(&[
+                ("system", "System default"),
+                ("none", "None"),
+                ("light", "Light"),
+                ("medium", "Medium"),
+                ("strong", "Strong"),
+            ]),
+            "Font smoothing",
+            "Text anti-aliasing weight for the whole app (macOS). May need a restart to fully apply."
+        ),
+        field!(
             appearance.ui_density,
             "uiDensity",
             Segmented(&[

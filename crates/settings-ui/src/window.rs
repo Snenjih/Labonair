@@ -62,7 +62,7 @@ pub fn set_settings_deps(services: SettingsServices, tokio: TokioHandle, cx: &mu
 /// the pinned macOS reference, using the active UI font size as its rem scale.
 fn settings_bounds(cx: &mut App) -> Bounds<gpui::Pixels> {
     let ui_scale = labonair_theme::theme_store(cx).read(cx).ui_font_size() / 16.0;
-    Bounds::centered(None, size(px(900.0 * ui_scale), px(750.0 * ui_scale)), cx)
+    Bounds::centered(None, size(px(1120.0 * ui_scale), px(860.0 * ui_scale)), cx)
 }
 
 /// Open the settings window, or focus it if it is already open, optionally

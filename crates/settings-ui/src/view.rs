@@ -221,6 +221,7 @@ pub struct SettingsView {
     pub(crate) content_list: ListState,
     pub(crate) content_list_key: Option<String>,
     /// Live terminal sample above the Terminal page, built on first use.
+    pub(crate) editor_preview: Option<Entity<crate::editor_preview::EditorPreview>>,
     pub(crate) terminal_preview: Option<Entity<crate::terminal_preview::TerminalPreview>>,
     // ── T19-007: global settings search ─────────────────────────────────
     /// Every SettingsContent field, indexed once (`open()`) — never rebuilt
@@ -359,6 +360,7 @@ impl SettingsView {
             scroll_to_section: None,
             content_list: ListState::new(0, ListAlignment::Top, px(120.0)),
             content_list_key: None,
+            editor_preview: None,
             terminal_preview: None,
             search_index,
             search_results: Vec::new(),
@@ -1943,7 +1945,8 @@ impl Render for SettingsView {
 
         let sidebar = div()
             .id("settings-sidebar")
-            .w(c.space(226.0))
+            // Responsive rail: ~22% of the window, clamped to a sane range.
+            .w(px((f32::from(window.viewport_size().width) * 0.22).clamp(226.0, 320.0)))
             .flex_shrink_0()
             .flex()
             .flex_col()

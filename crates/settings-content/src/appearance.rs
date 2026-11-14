@@ -88,6 +88,9 @@ pub struct AppearanceContent {
     pub buffer_font_size: Option<u32>,
     /// Editor/terminal text line-height multiple.
     pub buffer_line_height: Option<f32>,
+    /// macOS text anti-aliasing weight (`"system"` | `"none"` | `"light"` |
+    /// `"medium"` | `"strong"`); applied app-wide via `AppleFontSmoothing`.
+    pub font_smoothing: Option<String>,
     /// UI density (`"compact"` | `"default"` | `"comfortable"`) — spacing/size
     /// multiplier around the layout-contract base metrics (T20-007).
     pub ui_density: Option<String>,
@@ -132,6 +135,7 @@ impl AppearanceContent {
             buffer_font_family: Some(String::new()),
             buffer_font_size: Some(13),
             buffer_line_height: Some(1.55),
+            font_smoothing: Some("system".to_string()),
             ui_density: Some("default".to_string()),
             corner_radius_scale: Some(1.0),
             translucent_surfaces: Some(false),

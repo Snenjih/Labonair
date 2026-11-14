@@ -521,6 +521,30 @@ fn load_processed_image(filename: &str, blur: u8) -> Result<Image, String> {
     load_processed_from(&backgrounds_dir()?, filename, blur)
 }
 
+/// Longest edge of a settings-grid thumbnail.
+const THUMB_DIM: u32 = 240;
+
+/// A small JPEG preview of `filename` for the settings grid, so the tiles never
+/// hold the full-size image. Decodes off the UI thread (the caller spawns it).
+pub(crate) fn load_thumbnail(filename: &str) -> Result<Image, String> {
+    let path = backgrounds_dir()?.join(filename);
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let thumb = decode_limited(&bytes)
+        .map_err(|e| e.to_string())?
+        .thumbnail(THUMB_DIM, THUMB_DIM);
+    let rgb = thumb.to_rgb8();
+    let mut out = Cursor::new(Vec::new());
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 80)
+        .write_image(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(Image::from_bytes(ImageFormat::Jpeg, out.into_inner()))
+}
+
 fn load_processed_from(dir: &Path, filename: &str, blur: u8) -> Result<Image, String> {
     let path = dir.join(filename);
     let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
