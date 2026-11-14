@@ -4183,6 +4183,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "gpui",
+ "gpui-component",
  "image",
  "labonair-background-host",
  "labonair-filesystem",

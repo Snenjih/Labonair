@@ -15,12 +15,12 @@ use gpui::{
     IntoElement, KeyDownEvent, ObjectFit, ParentElement, Render, SharedString, Stateful,
     StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Timer, Window,
 };
+use gpui_component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
 use labonair_theme::ThemeStore;
 use labonair_ui_kit::{
-    button, button_disabled, divider, field_input, segmented_control, settings_row, slider_row,
-    text_field, text_field_surface, Axis, ButtonSize, ButtonVariant, InputEvent, InputState,
-    Palette, SegmentSize, SegmentVariant, SettingsRow, SliderEvent, SliderState, SliderValue,
-    TextFieldState,
+    button, button_disabled, divider, segmented_control, settings_row, slider_row, Axis,
+    ButtonSize, ButtonVariant, Palette, SegmentSize, SegmentVariant, SettingsRow, SliderEvent,
+    SliderState, SliderValue,
 };
 
 use crate::{
@@ -45,11 +45,10 @@ enum BackgroundSlider {
 pub struct BackgroundSettingsView {
     store: Entity<BackgroundStore>,
     theme: Entity<ThemeStore>,
-    tint_input: Entity<InputState>,
+    tint_picker: Entity<ColorPickerState>,
     opacity: Entity<SliderState>,
     blur: Entity<SliderState>,
     tint_opacity: Entity<SliderState>,
-    tint_invalid: bool,
     confirm_delete: Option<String>,
     importing: bool,
     deleting: Option<String>,
@@ -77,9 +76,11 @@ impl BackgroundSettingsView {
         report_error: impl Fn(String, &mut App) + 'static,
     ) -> Self {
         let settings = store.read(cx).settings().clone();
-        let tint_input = cx.new(|cx| {
-            let mut state = text_field(window, cx).placeholder("#000000");
-            state.set_value(settings.background_tint_color.clone(), window, cx);
+        let tint_picker = cx.new(|cx| {
+            let mut state = ColorPickerState::new(window, cx);
+            if let Ok(color) = labonair_theme::parse_color(&settings.background_tint_color) {
+                state = state.default_value(color);
+            }
             state
         });
         let opacity = cx.new(|_| slider_state(settings.background_opacity));
@@ -92,20 +93,17 @@ impl BackgroundSettingsView {
         // its own filesystem failures.
         let report_error: ErrorSink = Rc::new(report_error);
         let tint_store = store.clone();
-        subscriptions.push(
-            cx.subscribe(&tint_input, move |this, input, event, cx| match event {
-                InputEvent::Change => cx.notify(),
-                InputEvent::PressEnter { .. } | InputEvent::Blur => {
-                    let value = input.read(cx).value().to_string();
-                    this.tint_invalid = !valid_hex_color(&value);
-                    if !this.tint_invalid {
-                        tint_store.update(cx, |store, cx| store.set_tint_color(value, cx));
-                    }
-                    cx.notify();
-                }
-                _ => {}
-            }),
-        );
+        subscriptions.push(cx.subscribe(
+            &tint_picker,
+            move |_, _, event: &ColorPickerEvent, cx| {
+                let ColorPickerEvent::Change(Some(color)) = event else {
+                    return;
+                };
+                // The tint's alpha is its own opacity slider; keep `#rrggbb`.
+                let hex = labonair_theme::to_hex(*color)[..7].to_string();
+                tint_store.update(cx, |store, cx| store.set_tint_color(hex, cx));
+            },
+        ));
 
         subscriptions.push(cx.subscribe(&opacity, |this, _, event: &SliderEvent, cx| {
             if let SliderEvent::Change(SliderValue::Single(value)) = event {
@@ -166,11 +164,10 @@ impl BackgroundSettingsView {
         Self {
             store,
             theme,
-            tint_input,
+            tint_picker,
             opacity,
             blur,
             tint_opacity,
-            tint_invalid: false,
             confirm_delete: None,
             importing: false,
             deleting: None,
@@ -524,11 +521,6 @@ impl Render for BackgroundSettingsView {
             .into_any_element()
         };
 
-        let tint_state = if self.tint_invalid {
-            TextFieldState::Invalid
-        } else {
-            TextFieldState::Normal
-        };
         let opacity_value = slider_value(&self.opacity, cx).unwrap_or(settings.background_opacity);
         let blur_value = slider_value(&self.blur, cx).unwrap_or(settings.background_blur);
         let tint_opacity_value =
@@ -619,13 +611,8 @@ impl Render for BackgroundSettingsView {
             .child(hairline())
             .child(
                 settings_row("background-tint-color", c, "Tint color")
-                    .description("A color laid over the image, as #rrggbb.")
-                    .control(text_field_surface(
-                        "background-tint-color-field",
-                        c,
-                        tint_state,
-                        field_input(&self.tint_input),
-                    )),
+                    .description("A color laid over the image.")
+                    .control(ColorPicker::new(&self.tint_picker)),
             )
             .child(hairline())
             .child(self.keyboard_slider(
@@ -701,28 +688,9 @@ fn slider_value(state: &Entity<SliderState>, cx: &App) -> Option<u8> {
     }
 }
 
-fn valid_hex_color(value: &str) -> bool {
-    value.len() == 7
-        && value.starts_with('#')
-        && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{percent, valid_hex_color};
-
-    #[test]
-    fn accepts_six_digit_hex_colors() {
-        assert!(valid_hex_color("#000000"));
-        assert!(valid_hex_color("#A1b2C3"));
-    }
-
-    #[test]
-    fn rejects_incomplete_or_non_hex_colors() {
-        for value in ["", "000000", "#00000", "#0000000", "#GG0000", "red"] {
-            assert!(!valid_hex_color(value), "accepted {value:?}");
-        }
-    }
+    use super::percent;
 
     #[test]
     fn slider_values_round_and_clamp_to_percent() {
