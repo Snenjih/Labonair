@@ -3657,11 +3657,20 @@ mod tests {
                 v.model.edit_mode = EditMode::Create;
                 v.edit_buffer = "new".into();
                 v.commit_edit(cx);
-
+            });
+        });
+        // Each op is async; settle between them so the order is deterministic.
+        settle(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
                 v.model.edit_mode = EditMode::Rename(PathBuf::from("/srv/a"));
                 v.edit_buffer = "b".into();
                 v.commit_edit(cx);
-
+            });
+        });
+        settle(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
                 v.confirm_delete.open(PathBuf::from("/srv/b"));
                 v.confirm_delete_now(cx);
             });
