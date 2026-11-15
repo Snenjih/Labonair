@@ -867,6 +867,9 @@ impl Render for TerminalView {
                     return;
                 };
                 if ev.pressed_button != Some(MouseButton::Left) {
+                    // The release was lost (outside the element / swallowed
+                    // by an overlay): end the drag instead of selecting on.
+                    this.drag_anchor = None;
                     return;
                 }
                 let head = this.cell_at(ev.position);
