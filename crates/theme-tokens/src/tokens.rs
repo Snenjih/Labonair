@@ -555,7 +555,7 @@ impl CubicBezier {
         for _ in 0..8 {
             let x = sample_x(s) - t;
             if x.abs() < 1e-5 {
-                return ((ay * s + by) * s + cy) * s;
+                return (((ay * s + by) * s + cy) * s).clamp(0.0, 1.0);
             }
             let dx = sample_dx(s);
             if dx.abs() < 1e-6 {
@@ -577,7 +577,9 @@ impl CubicBezier {
             }
             s = (hi - lo) * 0.5 + lo;
         }
-        ((ay * s + by) * s + cy) * s
+        // GPUI debug-asserts the eased delta is within 0..=1; Newton can overshoot
+        // `s` past 1 by an ulp (or a theme may use overshooting control points).
+        (((ay * s + by) * s + cy) * s).clamp(0.0, 1.0)
     }
 }
 
