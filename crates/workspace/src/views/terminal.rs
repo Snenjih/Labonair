@@ -803,16 +803,23 @@ impl Render for TerminalView {
                     let cell = this.cell_at(ev.position);
                     let mode = this.mode();
                     let mods = to_term_mods(&ev.modifiers);
-                    if let Some(bytes) = mouse_report(
-                        &MouseInput {
-                            button: TermMouseButton::Left,
-                            kind: MouseEventKind::Press,
-                            col: cell.0,
-                            row: cell.1,
-                            mods,
-                        },
-                        &mode,
-                    ) {
+                    // Shift bypasses mouse reporting so TUIs (vim, Claude Code)
+                    // can still be selected, like xterm/iTerm/Zed.
+                    let report = if ev.modifiers.shift {
+                        None
+                    } else {
+                        mouse_report(
+                            &MouseInput {
+                                button: TermMouseButton::Left,
+                                kind: MouseEventKind::Press,
+                                col: cell.0,
+                                row: cell.1,
+                                mods,
+                            },
+                            &mode,
+                        )
+                    };
+                    if let Some(bytes) = report {
                         this.send_input(&bytes);
                     } else if ev.click_count >= 2 {
                         // Double-click: select the word under the cursor using
@@ -835,6 +842,28 @@ impl Render for TerminalView {
             )
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _window, cx| {
                 let Some(anchor) = this.drag_anchor else {
+                    // No native selection: forward drags/motion to the program
+                    // (TUIs like Claude Code do their own selection).
+                    if !ev.modifiers.shift {
+                        let cell = this.cell_at(ev.position);
+                        let pressed = ev.pressed_button == Some(MouseButton::Left);
+                        if let Some(bytes) = mouse_report(
+                            &MouseInput {
+                                button: TermMouseButton::Left,
+                                kind: if pressed {
+                                    MouseEventKind::Drag
+                                } else {
+                                    MouseEventKind::Motion
+                                },
+                                col: cell.0,
+                                row: cell.1,
+                                mods: to_term_mods(&ev.modifiers),
+                            },
+                            &this.mode(),
+                        ) {
+                            this.send_input(&bytes);
+                        }
+                    }
                     return;
                 };
                 if ev.pressed_button != Some(MouseButton::Left) {
@@ -849,16 +878,22 @@ impl Render for TerminalView {
                 cx.listener(|this, ev: &MouseUpEvent, _window, cx| {
                     let cell = this.cell_at(ev.position);
                     let mode = this.mode();
-                    if let Some(bytes) = mouse_report(
-                        &MouseInput {
-                            button: TermMouseButton::Left,
-                            kind: MouseEventKind::Release,
-                            col: cell.0,
-                            row: cell.1,
-                            mods: to_term_mods(&ev.modifiers),
-                        },
-                        &mode,
-                    ) {
+                    // A press that started a native selection owns its release.
+                    let report = if this.drag_anchor.is_some() {
+                        None
+                    } else {
+                        mouse_report(
+                            &MouseInput {
+                                button: TermMouseButton::Left,
+                                kind: MouseEventKind::Release,
+                                col: cell.0,
+                                row: cell.1,
+                                mods: to_term_mods(&ev.modifiers),
+                            },
+                            &mode,
+                        )
+                    };
+                    if let Some(bytes) = report {
                         this.send_input(&bytes);
                     } else if this.drag_anchor.is_some() && copy_on_select(cx) {
                         // Copy-on-select — gated by the terminal preference (T13-003).
