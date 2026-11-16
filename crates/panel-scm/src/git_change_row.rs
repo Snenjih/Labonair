@@ -55,6 +55,7 @@ pub struct GitChangeRow {
     icon: Option<IconName>,
     icon_color: Option<gpui::Hsla>,
     icon_path: Option<SharedString>,
+    color_icon: bool,
     selected: bool,
     tooltip: Option<SharedString>,
     actions: Option<AnyElement>,
@@ -86,6 +87,7 @@ pub fn git_change_row(
         icon: None,
         icon_color: None,
         icon_path: None,
+        color_icon: false,
         selected: false,
         tooltip: None,
         actions: None,
@@ -130,6 +132,12 @@ impl GitChangeRow {
     /// [`Self::icon`]).
     pub fn icon_path(mut self, path: Option<SharedString>) -> Self {
         self.icon_path = path;
+        self
+    }
+
+    /// Render the [`Self::icon_path`] asset in its own colours (colour icon theme).
+    pub fn color_icon(mut self, color_icon: bool) -> Self {
+        self.color_icon = color_icon;
         self
     }
 
@@ -189,7 +197,7 @@ impl IntoElement for GitChangeRow {
         let box_border = if checked || partial {
             c.primary
         } else {
-            c.border
+            c.border.opacity(0.7)
         };
         let box_bg = if checked {
             c.primary
@@ -233,6 +241,9 @@ impl IntoElement for GitChangeRow {
 
         // File-type glyph: an icon-theme asset path wins over a bare `IconName`.
         let file_glyph = match self.icon_path {
+            Some(p) if self.color_icon => {
+                Some(gpui::img(p).size(px(14.0)).flex_none().into_any_element())
+            }
             Some(p) => Some(
                 gpui::svg()
                     .path(p)
@@ -263,28 +274,18 @@ impl IntoElement for GitChangeRow {
             .text_color(c.fg)
             .cursor_pointer();
 
+        // Same resting/hover language as `tree_row`: sunken fill + semibold
+        // label when selected, neutral accent wash on hover.
         if self.selected {
             row = row
-                .bg(c.accent.opacity(0.16))
-                .border_1()
-                .border_color(c.primary);
+                .bg(c.selected_fill)
+                .font_weight(gpui::FontWeight::SEMIBOLD);
         } else {
-            let hover = c.accent.opacity(0.5);
-            row = row
-                .border_1()
-                .border_color(gpui::transparent_black())
-                .hover(move |s| s.bg(hover));
+            let hover = c.accent;
+            row = row.hover(move |s| s.bg(hover));
         }
 
         row = row
-            .child(
-                div()
-                    .w(px(12.0))
-                    .flex_none()
-                    .text_size(px(11.0))
-                    .text_color(self.status_color)
-                    .child(self.status_glyph),
-            )
             .when_some(file_glyph, |x, el| x.child(el))
             .child(
                 div()
@@ -301,6 +302,16 @@ impl IntoElement for GitChangeRow {
                     }),
             )
             .children(actions)
+            .when(!self.status_glyph.is_empty(), |x| {
+                x.child(
+                    div()
+                        .w(px(10.0))
+                        .flex_none()
+                        .text_size(px(11.0))
+                        .text_color(self.status_color)
+                        .child(self.status_glyph),
+                )
+            })
             .child(check);
 
         if let Some(tooltip) = self.tooltip {

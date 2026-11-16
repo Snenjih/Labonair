@@ -872,17 +872,19 @@ impl GitGraphView {
                             .child(div().text_color(c.muted).child(SharedString::from(parent)))
                             .child(div().text_color(c.fg).child(SharedString::from(name))),
                     )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .rounded(px(3.0))
-                            .border_1()
-                            .border_color(c.border)
-                            .px(px(4.0))
-                            .text_size(px(9.0))
-                            .text_color(c.muted)
-                            .child(SharedString::from(if remote { "Remote" } else { "Local" })),
-                    ),
+                    .when(remote, |d| {
+                        d.child(
+                            div()
+                                .flex_shrink_0()
+                                .rounded(px(3.0))
+                                .border_1()
+                                .border_color(c.border)
+                                .px(px(4.0))
+                                .text_size(px(9.0))
+                                .text_color(c.muted)
+                                .child(SharedString::from("Remote")),
+                        )
+                    }),
             )
             .when_some(self.file_history_path.as_deref(), |toolbar, path| {
                 let name = Path::new(path)
@@ -968,7 +970,6 @@ impl GitGraphView {
             .flex_col()
             .flex_1()
             .min_w_0()
-            .child(column_headers(c, self.max_lane_count))
             .child(list);
 
         if self.has_more {
@@ -1724,52 +1725,6 @@ fn center_message(title: &str, body: &str, c: Colors) -> Div {
         })
 }
 
-fn column_headers(c: Colors, max_lanes: usize) -> Div {
-    let rail_w = rail_width(max_lanes);
-    div()
-        .flex()
-        .items_center()
-        .gap(px(12.0))
-        .h(px(24.0))
-        .px(px(6.0))
-        .bg(c.card.opacity(0.5))
-        .border_b_1()
-        .border_color(c.border)
-        .text_size(px(9.5))
-        .text_color(c.muted)
-        .child(div().flex_shrink_0().w(px(rail_w)))
-        .child(
-            div()
-                .flex_shrink_0()
-                .w(px(60.0))
-                .child(SharedString::from("SHA")),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(SharedString::from("SUBJECT")),
-        )
-        .child(
-            div()
-                .flex_shrink_0()
-                .w(px(140.0))
-                .child(SharedString::from("AUTHOR")),
-        )
-        .child(
-            div()
-                .flex_shrink_0()
-                .w(px(96.0))
-                .child(SharedString::from("DATE")),
-        )
-        .child(
-            div()
-                .flex_shrink_0()
-                .w(px(72.0))
-                .child(SharedString::from("CHANGES")),
-        )
-}
-
 /// Reserved rail width for `lane_count` lanes (clamped to [`MAX_VISIBLE_LANES`]).
 fn rail_width(lane_count: usize) -> f32 {
     let shown = lane_count.clamp(1, MAX_VISIBLE_LANES);
@@ -1876,15 +1831,13 @@ fn commit_row(
 ) -> Stateful<Div> {
     let info = &commit.info;
 
+    // Quiet ref chips: tinted fill, no outline.
     let badges = info.refs.iter().map(|r| {
         let kind = classify_ref(r);
         let is_head = head == Some(r.as_str());
-        let (bg, fg, bord) = match kind {
-            RefKind::Tag => (c.info.opacity(0.18), c.info, c.info.opacity(0.4)),
-            _ => {
-                let lc = lane_color(commit.color_index);
-                (lc.opacity(0.15), lc, lc.opacity(0.4))
-            }
+        let tint = match kind {
+            RefKind::Tag => c.info,
+            _ => lane_color(commit.color_index),
         };
         let dim = matches!(kind, RefKind::Remote) && !is_head;
         div()
@@ -1893,49 +1846,16 @@ fn commit_row(
             .gap(px(3.0))
             .flex_shrink_0()
             .rounded(px(3.0))
-            .px(px(4.0))
-            .text_size(px(9.5))
-            .bg(bg)
-            .text_color(fg)
-            .border_1()
-            .border_color(bord)
+            .px(px(5.0))
+            .text_size(px(10.0))
+            .bg(tint.opacity(0.14))
+            .text_color(tint)
             .when(dim, |d| d.opacity(0.65))
             .when(is_head, |d| {
                 d.child(div().text_color(c.fg).child(SharedString::from("HEAD")))
             })
             .child(SharedString::from(r.clone()))
     });
-
-    let changes = div()
-        .flex()
-        .flex_shrink_0()
-        .w(px(72.0))
-        .items_center()
-        .justify_end()
-        .gap(px(4.0))
-        .font(mono.clone())
-        .text_size(px(10.0))
-        .when(info.insertions == 0 && info.deletions == 0, |d| {
-            d.child(
-                div()
-                    .text_color(c.muted.opacity(0.4))
-                    .child(SharedString::from("\u{2014}")),
-            )
-        })
-        .when(info.insertions > 0, |d| {
-            d.child(
-                div()
-                    .text_color(c.success)
-                    .child(SharedString::from(format!("+{}", info.insertions))),
-            )
-        })
-        .when(info.deletions > 0, |d| {
-            d.child(
-                div()
-                    .text_color(c.error)
-                    .child(SharedString::from(format!("\u{2212}{}", info.deletions))),
-            )
-        });
 
     div()
         .id(("git-graph-row", idx))
@@ -1944,21 +1864,10 @@ fn commit_row(
         .gap(px(12.0))
         .h(px(ROW_H))
         .px(px(6.0))
-        .border_l_1()
-        .border_color(c.accent.opacity(if selected { 1.0 } else { 0.0 }))
-        .when(selected, |d| d.bg(c.accent.opacity(0.12)))
-        .hover(|s| s.bg(c.fg.opacity(0.04)))
+        .when(selected, |d| d.bg(c.palette.selected_fill))
+        .when(!selected, |d| d.hover(|s| s.bg(c.accent.opacity(0.5))))
         .cursor_pointer()
         .child(rail(commit, max_lanes, selected, c))
-        .child(
-            div()
-                .flex_shrink_0()
-                .w(px(60.0))
-                .font(mono.clone())
-                .text_size(px(10.5))
-                .text_color(c.muted)
-                .child(SharedString::from(info.short_hash.clone())),
-        )
         .child(
             div()
                 .flex_1()
@@ -1973,53 +1882,38 @@ fn commit_row(
                         .min_w_0()
                         .truncate()
                         .text_size(px(12.0))
-                        .text_color(c.fg.opacity(0.9))
+                        .text_color(c.fg)
+                        .when(selected, |d| d.font_weight(gpui::FontWeight::MEDIUM))
                         .child(SharedString::from(info.subject.clone())),
                 ),
         )
         .child(
             div()
                 .flex_shrink_0()
-                .w(px(140.0))
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .w(px(16.0))
-                        .h(px(16.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(3.0))
-                        .bg(avatar_color(&info.author_name))
-                        .text_size(px(8.0))
-                        .text_color(c.bg)
-                        .child(SharedString::from(initials(&info.author_name))),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(10.5))
-                        .text_color(c.muted)
-                        .child(SharedString::from(info.author_name.clone())),
-                ),
+                .w(px(120.0))
+                .truncate()
+                .text_size(px(11.0))
+                .text_color(c.muted)
+                .child(SharedString::from(info.author_name.clone())),
         )
         .child(
             div()
                 .flex_shrink_0()
-                .w(px(96.0))
-                .font(mono.clone())
-                .text_size(px(10.5))
+                .w(px(84.0))
+                .text_size(px(11.0))
                 .text_color(c.muted)
                 .child(SharedString::from(format_commit_date(info.timestamp))),
         )
-        .child(changes)
+        .child(
+            div()
+                .flex_shrink_0()
+                .w(px(56.0))
+                .font(mono.clone())
+                .text_size(px(10.5))
+                .text_color(c.muted.opacity(0.7))
+                .child(SharedString::from(info.short_hash.clone())),
+        )
 }
-
-// ── tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

@@ -47,7 +47,7 @@ use crate::theme::ThemeStore;
 use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_ui_kit::{
-    button_disabled, checkbox, context_menu, disclosure, h_stack, icon_button_builder,
+    button_disabled, checkbox, context_menu, disclosure, file_icon_path, h_stack, icon_button_builder,
     segmented_control, text_area_surface, text_field, text_field_surface_sized, text_input,
     ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
     SegmentSize, SegmentVariant, TextFieldSize, TextFieldState,
@@ -696,6 +696,7 @@ fn git_list_element(
     c: Colors,
     row_h: Pixels,
     view: &Entity<GitPanelView>,
+    cx: &App,
 ) -> gpui::AnyElement {
     match entry {
         GitListEntry::EmptyState => div()
@@ -738,10 +739,10 @@ fn git_list_element(
                         SharedString::from(label),
                         *collapsed,
                         c.muted,
-                        c.fg,
+                        c.muted,
                     )
                     .flex_1()
-                    .text_size(px(12.0))
+                    .text_size(px(11.0))
                     .on_click(move |_: &ClickEvent, _w, cx| {
                         v.update(cx, |this, cx| {
                             if this.collapsed.contains(&key) {
@@ -774,7 +775,7 @@ fn git_list_element(
                 SharedString::from(format!("git-dir-{}-{path}", section as u8)),
                 c.palette,
                 *stage,
-                SharedString::from(format!("{name}/")),
+                SharedString::from(name.clone()),
             )
             .depth(*depth)
             .icon(if *collapsed {
@@ -885,14 +886,14 @@ fn git_list_element(
                     cx.notify();
                 });
             });
-            if *untracked {
-                row = row
-                    .status(SharedString::default(), lc)
-                    .icon(IconName::SquarePlus)
-                    .icon_color(lc);
-            } else {
-                row = row.status(letter.to_string(), lc);
-            }
+            let (file_icon, color_icons) = {
+                let it = view.read(cx).theme.read(cx).icon_theme();
+                (file_icon_path(it, &short_path(path)), it.color_icons)
+            };
+            row = row
+                .icon_path(Some(file_icon))
+                .color_icon(color_icons)
+                .status(letter.to_string(), lc);
             if let Some(a) = actions {
                 row = row.actions(a);
             }
@@ -963,7 +964,6 @@ struct Colors {
     success: gpui::Hsla,
     error: gpui::Hsla,
     warning: gpui::Hsla,
-    info: gpui::Hsla,
     modified: gpui::Hsla,
     palette: Palette,
 }
@@ -2439,7 +2439,6 @@ impl GitPanelView {
             success: t.status_success(),
             error: t.status_error(),
             warning: t.status_warning(),
-            info: t.status_info(),
             modified: t.status_modified(),
             palette: Palette::from_theme(t),
         }
@@ -3621,7 +3620,7 @@ impl GitPanelView {
         };
         let stage_action = if has_unstaged {
             self.tool_btn_as(
-                ButtonVariant::Outlined,
+                ButtonVariant::Subtle,
                 "git-stage-all",
                 stage_label,
                 c,
@@ -3630,7 +3629,7 @@ impl GitPanelView {
             )
         } else {
             self.tool_btn_as(
-                ButtonVariant::Outlined,
+                ButtonVariant::Subtle,
                 "git-unstage-all",
                 stage_label,
                 c,
@@ -3640,7 +3639,7 @@ impl GitPanelView {
         };
 
         let stage_menu = icon_button_builder("git-stage-menu", c.palette, IconName::ChevronDown)
-            .variant(ButtonVariant::Outlined)
+            .variant(ButtonVariant::Subtle)
             .size(ButtonSize::IconXs)
             .render()
             .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
@@ -3652,10 +3651,8 @@ impl GitPanelView {
             .flex()
             .items_center()
             .gap(px(4.0))
-            .h(px(36.0))
+            .h(px(32.0))
             .px(px(8.0))
-            .border_b_1()
-            .border_color(c.border)
             .child(view_diff)
             .child(div().flex_1())
             .child(view_options)
@@ -3739,7 +3736,7 @@ impl GitPanelView {
         }
         let commits = self.history.clone();
         let selected = self.history_selected;
-        let row_h = px(44.0);
+        let row_h = px(46.0);
         let view = cx.entity();
         let list = uniform_list("git-history-list", commits.len(), move |range, _win, _cx| {
             range
@@ -3748,27 +3745,23 @@ impl GitPanelView {
                     let is_sel = selected == Some(i);
                     let click_v = view.clone();
                     let menu_v = view.clone();
+                    // Line 1: ref chips + subject. Line 2: author · age, with
+                    // the diff stat and short hash pushed to the right.
                     let mut top = div()
                         .flex()
                         .items_center()
                         .gap(px(6.0))
                         .overflow_hidden()
                         .whitespace_nowrap()
-                        .text_size(px(12.0))
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_color(c.info)
-                                .child(SharedString::from(cm.short_hash.clone())),
-                        );
-                    for r in cm.refs.iter().take(3) {
+                        .text_size(px(12.0));
+                    for r in cm.refs.iter().take(2) {
                         top = top.child(
                             div()
                                 .flex_none()
-                                .px(px(4.0))
+                                .px(px(5.0))
                                 .rounded_sm()
-                                .bg(c.accent.opacity(0.18))
-                                .text_size(px(9.5))
+                                .bg(c.accent.opacity(0.14))
+                                .text_size(px(10.0))
                                 .text_color(c.accent)
                                 .child(SharedString::from(r.clone())),
                         );
@@ -3776,39 +3769,66 @@ impl GitPanelView {
                     top = top.child(
                         div()
                             .flex_1()
-                            .overflow_hidden()
+                            .min_w_0()
+                            .truncate()
                             .text_color(c.fg)
+                            .when(is_sel, |d| d.font_weight(gpui::FontWeight::MEDIUM))
                             .child(SharedString::from(cm.subject.clone())),
                     );
+                    let meta = div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_size(px(10.5))
+                        .text_color(c.muted)
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .child(SharedString::from(format!(
+                                    "{} \u{b7} {}",
+                                    cm.author_name,
+                                    short_relative(cm.timestamp)
+                                ))),
+                        )
+                        .child(div().flex_1())
+                        .when(cm.insertions > 0, |d| {
+                            d.child(
+                                div()
+                                    .flex_none()
+                                    .text_color(c.success)
+                                    .child(SharedString::from(format!("+{}", cm.insertions))),
+                            )
+                        })
+                        .when(cm.deletions > 0, |d| {
+                            d.child(
+                                div()
+                                    .flex_none()
+                                    .text_color(c.error)
+                                    .child(SharedString::from(format!("\u{2212}{}", cm.deletions))),
+                            )
+                        })
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_color(c.muted.opacity(0.7))
+                                .child(SharedString::from(cm.short_hash.clone())),
+                        );
                     div()
                         .id(("git-history-row", i))
                         .flex()
                         .flex_col()
                         .justify_center()
+                        .gap(px(2.0))
                         .h(row_h)
-                        .px(px(10.0))
-                        .border_b_1()
-                        .border_color(c.border.opacity(0.5))
+                        .px(px(12.0))
                         .cursor_pointer()
-                        .when(is_sel, |d| d.bg(c.accent.opacity(0.12)))
-                        .hover(|s| s.bg(c.fg.opacity(0.04)))
+                        .when(is_sel, |d| d.bg(c.palette.selected_fill))
+                        .when(!is_sel, |d| d.hover(|s| s.bg(c.accent.opacity(0.5))))
                         .child(top)
-                        .child(
-                            div()
-                                .text_size(px(10.0))
-                                .text_color(c.muted)
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .child(SharedString::from(format!(
-                                    "{}  \u{2022}  {}  \u{2022}  {} file{}  \u{2022}  +{} \u{2212}{}",
-                                    cm.author_name,
-                                    short_relative(cm.timestamp),
-                                    cm.files_changed,
-                                    if cm.files_changed == 1 { "" } else { "s" },
-                                    cm.insertions,
-                                    cm.deletions
-                                ))),
-                        )
+                        .child(meta)
                         .on_click(move |_: &ClickEvent, _w, cx| {
                             click_v.update(cx, |this, cx| this.open_history_commit(i, cx));
                         })
@@ -4086,10 +4106,9 @@ impl Render for GitPanelView {
             div()
                 .flex()
                 .items_center()
-                .h(px(36.0))
+                .h(px(34.0))
                 .w_full()
-                .border_b_1()
-                .border_color(c.border)
+                .px(px(4.0))
                 .child(
                     segmented_control("git-tabs", c.palette, mode_key)
                         .variant(SegmentVariant::Flat)
@@ -4148,7 +4167,7 @@ impl Render for GitPanelView {
         };
         let row_h = c.palette.density_tokens().tree_row_height();
         let view = cx.entity();
-        let list = uniform_list("git-file-list", entries.len(), move |range, _win, _cx| {
+        let list = uniform_list("git-file-list", entries.len(), move |range, _win, cx| {
             let _span = tracing::trace_span!(
                 target: "labonair::perf",
                 "scm_viewport_build",
@@ -4157,7 +4176,7 @@ impl Render for GitPanelView {
             )
             .entered();
             range
-                .map(|i| git_list_element(&entries[i], c, row_h, &view))
+                .map(|i| git_list_element(&entries[i], c, row_h, &view, cx))
                 .collect::<Vec<_>>()
         })
         .flex_1()

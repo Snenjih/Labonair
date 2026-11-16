@@ -715,6 +715,40 @@ pub(crate) fn parse_git_porcelain(out: &str) -> HashMap<PathBuf, char> {
     map
 }
 
+/// Severity used when several changed descendants fold into one folder
+/// status — conflicts win, untracked loses.
+fn git_rank(ch: char) -> u8 {
+    match ch {
+        'U' => 6,
+        'M' | 'T' => 5,
+        'D' => 4,
+        'A' => 3,
+        'R' | 'C' => 2,
+        _ => 1,
+    }
+}
+
+/// Propagate every status up to its ancestor directories (below the root), so
+/// a changed file also decorates the folders that contain it. Pure — tested.
+pub(crate) fn with_ancestor_status(map: HashMap<PathBuf, char>) -> HashMap<PathBuf, char> {
+    let mut out = map.clone();
+    for (path, ch) in &map {
+        for dir in path.ancestors().skip(1) {
+            if dir.as_os_str().is_empty() {
+                break;
+            }
+            out.entry(dir.to_path_buf())
+                .and_modify(|c| {
+                    if git_rank(*ch) > git_rank(*c) {
+                        *c = *ch;
+                    }
+                })
+                .or_insert(*ch);
+        }
+    }
+    out
+}
+
 /// The label tint for a Git status char.
 fn git_tint(ch: char, c: &Colors) -> Hsla {
     match ch {
@@ -968,7 +1002,7 @@ impl ExplorerView {
                 };
                 let mut map = HashMap::new();
                 if let Some(text) = out {
-                    for (rel, ch) in parse_git_porcelain(&text) {
+                    for (rel, ch) in with_ancestor_status(parse_git_porcelain(&text)) {
                         map.insert(root.join(rel), ch);
                     }
                 }
@@ -2964,11 +2998,13 @@ fn explorer_row_element(
                 if !cut {
                     tr = tr.label_tint(git_tint(*ch, &c));
                 }
+                // Folders only inherit their descendants' status: tint + dot.
+                let mark = if is_dir { "●" } else { &ch.to_string() };
                 tr = tr.trailing(
                     div()
                         .text_xs()
                         .text_color(git_tint(*ch, &c))
-                        .child(SharedString::from(ch.to_string())),
+                        .child(SharedString::from(mark.to_string())),
                 );
             } else if *is_ignored && !cut {
                 tr = tr.label_tint(c.muted);
@@ -3462,6 +3498,17 @@ mod tests {
         assert_eq!(map.get(Path::new("staged.rs")), Some(&'A'));
         assert_eq!(map.get(Path::new("renamed.rs")), Some(&'R'));
         assert_eq!(map.get(Path::new("gone.rs")), Some(&'D'));
+    }
+
+    #[test]
+    fn ancestor_status_marks_parent_folders_by_severity() {
+        let mut m = HashMap::new();
+        m.insert(PathBuf::from("a/b/new.rs"), '?');
+        m.insert(PathBuf::from("a/c.rs"), 'M');
+        let out = with_ancestor_status(m);
+        assert_eq!(out.get(Path::new("a/b")), Some(&'?'));
+        assert_eq!(out.get(Path::new("a")), Some(&'M'));
+        assert_eq!(out.get(Path::new("")), None);
     }
 
     #[test]
