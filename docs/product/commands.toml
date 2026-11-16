@@ -33,6 +33,7 @@ ids = [
   "OpenComponentGallery", "ShowStatusBarItem",
   "ToggleDimInactivePanes", "TogglePaneHighlight", "ToggleReduceMotion",
   "ToggleTranslucentSurfaces", "ChangeUiDensity",
+  "CloseOtherPanes", "MovePaneToNewTab",
 ]
 
 [[group]]
@@ -156,7 +157,7 @@ undo_redo = "Host document edits may use bounded form state; connection actions 
 tests = ["crates/hosts/src", "crates/hosts-ui/src/command_provider.rs"]
 visual_evidence = ["Pending: Hosts tab, host form, empty state, and palette submenu."]
 source_files = ["crates/hosts/src/command_provider.rs", "crates/hosts-ui/src/command_provider.rs", "crates/shell/src/menu.rs"]
-ids = ["OpenHosts", "ConnectSsh", "OpenSftp", "NewSshTab", "NewSftpTab", "NewSshConnection", "NewQuickSsh"]
+ids = ["OpenHosts", "NewSshTab", "NewSftpTab"]
 
 [[group]]
 id = "theme"
@@ -213,7 +214,15 @@ undo_redo = "Git mutations follow the Git operation's own safety/confirmation se
 tests = ["crates/git/src", "crates/panel-scm/src", "crates/workspace/src/editor_git_bridge.rs"]
 visual_evidence = ["Pending: source-control, branch, diff, and empty repository states."]
 source_files = ["crates/git/src", "crates/panel-scm/src", "crates/panel-git-graph/src"]
-ids = ["GitSwitchBranch", "EditorNextGitChange", "EditorPreviousGitChange", "EditorOpenProjectDiff"]
+ids = [
+  "GitSwitchBranch", "EditorNextGitChange", "EditorPreviousGitChange", "EditorOpenProjectDiff",
+  "DiffClipboardWithSelection", "DiffCompareWithSelected", "DiffCopySelection", "DiffGoToHunk",
+  "DiffGoToPreviousHunk", "DiffRestoreAndNext", "DiffSelectForCompare", "DiffStageAll",
+  "DiffStageAndNext", "DiffToggleSplit", "DiffToggleStaged", "DiffUndoRestore",
+  "DiffUnstageAll", "DiffUnstageAndNext", "GitDiff", "GitDiffBranch",
+  "GitOpenFileDiff", "GitToggleDiffBase", "GitViewStagedChanges", "GitViewUncommittedChanges",
+  "GitViewUnstagedChanges",
+]
 
 [[group]]
 id = "editor"
@@ -249,6 +258,21 @@ ids = [
   "ToggleStickyContext", "ToggleFormatOnSave", "ToggleAutoSave", "ToggleGitGutter",
   "ToggleErrorLens", "ToggleTrimTrailingWhitespace", "ToggleBracketMatching",
   "ToggleGitBlame", "ToggleDiagnostics", "ToggleSemanticTokens",
+  "EditorAddCursorAbove", "EditorDeleteLine", "EditorDeleteToBeginningOfLine", "EditorDeleteToEndOfLine",
+  "EditorDeleteToNextSubwordEnd", "EditorDeleteToNextWordEnd", "EditorDeleteToPreviousSubwordStart", "EditorDeleteToPreviousWordStart",
+  "EditorDuplicateSelection", "EditorExpandEmmetAbbreviation", "EditorFold", "EditorFoldAll",
+  "EditorFoldAtLevel1", "EditorFoldAtLevel2", "EditorFoldAtLevel3", "EditorFoldAtLevel4",
+  "EditorFoldAtLevel5", "EditorFoldAtLevel6", "EditorFoldAtLevel7", "EditorFoldAtLevel8",
+  "EditorFoldAtLevel9", "EditorFoldRecursive", "EditorGoBack", "EditorGoForward",
+  "EditorGoToLineColumn", "EditorGoToTypeDefinition", "EditorGoToWorkspaceSymbol", "EditorJoinLines",
+  "EditorKillRingCut", "EditorKillRingYank", "EditorMoveLinesUp", "EditorNextSnippetTabstop",
+  "EditorOpenFollowingMarkdownPreview", "EditorOpenFollowingSvgPreview", "EditorOpenPreviewToSide", "EditorOpenSvgPreview",
+  "EditorOpenTabularPreview", "EditorPreviousSnippetTabstop", "EditorRedoSelection", "EditorRewrap",
+  "EditorSelectAll", "EditorSelectLine", "EditorSelectPreviousOccurrence", "EditorShowCharacterPalette",
+  "EditorShowIncomingCalls", "EditorToggleBreadcrumb", "EditorToggleCallHierarchyDirection", "EditorToggleInlayHints",
+  "EditorToggleReadOnly", "EditorToggleSearchSelection", "EditorUndoSelection", "EditorUnfoldAll",
+  "EditorUnfoldLines", "EditorUnfoldRecursive", "PreviewImageResetZoom", "PreviewImageZoomIn",
+  "PreviewImageZoomOut", "PreviewImageZoomToActualSize", "PreviewImageZoomToFit", "ToggleHelixMode",
 ]
 
 [[group]]

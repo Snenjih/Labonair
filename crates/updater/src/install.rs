@@ -30,11 +30,10 @@ use super::{AvailableUpdate, UpdateManifest};
 /// base64 form — the second line of a `minisign.pub` file).
 ///
 /// The matching secret key lives only in the release CI secrets
-/// (`LABONAIR_UPDATER_PRIVATE_KEY` / `LABONAIR_UPDATER_KEY_PASSWORD`). Until the
-/// first signed release this is the zeroed placeholder below; replace it with
-/// the real key (`minisign -G`) at that point — [`verify_update`] rejects
-/// everything while it is the placeholder, which is the safe default.
-pub const UPDATE_PUBLIC_KEY: &str = "";
+/// (`LABONAIR_UPDATER_PRIVATE_KEY` / `LABONAIR_UPDATER_KEY_PASSWORD`). Rotating
+/// the key (`minisign -G`) means shipping a new build with the new public key
+/// *before* signing releases with the new secret — older installs reject them.
+pub const UPDATE_PUBLIC_KEY: &str = "RWRTBqt0AsF0P1AXPF5DbESvUiK9hFOVwQYLmH1LBi6YNVImS0YTrPcu";
 
 /// Auto-check cadence — identical to the reference `CHECK_INTERVAL_MS`
 /// (6 hours).
@@ -312,11 +311,12 @@ mod tests {
     }
 
     #[test]
-    fn placeholder_public_key_refuses_everything() {
-        // Guard: while UPDATE_PUBLIC_KEY is unset the pipeline must never apply
-        // an update. Flip this test's expectation when a real key is baked in.
-        assert!(UPDATE_PUBLIC_KEY.trim().is_empty());
-        assert!(verify_update(b"x", "c2ln", UPDATE_PUBLIC_KEY).is_err());
+    fn baked_in_public_key_parses_and_rejects_foreign_signatures() {
+        // Guard: a typo in UPDATE_PUBLIC_KEY would silently disable updates.
+        assert!(PublicKey::from_base64(UPDATE_PUBLIC_KEY).is_ok());
+        let (_pk, sig) = sign(b"payload");
+        let err = verify_update(b"payload", &sig, UPDATE_PUBLIC_KEY).unwrap_err();
+        assert!(err.contains("verification failed"), "{err}");
     }
 
     #[test]

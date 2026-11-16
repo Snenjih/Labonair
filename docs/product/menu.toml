@@ -24,7 +24,7 @@ id = "global.connections"
 label = "Connections"
 owner_module = "hosts"
 canonical_surface = "shell.global-menu"
-command_ids = ["OpenHosts", "ConnectSsh", "OpenSftp", "NewSshTab", "NewSftpTab", "NewSshConnection", "NewQuickSsh"]
+command_ids = ["OpenHosts", "NewSshTab", "NewSftpTab"]
 availability = "Host/session commands require the corresponding host catalog or quick-connection context."
 evidence = ["Pending: native Connections menu capture"]
 
