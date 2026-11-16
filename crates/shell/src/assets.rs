@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Bundled static assets (icon SVGs) and the [`gpui::AssetSource`] that serves
 //! them.
 //!
@@ -22,6 +25,7 @@ use rust_embed::RustEmbed;
 #[derive(RustEmbed)]
 #[folder = "assets/"]
 #[include = "icons/*"]
+#[include = "brand/*"]
 #[include = "icons/file_icons/*"]
 #[include = "icons/material_icon_theme/*"]
 pub struct EmbeddedAssets;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Typed services consumed by the Settings UI.
 //!
 //! The Settings window is a value editor, not a backend integration hub.
@@ -84,6 +87,16 @@ pub struct SettingsServices {
     open_settings_file: SettingsFileOpener,
     surfaces: SettingsSurfaceRegistry,
     background_host: Option<Arc<dyn BackgroundHostService>>,
+    about: Option<AboutService>,
+}
+
+/// What the General page's About card needs from the composition root: the
+/// running version and the one imperative action (the updater is not owned
+/// by Settings).
+#[derive(Clone)]
+pub struct AboutService {
+    pub version: String,
+    check_for_updates: Rc<dyn Fn(&mut App)>,
 }
 
 impl SettingsServices {
@@ -97,7 +110,25 @@ impl SettingsServices {
             open_settings_file: Rc::new(open_settings_file),
             surfaces,
             background_host: None,
+            about: None,
         }
+    }
+
+    /// Provide the About card's version and "Check for updates" action.
+    pub fn with_about(
+        mut self,
+        version: impl Into<String>,
+        check_for_updates: impl Fn(&mut App) + 'static,
+    ) -> Self {
+        self.about = Some(AboutService {
+            version: version.into(),
+            check_for_updates: Rc::new(check_for_updates),
+        });
+        self
+    }
+
+    pub fn about(&self) -> Option<&AboutService> {
+        self.about.as_ref()
     }
 
     /// Provide the background-host status block (unix composition roots only;
@@ -141,5 +172,11 @@ impl SettingsServices {
 
     pub fn open_surface(&self, id: SettingsSurfaceId, cx: &mut App) -> Result<(), String> {
         self.surfaces.open(id, cx)
+    }
+}
+
+impl AboutService {
+    pub fn check_for_updates(&self, cx: &mut App) {
+        (self.check_for_updates)(cx);
     }
 }

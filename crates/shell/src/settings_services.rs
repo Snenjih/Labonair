@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Composition adapters for the small imperative services used by Settings UI.
 //!
 //! Settings UI owns value rendering and persistence. The composition layer
@@ -109,7 +112,24 @@ pub(crate) fn settings_services(
             }
         },
         surfaces,
-    );
+    )
+    .with_about(labonair_updater::CURRENT_VERSION, {
+        let shell = shell.clone();
+        move |cx| {
+            let result = main_window.update(cx, |_, window, cx| {
+                shell.update(cx, |shell, cx| {
+                    shell.dispatch_command(
+                        labonair_command_palette_core::CommandId::CheckForUpdates,
+                        window,
+                        cx,
+                    );
+                })
+            });
+            if let Err(error) = result {
+                tracing::warn!("could not start the update check from Settings: {error}");
+            }
+        }
+    });
     // The background session host is unix-only (ADR 0009).
     #[cfg(unix)]
     let services = {

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-settings-ui` — the settings OS window and its preferences store.
 //!
 //! Extracted verbatim from `crates/ui/src/settings.rs` in T16-007, then
@@ -9,6 +12,7 @@
 //! slice of the layered `SettingsStore` through the `Settings` trait — the old
 //! `PreferencesStore` / `GlobalPreferences` bridge has been retired.
 
+mod about;
 mod apply;
 mod background_host;
 pub mod command_provider;
@@ -26,8 +30,8 @@ mod window;
 mod tests;
 
 pub use services::{
-    BackgroundHostService, BackgroundHostSession, BackgroundHostSnapshot, BackgroundHostStatus,
-    ServiceFuture, SettingsFileTarget, SettingsServices, SettingsSurface,
+    AboutService, BackgroundHostService, BackgroundHostSession, BackgroundHostSnapshot,
+    BackgroundHostStatus, ServiceFuture, SettingsFileTarget, SettingsServices, SettingsSurface,
     SettingsSurfaceContribution, SettingsSurfaceId, SettingsSurfacePage, SettingsSurfaceRegistry,
     SystemFontService,
 };

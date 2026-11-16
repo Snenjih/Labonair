@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Generic field renderer (T19-004): dropdown layer, `render_field`
 //! (dispatches on `FieldControl` — the renderer registry), the generated-page
 //! renderer (static section headers + trailing "Other" fallback; section
@@ -1178,6 +1181,17 @@ impl SettingsView {
                 }
             }
         }
+        // General opens with the About card (identity, update check, links,
+        // licence notice).
+        if self.pages[self.active_area].key == "general" && self.active_subpage.is_none() {
+            blocks.insert(
+                0,
+                SectionBlock {
+                    title: None,
+                    items: vec![SectionItem::About],
+                },
+            );
+        }
         // The Terminal page opens its Font card with a live sample of the
         // terminal, so typography edits show up right where they are made.
         if self.pages[self.active_area].key == "editor" && self.active_subpage.is_none() {
@@ -1385,6 +1399,7 @@ impl SettingsView {
                         .child(preview)
                         .into_any_element()
                 }
+                SectionItem::About => self.render_about(c, cx),
                 SectionItem::TerminalPreview => {
                     let theme = self.theme.clone();
                     let preview = self
@@ -1582,6 +1597,8 @@ enum SectionItem {
     EditorPreview,
     /// Live terminal sample (`crate::terminal_preview`).
     TerminalPreview,
+    /// The About card (`crate::about`).
+    About,
     /// `(slug, title, description)` of a sub-page entry row.
     SubPageLink(&'static str, &'static str, &'static str),
     /// Two or more adjacent tile-group fields shown side by side.
