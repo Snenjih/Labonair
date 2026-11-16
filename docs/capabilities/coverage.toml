@@ -237,6 +237,19 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 last_verified = "2026-10-09"
 
 [[coverage.capability]]
+id = "activity"
+display_name = "Activity indicator"
+owner_module = "activity"
+architecture_owner = "activity"
+canonical_crate = "labonair-activity"
+descriptor_file = "activity.toml"
+coverage_status = "descriptor-pilot"
+canonical_entry_point = "Statusbar activity item"
+next_action = "Capture native visual states and add producers as new background capabilities land."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+last_verified = "2026-11-15"
+
+[[coverage.capability]]
 id = "themes"
 display_name = "Themes (color and icon)"
 owner_module = "themes"

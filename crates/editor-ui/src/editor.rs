@@ -74,6 +74,7 @@ use labonair_editor::{
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
 use crate::syntax_theme::EditorPalette;
+use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
 use labonair_notifications::{notification_center, Notification};
 use labonair_theme::{modal_scrim, ThemeStore};
 use labonair_ui_kit::{
@@ -1423,6 +1424,9 @@ pub struct EditorView {
     emmet_preview: Option<String>,
     emmet_error: Option<String>,
     format_on_save_in_flight: bool,
+    /// Server status last mirrored into the activity indicator, so the
+    /// per-render sync only touches the registry on a transition.
+    synced_server_status: Option<LanguageServiceRuntimeStatus>,
     save_intent_after_format: Option<SaveIntent>,
     cursor_blink_on: bool,
     editor_focused: bool,
@@ -1738,6 +1742,7 @@ impl EditorView {
             emmet_preview: None,
             emmet_error: None,
             format_on_save_in_flight: false,
+            synced_server_status: None,
             save_intent_after_format: None,
             cursor_blink_on: true,
             editor_focused: false,
@@ -1775,6 +1780,53 @@ impl EditorView {
         navigator: impl Fn(String, &mut Window, &mut App) + 'static,
     ) {
         self.document_link_navigator = Some(Rc::new(navigator));
+    }
+
+    /// Mirror the shared language server's lifecycle into the statusbar
+    /// activity indicator. Keyed by server so many editors on one server
+    /// announce a single entry.
+    fn sync_language_server_activity(&mut self, cx: &mut Context<Self>) {
+        let Some(center) = try_activity_center(cx) else {
+            return;
+        };
+        let snapshot = &self.language_service_snapshot;
+        if snapshot.source != LanguageServiceRuntimeSource::LocalProcess
+            || self.synced_server_status == Some(snapshot.status)
+        {
+            return;
+        }
+        self.synced_server_status = Some(snapshot.status);
+        let server = snapshot.server.as_str();
+        let key = format!("lsp:{server}");
+        let draft = match snapshot.status {
+            LanguageServiceRuntimeStatus::Starting => Some(
+                ActivityDraft::new(
+                    ActivityKind::LanguageServer,
+                    "editor",
+                    format!("Starting {server}\u{2026}"),
+                )
+                .key(key.clone()),
+            ),
+            LanguageServiceRuntimeStatus::Crashed => {
+                let mut draft = ActivityDraft::new(
+                    ActivityKind::Failure,
+                    "editor",
+                    format!("{server} stopped unexpectedly"),
+                )
+                .key(key.clone());
+                if let Some(detail) = &snapshot.detail {
+                    draft = draft.tooltip(detail.clone());
+                }
+                Some(draft)
+            }
+            _ => None,
+        };
+        center.update(cx, |center, cx| match draft {
+            Some(draft) => {
+                center.begin(draft, cx);
+            }
+            None => center.finish_key(&key, cx),
+        });
     }
 
     pub fn language_service_snapshot(&self) -> LanguageServiceRuntimeSnapshot {
@@ -2489,6 +2541,7 @@ impl EditorView {
                     DocumentVersion::from_revision(snapshot.revision()),
                     this.language_service_generation,
                 );
+                this.sync_language_server_activity(cx);
                 cx.notify();
             });
         })
@@ -2658,6 +2711,7 @@ impl EditorView {
             DocumentVersion::from_revision(snapshot.revision()),
             self.language_service_generation,
         );
+        self.sync_language_server_activity(cx);
         let version = DocumentVersion::from_revision(snapshot.revision());
         let generation = self.language_service_generation.saturating_add(1);
         self.language_service_generation = generation;
@@ -4153,6 +4207,7 @@ impl EditorView {
             DocumentVersion::from_revision(self.editor_revision()),
             self.language_service_generation,
         );
+        self.sync_language_server_activity(cx);
         self.schedule_autosave(cx);
         cx.notify();
     }
@@ -10979,6 +11034,13 @@ impl Focusable for EditorView {
 
 impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.synced_server_status != Some(self.language_service_snapshot.status) {
+            let weak = cx.weak_entity();
+            cx.defer(move |cx| {
+                weak.update(cx, |this, cx| this.sync_language_server_activity(cx))
+                    .ok();
+            });
+        }
         self.ensure_rename_input(window, cx);
         self.ensure_go_to_line_input(window, cx);
         self.ensure_workspace_symbol_input(window, cx);

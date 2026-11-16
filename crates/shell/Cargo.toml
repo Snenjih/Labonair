@@ -37,6 +37,7 @@ labonair-theme-ui = { path = "../theme-ui" }
 labonair-background = { path = "../background" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-gpui-ext = { path = "../gpui-ext" }
+labonair-activity-ui = { path = "../activity-ui" }
 labonair-notifications = { path = "../notifications" }
 labonair-command-palette = { path = "../command-palette" }
 labonair-command-palette-core = { path = "../command-palette-core" }

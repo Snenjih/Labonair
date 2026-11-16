@@ -24,6 +24,7 @@
 use std::collections::HashMap;
 
 use gpui::{Context, EventEmitter};
+use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
 
 /// Terminal PTY session vs. SFTP browser session — drives the last progress
 /// stage's label and the palette/status-bar icon.
@@ -290,6 +291,9 @@ pub struct ConnectionStatusChanged;
 #[derive(Default)]
 pub struct ConnectionStatusStore {
     entries: HashMap<String, ConnectionEntry>,
+    /// Statusbar activity per session, with the state it was opened for so a
+    /// state change replaces it rather than mutating a stale entry.
+    activities: HashMap<String, (u64, ConnectionState)>,
 }
 
 impl EventEmitter<ConnectionStatusChanged> for ConnectionStatusStore {}
@@ -433,9 +437,69 @@ impl ConnectionStatusStore {
         }
     }
 
-    fn changed(&self, cx: &mut Context<Self>) {
+    fn changed(&mut self, cx: &mut Context<Self>) {
+        self.sync_activities(cx);
         cx.emit(ConnectionStatusChanged);
         cx.notify();
+    }
+
+    /// Mirror every session into the statusbar activity indicator: running
+    /// states show as work, `Error` stays as a dismissible failure, and
+    /// `Idle`/`Connected`/removed sessions clear their entry.
+    fn sync_activities(&mut self, cx: &mut Context<Self>) {
+        let Some(center) = try_activity_center(cx) else {
+            return;
+        };
+        let live: HashMap<String, (ConnectionState, String, Option<String>)> = self
+            .entries
+            .values()
+            .filter(|entry| !matches!(entry.state, ConnectionState::Idle | ConnectionState::Connected))
+            .map(|entry| {
+                (
+                    entry.session_id.clone(),
+                    (entry.state, entry.host_label.clone(), entry.error.clone()),
+                )
+            })
+            .collect();
+        let stale: Vec<String> = self
+            .activities
+            .iter()
+            .filter(|(session, (_, state))| live.get(*session).map(|l| l.0) != Some(*state))
+            .map(|(session, _)| session.clone())
+            .collect();
+        for session in stale {
+            if let Some((id, _)) = self.activities.remove(&session) {
+                center.update(cx, |center, cx| center.finish(id, cx));
+            }
+        }
+        for (session, (state, label, error)) in live {
+            if self.activities.contains_key(&session) {
+                continue;
+            }
+            let (kind, message) = match state {
+                ConnectionState::Error => (
+                    ActivityKind::Failure,
+                    format!("Failed to connect to {label}"),
+                ),
+                ConnectionState::WaitingTrust => (
+                    ActivityKind::Connection,
+                    format!("Waiting for host key confirmation \u{2014} {label}"),
+                ),
+                ConnectionState::WaitingAuth
+                | ConnectionState::WaitingPassphrase
+                | ConnectionState::QuickConnectPassword => (
+                    ActivityKind::Connection,
+                    format!("Waiting for credentials \u{2014} {label}"),
+                ),
+                _ => (ActivityKind::Connection, format!("Connecting to {label}\u{2026}")),
+            };
+            let mut draft = ActivityDraft::new(kind, "ssh", message);
+            if let Some(error) = error {
+                draft = draft.tooltip(error);
+            }
+            let id = center.update(cx, |center, cx| center.begin(draft, cx));
+            self.activities.insert(session, (id, state));
+        }
     }
 }
 
@@ -527,6 +591,34 @@ mod tests {
         e.ingest_log("Session established \u{2713}");
         assert_eq!(e.stage_status(ConnStage::Shell), StageStatus::Done);
         assert_eq!(e.log.len(), 9);
+    }
+
+    #[gpui::test]
+    fn sessions_mirror_into_the_activity_indicator(cx: &mut TestAppContext) {
+        let (store, center) = cx.update(|cx| {
+            (
+                cx.new(|_| ConnectionStatusStore::new()),
+                labonair_activity_ui::init(cx),
+            )
+        });
+        let snapshot = |cx: &mut TestAppContext| cx.update(|cx| center.read(cx).snapshot());
+        cx.update(|cx| {
+            store.update(cx, |s, cx| {
+                s.begin("sess", "host", "Web", ConnectionKind::Terminal, None, cx);
+            });
+        });
+        let running = snapshot(cx);
+        assert_eq!(running.len(), 1);
+        assert_eq!(running[0].draft.kind, ActivityKind::Connection);
+        assert!(running[0].draft.message.contains("Web"));
+
+        cx.update(|cx| store.update(cx, |s, cx| s.set_error("sess", "refused", cx)));
+        let failed = snapshot(cx);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].draft.kind, ActivityKind::Failure);
+
+        cx.update(|cx| store.update(cx, |s, cx| s.set_state("sess", ConnectionState::Connected, cx)));
+        assert!(snapshot(cx).is_empty());
     }
 
     #[gpui::test]

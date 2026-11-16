@@ -42,6 +42,7 @@ use gpui::{
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_filesystem::{mutate, tree};
+use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings::{
     enqueue_user_settings_write, Settings as _, SettingsStore, SftpBrowserSettings, SftpColumn,
@@ -1002,6 +1003,17 @@ impl SftpView {
         };
         let browser = self.sftp_browser.clone();
         let path = self.remote.path.clone();
+        // Hidden for the first 300ms so quick listings never flash the bar.
+        let activity = try_activity_center(cx).map(|center| {
+            let draft = ActivityDraft::new(
+                ActivityKind::FileJob,
+                "sftp",
+                format!("Loading {path}\u{2026}"),
+            )
+            .show_after(std::time::Duration::from_millis(300));
+            let id = center.update(cx, |center, cx| center.begin(draft, cx));
+            (center, id)
+        });
         let jh = self.tokio.spawn(async move {
             browser
                 .read_dir(handle, path)
@@ -1010,6 +1022,9 @@ impl SftpView {
         });
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            if let Some((center, id)) = activity {
+                center.update(cx, |center, cx| center.finish(id, cx)).ok();
+            }
             let _ = this.update(cx, |this, cx| {
                 if this.remote.generation != generation {
                     return;

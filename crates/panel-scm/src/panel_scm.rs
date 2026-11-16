@@ -44,6 +44,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::git_change_row::{git_change_row, StageState};
 use crate::theme::ThemeStore;
+use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_ui_kit::{
     button_disabled, checkbox, context_menu, disclosure, h_stack, icon_button_builder,
@@ -368,6 +369,17 @@ pub(crate) enum RepoOperation {
 impl RepoOperation {
     fn is_busy(self) -> bool {
         !matches!(self, RepoOperation::Idle)
+    }
+
+    /// Statusbar activity text; `None` for `Idle`.
+    fn activity_message(self) -> Option<&'static str> {
+        match self {
+            RepoOperation::Idle => None,
+            RepoOperation::Fetching => Some("Fetching\u{2026}"),
+            RepoOperation::Pulling => Some("Pulling\u{2026}"),
+            RepoOperation::Pushing => Some("Pushing\u{2026}"),
+            RepoOperation::Mutating => Some("Updating repository\u{2026}"),
+        }
     }
 }
 
@@ -1490,9 +1502,24 @@ impl GitPanelView {
         self.op_in_progress = true;
         self.repo_op = kind;
         cx.notify();
+        // Local mutations usually finish in milliseconds; only the network
+        // commands should show up immediately.
+        let show_after = if kind == RepoOperation::Mutating {
+            Duration::from_millis(400)
+        } else {
+            Duration::ZERO
+        };
+        let activity = kind.activity_message().and_then(|message| {
+            let center = try_activity_center(cx)?;
+            let draft = ActivityDraft::new(ActivityKind::Git, "git", message).show_after(show_after);
+            Some((center.clone(), center.update(cx, |center, cx| center.begin(draft, cx))))
+        });
         let jh = self.tokio.spawn(op);
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            if let Some((center, id)) = activity {
+                center.update(cx, |center, cx| center.finish(id, cx)).ok();
+            }
             let _ = this.update(cx, |this, cx| {
                 this.op_in_progress = false;
                 this.repo_op = RepoOperation::Idle;

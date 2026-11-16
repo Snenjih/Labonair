@@ -187,6 +187,18 @@ Settings renderer.
 
 Panels register identity, title, icon, supported docks, and a view factory. Status items register identity, placement metadata, badge behavior, and a view factory. The shell provides the host surface; feature modules own their content and actions.
 
+## Activity registry
+
+`labonair-activity::ActivityRegistry` is the sole owner of "work is running"
+state shown in the statusbar. A feature announces work with
+`ActivityCenter::begin` and clears it with `finish`; a failure that has no other
+surface is begun as `ActivityKind::Failure` and stays until dismissed. Entries
+may carry a `key` (one language server shared by many editors announces once),
+a `show_after` delay (short runs never flash the bar), progress, and data-only
+cancel/click action ids that the owner interprets via `ActivityActionEvent`.
+It never stores closures. Failures that already publish a notification do not
+also publish an activity. Transfers are excluded: they keep the Transfers badge.
+
 ## Notification center
 
 `labonair-notifications-core` is the single user-message registry. It accepts

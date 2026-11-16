@@ -114,6 +114,7 @@ fn main() {
                         .detach();
                     let background = labonair_shell::init_background(cx);
                     let notifications = labonair_shell::init_notifications(cx);
+                    labonair_shell::init_activity(cx);
                     let composition = composition.clone();
                     let tokio_handle = tokio_handle.clone();
                     // The window's first layer must be a `gpui_component::Root`

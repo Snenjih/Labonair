@@ -15,6 +15,7 @@ notify-debouncer-mini = "0.4"
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-panel = { path = "../panel" }
+labonair-activity-ui = { path = "../activity-ui" }
 labonair-notifications = { path = "../notifications" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-explorer-host = { path = "../explorer-host" }

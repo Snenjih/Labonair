@@ -12,6 +12,7 @@ gpui = { workspace = true }
 labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-editor = { path = "../editor" }
 labonair-filesystem = { path = "../filesystem" }
+labonair-activity-ui = { path = "../activity-ui" }
 labonair-notifications = { path = "../notifications" }
 labonair-panel = { path = "../panel" }
 labonair-settings = { path = "../settings" }

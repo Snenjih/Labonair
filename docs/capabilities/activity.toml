@@ -1,0 +1,60 @@
+[capability]
+id = "activity"
+display_name = "Activity indicator"
+owner_module = "activity"
+canonical_crate = "labonair-activity"
+sibling_crates = ["labonair-activity-ui"]
+public_contract = ["ActivityKind", "ActivityDraft", "Activity", "ActivityRegistry"]
+canonical_entry_points = ["Statusbar activity item -> running-work list popover"]
+alternate_entry_points = ["Feature-owned publication through ActivityCenter (begin/update/finish/fail)"]
+commands = ["none — the activity indicator is a statusbar surface, not a second command registry"]
+default_keymap = ["none"]
+registries = ["ActivityRegistry", "StatusItem registration"]
+events = ["ActivityActionEvent carrying a stable action id for the owning module to interpret"]
+state_owner = "labonair-activity owns identity, priority ordering, keyed de-duplication, delayed reveal, and the sticky-failure lifecycle; labonair-activity-ui owns GPUI adapter state"
+persistence_owner = "none — activity is in-memory and ends with the process"
+settings = ["none"]
+notifications = ["Failures that already publish a notification do not also publish an activity; the indicator shows running work and failures with no other surface"]
+ui_kit_components = ["icon_button_builder", "popover_with_exit", "ListItem", "Palette", "Presence", "Tooltip"]
+automation_tools = ["none"]
+security_boundaries = ["Activity records store display text and stable action IDs, never UI closures, credentials, or secrets"]
+source_files = [
+  "crates/activity/src/lib.rs",
+  "crates/activity-ui/src/lib.rs",
+  "crates/activity-ui/src/status_item.rs",
+]
+tests = [
+  "cargo test -p labonair-activity",
+  "cargo test -p labonair-activity-ui",
+  "cargo test -p labonair-workspace --lib ssh_connection",
+]
+visual_states = [
+  "single running entry with spinner — Pending native capture",
+  "entry with progress percentage and '+ N more' — Pending native capture",
+  "open popover with progress bars and cancel — Pending native capture",
+  "sticky failure entry with dismiss — Pending native capture",
+]
+performance_budget = "Per-render sync only touches the registry on a state transition; entries shorter than their show_after delay never render."
+current_status = "partial"
+target_status = "regression-locked"
+known_limitations = [
+  "Producers wired: Git operations, SSH connection state, language-server start/crash, updater check/download/install, remote Explorer listing and operations, SFTP remote listing.",
+  "No producer for environment errors, debug sessions, theme/extension installs, or partial-index notices: those capabilities do not exist in Labonair yet.",
+  "Transfers keep their own statusbar badge and are deliberately not mirrored here.",
+  "The native visual acceptance matrix is pending.",
+]
+removal_condition = "none"
+last_verified = "2026-11-15"
+
+[evidence]
+contract = ["ActivityDraft and ActivityRegistry are defined in crates/activity/src/lib.rs"]
+unit = ["Priority ordering, delayed reveal, sticky failure, keyed upsert, and progress clamping tests are in labonair-activity"]
+integration = ["ActivityCenter action routing and shared init are tested in labonair-activity-ui; SSH state mirroring in labonair-workspace ssh_connection tests"]
+command = ["N/A: statusbar activity indicator is not a command surface"]
+surface = ["ActivityStatusItem owns the canonical statusbar entry and popover"]
+persistence = ["N/A: activity is intentionally in-memory"]
+notification = ["Failure activity and notification publication are kept exclusive per event"]
+visual = ["Pending: native capture of the visual states listed above"]
+security = ["No closures or secrets are stored in activity records"]
+performance = ["Editor language-server sync is guarded by a per-editor last-synced status"]
+regression = ["N/A: new capability"]

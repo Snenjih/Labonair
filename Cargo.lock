@@ -4159,6 +4159,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-activity"
+version = "0.1.0"
+
+[[package]]
+name = "labonair-activity-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-activity",
+ "labonair-panel",
+ "labonair-theme",
+ "labonair-ui-kit",
+]
+
+[[package]]
 name = "labonair-ai"
 version = "0.1.0"
 dependencies = [
@@ -4277,6 +4292,7 @@ name = "labonair-editor-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "labonair-activity-ui",
  "labonair-command-palette-core",
  "labonair-editor",
  "labonair-filesystem",
@@ -4514,6 +4530,7 @@ name = "labonair-panel-explorer"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "labonair-activity-ui",
  "labonair-explorer-host",
  "labonair-filesystem",
  "labonair-notifications",
@@ -4545,6 +4562,7 @@ name = "labonair-panel-scm"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "labonair-activity-ui",
  "labonair-command-palette-core",
  "labonair-command-palette-runtime",
  "labonair-editor",
@@ -4710,6 +4728,7 @@ dependencies = [
  "dirs 6.0.0",
  "gpui",
  "gpui-component",
+ "labonair-activity-ui",
  "labonair-background",
  "labonair-command-palette",
  "labonair-command-palette-core",
@@ -5010,6 +5029,7 @@ name = "labonair-updater-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "labonair-activity-ui",
  "labonair-command-palette-core",
  "labonair-command-palette-runtime",
  "labonair-notifications",
@@ -5029,6 +5049,7 @@ dependencies = [
  "gpui",
  "image",
  "jsonc-parser",
+ "labonair-activity-ui",
  "labonair-ai",
  "labonair-background-host",
  "labonair-command-palette",

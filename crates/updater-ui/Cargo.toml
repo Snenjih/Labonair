@@ -13,6 +13,7 @@ tokio = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-panel = { path = "../panel" }
+labonair-activity-ui = { path = "../activity-ui" }
 labonair-notifications = { path = "../notifications" }
 labonair-updater = { path = "../updater" }
 labonair-command-palette-core = { path = "../command-palette-core" }

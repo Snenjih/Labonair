@@ -56,6 +56,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_explorer_host::ExplorerHost;
+use labonair_activity_ui::{try_activity_center, ActivityCenter, ActivityDraft, ActivityKind};
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
     button, chevron_icon_path, context_menu, dialog_surface, icon_button_builder, icon_for_path,
@@ -1061,6 +1062,25 @@ impl ExplorerView {
         });
     }
 
+    /// Announce a remote Explorer job. Hidden for the first 300ms so quick
+    /// listings never flash the statusbar.
+    fn begin_activity(
+        message: String,
+        cx: &mut Context<Self>,
+    ) -> Option<(Entity<ActivityCenter>, u64)> {
+        let center = try_activity_center(cx)?;
+        let draft = ActivityDraft::new(ActivityKind::FileJob, "explorer", message)
+            .show_after(Duration::from_millis(300));
+        let id = center.update(cx, |center, cx| center.begin(draft, cx));
+        Some((center, id))
+    }
+
+    fn end_activity(activity: Option<(Entity<ActivityCenter>, u64)>, cx: &mut gpui::AsyncApp) {
+        if let Some((center, id)) = activity {
+            center.update(cx, |center, cx| center.finish(id, cx)).ok();
+        }
+    }
+
     fn load_dir(&mut self, path: PathBuf, force: bool, cx: &mut Context<Self>) {
         if !force && !self.model.needs_load(&path) {
             return;
@@ -1081,11 +1101,17 @@ impl ExplorerView {
 
         if let Some(ssh_id) = self.model.remote_ssh_id.clone() {
             let remote = self.host.remote_service();
+            let label = path.file_name().map_or_else(
+                || path_str.clone(),
+                |name| name.to_string_lossy().to_string(),
+            );
+            let activity = Self::begin_activity(format!("Loading {label}\u{2026}"), cx);
             let jh = self
                 .tokio
                 .spawn(async move { remote.read_dir(ssh_id, path_str).await });
             cx.spawn(async move |view, cx| {
                 let result = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+                Self::end_activity(activity, cx);
                 let _ = view.update(cx, |this, cx| {
                     if this.model.generation() != gen {
                         return;
@@ -1673,9 +1699,11 @@ impl ExplorerView {
         op: impl std::future::Future<Output = Result<(), String>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
+        let activity = Self::begin_activity(format!("{action} on remote host\u{2026}"), cx);
         let jh = self.tokio.spawn(op);
         cx.spawn(async move |view, cx| {
             let result = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            Self::end_activity(activity, cx);
             let _ = view.update(cx, |this, cx| match result {
                 Ok(()) => this.load_dir(reload, true, cx),
                 Err(message) => {

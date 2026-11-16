@@ -74,6 +74,9 @@ pub fn register_builtin_status_items(
     //     group 1, the "action" items in the order the task file lists them.
     //   notifications(100) — group 2, always visible, pinned rightmost.
     // `StatusBar::cluster` draws a divider between groups, never within one.
+    // Activity sits on the left, right after the dock buttons (group 3).
+    let activity = labonair_activity_ui::try_activity_center(cx)
+        .map(|center| labonair_activity_ui::registration(&center, theme, cx));
     let registrations = [
         dock_btn_left,
         dock_btn_right,
@@ -84,7 +87,9 @@ pub fn register_builtin_status_items(
         updater_item,
         transfers,
         agent,
-    ];
+    ]
+    .into_iter()
+    .chain(activity);
     workspace.update(cx, |w, _| {
         let registry = w.status_item_registry_mut();
         for registration in registrations {

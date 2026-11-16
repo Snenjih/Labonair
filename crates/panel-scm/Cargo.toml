@@ -16,6 +16,7 @@ labonair-ui-kit = { path = "../ui-kit" }
 labonair-panel = { path = "../panel" }
 labonair-editor = { path = "../editor" }
 labonair-settings = { path = "../settings" }
+labonair-activity-ui = { path = "../activity-ui" }
 labonair-notifications = { path = "../notifications" }
 labonair-git = { path = "../git" }
 labonair-command-palette-core = { path = "../command-palette-core" }

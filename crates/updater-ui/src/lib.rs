@@ -29,6 +29,7 @@ use labonair_updater as updater;
 use labonair_updater::AvailableUpdate;
 use tokio::runtime::Handle as TokioHandle;
 
+use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
 use labonair_notifications::{notification_center, Notification};
 use labonair_theme::{modal_scrim, store::ThemeStore};
 use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
@@ -65,6 +66,8 @@ pub struct UpdaterView {
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
     status: UpdaterStatus,
+    /// Statusbar activity for the check / download in flight.
+    activity: Option<u64>,
     dialog_open: bool,
     endpoint: String,
     public_key: String,
@@ -76,6 +79,7 @@ impl UpdaterView {
             tokio,
             theme,
             status: UpdaterStatus::Idle,
+            activity: None,
             dialog_open: false,
             endpoint: updater::DEFAULT_UPDATE_ENDPOINT.to_string(),
             public_key: updater::UPDATE_PUBLIC_KEY.to_string(),
@@ -84,6 +88,43 @@ impl UpdaterView {
 
     pub fn status(&self) -> &UpdaterStatus {
         &self.status
+    }
+
+    /// Single write path for `status`: keeps the statusbar activity in step
+    /// with the check / download / install phases.
+    fn set_status(&mut self, status: UpdaterStatus, cx: &mut Context<Self>) {
+        self.status = status;
+        let Some(center) = try_activity_center(cx) else {
+            return;
+        };
+        let running = match &self.status {
+            UpdaterStatus::Checking => Some(("Checking for updates\u{2026}", None)),
+            UpdaterStatus::Downloading { downloaded, total } => Some((
+                "Downloading update\u{2026}",
+                total
+                    .filter(|total| *total > 0)
+                    .map(|total| *downloaded as f32 / total as f32),
+            )),
+            UpdaterStatus::Ready => Some(("Installing update\u{2026}", None)),
+            _ => None,
+        };
+        match (running, self.activity) {
+            (Some((message, progress)), Some(id)) => center.update(cx, |center, cx| {
+                center.update(id, Some(message.to_string()), progress, cx)
+            }),
+            (Some((message, progress)), None) => {
+                let mut draft = ActivityDraft::new(ActivityKind::Package, "updater", message);
+                if let Some(progress) = progress {
+                    draft = draft.progress(progress);
+                }
+                self.activity = Some(center.update(cx, |center, cx| center.begin(draft, cx)));
+            }
+            (None, Some(id)) => {
+                self.activity = None;
+                center.update(cx, |center, cx| center.finish(id, cx));
+            }
+            (None, None) => {}
+        }
     }
 
     pub fn close_dialog(&mut self, cx: &mut Context<Self>) {
@@ -142,7 +183,7 @@ impl UpdaterView {
             return;
         }
 
-        self.status = UpdaterStatus::Checking;
+        self.set_status(UpdaterStatus::Checking, cx);
         cx.notify();
 
         let endpoint = self.endpoint.clone();
@@ -160,11 +201,11 @@ impl UpdaterView {
                 match result {
                     Ok(manifest) => match manifest.available() {
                         Some(update) => {
-                            this.status = UpdaterStatus::Available(update);
+                            this.set_status(UpdaterStatus::Available(update), cx);
                             this.dialog_open = true;
                         }
                         None => {
-                            this.status = UpdaterStatus::UpToDate;
+                            this.set_status(UpdaterStatus::UpToDate, cx);
                             if manual {
                                 notification_center(cx).update(cx, |c, cx| {
                                     c.push(
@@ -182,7 +223,7 @@ impl UpdaterView {
                         }
                     },
                     Err(err) => {
-                        this.status = UpdaterStatus::Error(err.clone());
+                        this.set_status(UpdaterStatus::Error(err.clone()), cx);
                         if manual {
                             notification_center(cx).update(cx, |c, cx| {
                                 c.push(Notification::error("Update check failed", err), cx);
@@ -201,10 +242,13 @@ impl UpdaterView {
         let UpdaterStatus::Available(update) = self.status.clone() else {
             return;
         };
-        self.status = UpdaterStatus::Downloading {
-            downloaded: 0,
-            total: None,
-        };
+        self.set_status(
+            UpdaterStatus::Downloading {
+                downloaded: 0,
+                total: None,
+            },
+            cx,
+        );
         self.dialog_open = true;
         cx.notify();
 
@@ -222,14 +266,17 @@ impl UpdaterView {
                     InstallMsg::Progress { downloaded, total } => {
                         let _ = this.update(cx, |this, cx| {
                             if matches!(this.status, UpdaterStatus::Downloading { .. }) {
-                                this.status = UpdaterStatus::Downloading { downloaded, total };
+                                this.set_status(
+                                    UpdaterStatus::Downloading { downloaded, total },
+                                    cx,
+                                );
                                 cx.notify();
                             }
                         });
                     }
                     InstallMsg::Done(Ok(())) => {
                         let _ = this.update(cx, |this, cx| {
-                            this.status = UpdaterStatus::Ready;
+                            this.set_status(UpdaterStatus::Ready, cx);
                             cx.notify();
                         });
                         cx.background_executor().timer(RESTART_DELAY).await;
@@ -254,7 +301,7 @@ impl UpdaterView {
                     }
                     InstallMsg::Done(Err(err)) => {
                         let _ = this.update(cx, |this, cx| {
-                            this.status = UpdaterStatus::Error(err.clone());
+                            this.set_status(UpdaterStatus::Error(err.clone()), cx);
                             this.dialog_open = false;
                             notification_center(cx).update(cx, |c, cx| {
                                 c.push(Notification::error("Update failed", err), cx);

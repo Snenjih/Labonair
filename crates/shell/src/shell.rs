@@ -53,6 +53,7 @@ pub use titlebar::Titlebar;
 // the crate that actually owns each hook (theme store, background store,
 // notification center), so no bootstrap logic changed with the crate split.
 pub use labonair_background::init as init_background;
+pub use labonair_activity_ui::init as init_activity;
 pub use labonair_notifications::init as init_notifications;
 pub use labonair_settings::init as init_settings;
 pub use labonair_theme::{init_fonts, init_theme};
