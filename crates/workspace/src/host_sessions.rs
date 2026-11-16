@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace side of the detached session host (ADR 0009) outside of pane
 //! creation and restore: recovered ("orphaned") sessions and quitting with
 //! every session stopped.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 use crate::net_error::is_network_error;
 use crate::shell::shell_quote;
 use crate::SshState;

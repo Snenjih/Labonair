@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-command-palette` — the `Cmd+P` command palette plus the
 //! command / keyboard-shortcut model shared with the (future) `keymap.json`.
 //!

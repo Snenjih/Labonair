@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Self-contained Vim emulation layer over [`Document`] (T06-003).
 //!
 //! Labonair's web build used the CodeMirror `@replit/codemirror-vim` addon.

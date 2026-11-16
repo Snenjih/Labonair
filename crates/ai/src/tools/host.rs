@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`ToolHost`] — the filesystem + shell services the AI tools run against
 //! (T11-004). The default [`NativeHost`] delegates to the standalone
 //! `labonair-filesystem` service and runs shell commands via

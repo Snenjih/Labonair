@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Agent integrations: pure recognition of coding agents in a terminal and a
 //! heuristic read of what they are doing. No I/O; the workspace polls the
 //! foreground process, OSC title and visible tail and feeds them in here.

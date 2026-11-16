@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The `SettingsView` entity: its state struct, construction, lifecycle,
 //! keyboard handling, the page-driven navigation (T19-004: disclosure
 //! sections + scroll-spy + sub-pages + custom top-level chrome, replacing the

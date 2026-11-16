@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Gorex-style tab tile: a small rounded square in a program's colour, a light
 //! rim, a soft sheen along the top and a centred glyph (`reference/gorex/tabs.go`
 //! `drawTile`). The caller maps a tab kind / detected program to a

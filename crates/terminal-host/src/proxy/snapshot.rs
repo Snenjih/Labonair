@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Builds the [`SshHostSnapshot`] a daemon-hosted connect needs, from the
 //! app's own hosts database and secret store (what `ssh_connect` reads). The
 //! daemon never opens either. Secrets travel in the snapshot only; `Debug` of

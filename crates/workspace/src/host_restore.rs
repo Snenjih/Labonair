@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Restore policy for terminal panes whose session may still be alive in the
 //! detached session host (ADR 0009, "Restore + resume").
 //!

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! T15-005 — download, verify and apply an update.
 //!
 //! The reference app delegated this to `tauri-plugin-updater`: it downloaded the

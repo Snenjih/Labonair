@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Live fs-watch on the `User` settings layer (T19-002 Anweisung #6).
 //!
 //! Same crates + debounce pattern as `labonair-filesystem`: the debouncer runs its

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Provider + model catalog. Ported 1:1 from
 //! `reference-src/src/modules/ai/config.ts` (values adjusted only where the
 //! original relied on JS-SDK behaviour).

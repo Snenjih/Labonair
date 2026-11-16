@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Radio-style preview tiles (R10-002): a mini-window mock drawn from theme
 //! colours above a label, used for colour scheme, interface style, pane layout
 //! and theme pickers.

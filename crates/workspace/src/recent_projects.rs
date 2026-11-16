@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Recent Projects — a small persisted MRU list of project folders opened
 //! through Spaces (`Workspace::create_space_from_project` / "Open Project…"),
 //! so the Spaces menu can offer instant reopen without re-browsing the

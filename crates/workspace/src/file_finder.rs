@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace adapter and modal presentation for the Editor file finder.
 //!
 //! Filesystem traversal is deliberately kept at this boundary. The view owns

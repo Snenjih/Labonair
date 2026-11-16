@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Transfer queue UI (T08-002).
 //!
 //! Ported from `reference-src/src/modules/sftp/store/transferStore.ts` +

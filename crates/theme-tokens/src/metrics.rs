@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! T20-007: the runtime **metric** layer that scales the active [`Theme`].
 //!
 //! Colour comes from the [`ThemeRegistry`](crate::ThemeRegistry) via

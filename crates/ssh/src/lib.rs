@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-free SSH capability contracts.
 //!
 //! Transport implementations live in `labonair-ssh-transport`. Feature crates

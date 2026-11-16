@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! GPUI terminal renderer (T03-002).
 //!
 //! [`TerminalView`] is the GPUI entity that turns a registry session's

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `Kbd` key chips and the `KeybindingHint` (label + chips) pair.
 //!
 //! Port of `reference-src/src/components/ui/kbd.tsx` (`Kbd` + `KbdGroup`):

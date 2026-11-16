@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The secret-safe view model of the SSH-host import step (no GPUI).
 //!
 //! This is the redaction boundary: a [`HostImportRow`] is built from an

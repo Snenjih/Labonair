@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Per-session agent todo lists (T11-004).
 //!
 //! Port of `reference-src/src/modules/ai/lib/todos.ts` +

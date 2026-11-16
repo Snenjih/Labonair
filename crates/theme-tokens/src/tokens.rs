@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Typed design tokens for the Labonair UI.
 //!
 //! Base palette colors follow the frozen reference stylesheet. Labonair's

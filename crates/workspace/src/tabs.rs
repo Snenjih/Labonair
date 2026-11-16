@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Tab data model and tab store (T04-001).
 //!
 //! Labonair's tab system is the central navigation element. A *tab* is a light

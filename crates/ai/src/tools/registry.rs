@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The tool interface + registry + the built-in tool set (T11-004).
 //!
 //! Port of `reference-src/src/modules/ai/tools/*`. Each [`Tool`] carries its

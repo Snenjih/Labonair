@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Local PTY-backed terminal session (T03-001).
 //!
 //! Ties a real shell (via [`portable_pty`]) to a [`TerminalEmulator`]. A

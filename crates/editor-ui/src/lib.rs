@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! GPUI presentation and interaction for the Editor capability.
 //!
 //! Workspace creates and hosts [`EditorView`] instances, while the editor

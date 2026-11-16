@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The `Settings` -> `ThemeStore` bridge: preference/font/metrics application,
 //! registry-theme activation and persistence, and the palette hover-preview.
 //! Moved out of `labonair-settings-ui` in R08-005 (mechanical move — no logic

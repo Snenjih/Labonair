@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Document-symbol extraction (palette "Go to Symbol" / outline).
 //!
 //! Parses the buffer with the raw Tree-sitter grammar and runs the grammar's

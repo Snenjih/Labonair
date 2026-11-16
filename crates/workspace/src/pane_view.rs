@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Rendering of a tab's pane tree (R10-002, ADR 0005).
 //!
 //! The tree is laid out with flex: siblings share `extent - gaps` by their
@@ -22,9 +25,9 @@ use labonair_ui_kit::{
     pane_bar, pane_frame, IconName, MotionExt, MotionLevel, Palette, PaneAction, PaneLayoutStyle,
 };
 
+use crate::frame_insets;
 use crate::pane::{Member, PaneId, SplitAxis, SplitDirection};
 use crate::pane_motion::Placed;
-use crate::frame_insets;
 use crate::tiling::{self, PxRect};
 use crate::{DragGhost, PaneResize, Workspace};
 

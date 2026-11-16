@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `SettingField`-equivalent registry (T19-004), replacing the old
 //! hand-maintained `FIELDS: &[FieldDef]` table (T16-007's `fields.rs`, 131
 //! entries chronically drifting against ~170 `Preferences` fields).

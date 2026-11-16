@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Text diffing (T06-004).
 //!
 //! A line-based **Myers** diff (`myers` — the classic O(ND) shortest-edit-

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Versioned, editor-owned view/session persistence.
 //!
 //! Workspace owns the outer tab/session envelope. This module owns the data

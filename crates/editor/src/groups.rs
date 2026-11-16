@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editor view groups (R10-002, ADR 0005).
 //!
 //! A *group* is one independent view (selection, scroll, folds) onto the

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Pure lookup of the command that re-opens a terminal's former foreground
 //! program after a session restore (Option D of ADR 0009).
 //!

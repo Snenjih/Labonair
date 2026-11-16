@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-free file lifecycle contract for the editor capability.
 //!
 //! The editor owns decisions about dirty buffers, external changes, reloads,

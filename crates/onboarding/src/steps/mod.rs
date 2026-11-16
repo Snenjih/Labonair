@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The built-in steps, registered by [`register_builtin_steps`].
 
 mod hosts;

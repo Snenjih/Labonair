@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Filesystem adapter for Editor-owned project-search Multi-Buffers.
 
 use std::collections::BTreeSet;

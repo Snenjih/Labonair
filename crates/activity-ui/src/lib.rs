@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! GPUI adapter and statusbar presentation for the activity registry.
 //!
 //! The data model lives in [`labonair_activity`]. This crate adds GPUI
@@ -8,8 +11,8 @@
 use std::time::Instant;
 
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global};
-pub use labonair_activity::{Activity, ActivityDraft, ActivityKind};
 use labonair_activity::ActivityRegistry;
+pub use labonair_activity::{Activity, ActivityDraft, ActivityKind};
 
 mod status_item;
 
@@ -192,7 +195,11 @@ mod tests {
         });
         assert_eq!(*received.lock().unwrap(), vec!["cancel", "show"]);
         let left = cx.update(|cx| center.read(cx).snapshot());
-        assert_eq!(left.len(), 1, "cancel keeps the run, a clicked failure clears");
+        assert_eq!(
+            left.len(),
+            1,
+            "cancel keeps the run, a clicked failure clears"
+        );
         assert_eq!(left[0].id, running);
     }
 

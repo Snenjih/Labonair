@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-free Git capability contracts.
 //!
 //! The crate deliberately contains no Git implementation. Local and remote

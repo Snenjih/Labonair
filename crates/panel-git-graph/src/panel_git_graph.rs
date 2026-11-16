@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Git-Graph — commit-graph view (T10-001).
 //!
 //! [`GitGraphView`] is the GPUI-native port of the reference web app's
@@ -965,12 +968,7 @@ impl GitGraphView {
         })
         .flex_1();
 
-        let mut col = div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w_0()
-            .child(list);
+        let mut col = div().flex().flex_col().flex_1().min_w_0().child(list);
 
         if self.has_more {
             col = col.child(

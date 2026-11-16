@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared button primitive.
 //!
 //! Buttons follow Ciel's control scale (`DESIGN.md` §7, §10): 24/28/32/36px

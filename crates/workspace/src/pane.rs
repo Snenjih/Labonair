@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Single-pane primitives (T04-002).
 //!
 //! A workspace tab hosts a **pane tree**; this module carries the leaf-level

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Turn captured `gpui::Keystroke`s into Labonair's binding-string form.
 //!
 //! The keymap surface records the keys the user actually presses; the keymap

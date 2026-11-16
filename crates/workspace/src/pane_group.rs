@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Recursive n-ary split-pane tree (T17-004).
 //!
 //! A workspace tab hosts a **pane tree** modelled after Zed's

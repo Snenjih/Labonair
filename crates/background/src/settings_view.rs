@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Background-owned editor for persisted background preferences.
 //!
 //! Embedded inline on the Settings "Themes" page (ADR 0006). The view is a

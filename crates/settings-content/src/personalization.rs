@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `personalization` area — status-bar item placement + panel-toggle
 //! visibility (Phase 17/18: `statusBarItemPlacements`, `panelToggleVisibility`)
 //! plus the legacy per-button status-bar toggles.

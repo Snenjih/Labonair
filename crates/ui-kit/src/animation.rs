@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The ui-kit motion engine.
 //!
 //! Every animation in the app is a pure per-frame interpolation of a GPUI

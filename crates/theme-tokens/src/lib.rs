@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Design tokens — the foundation-level visual contract (R08-008).
 //!
 //! The reference stylesheet supplies the base light/dark palette, transcribed

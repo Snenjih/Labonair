@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Minimal Server-Sent-Events frame decoder.
 //!
 //! Feeds raw byte chunks in, yields complete events. Handles the subset every

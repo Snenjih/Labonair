@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Keymap-owned command metadata.
 
 use labonair_command_palette_core::{CommandDescriptor, CommandIcon, CommandId, CommandProvider};

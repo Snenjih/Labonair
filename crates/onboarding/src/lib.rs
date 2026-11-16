@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! First-run onboarding: a short, skippable flow of registered steps, one page each.
 //!
 //! One crate owns the whole capability: the [`OnboardingStep`] contract and

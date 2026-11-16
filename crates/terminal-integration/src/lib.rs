@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared shell-integration protocol payloads for local and remote terminals.
 //!
 //! The scripts are deliberately UI- and transport-free. Local PTY spawning

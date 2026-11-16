@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `Checkbox` — a square, checked/unchecked toggle with an optional label.
 //!
 //! Port of `reference-src/src/components/ui/checkbox.tsx`: `size-4`,

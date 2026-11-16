@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Statusbar composition hook (T17-003).
 //!
 //! Feature modules own their status-bar contributions and expose typed

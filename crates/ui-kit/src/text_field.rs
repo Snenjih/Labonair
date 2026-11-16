@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Real text-input primitive.
 //!
 //! Wraps `gpui-component`'s `InputState` + `Input` element — a genuine text

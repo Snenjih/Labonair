@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Round-trip verification for [`TerminalEmulator::snapshot`]: emulator A ->
 //! snapshot -> fresh emulator B must give the same state, and keep behaving
 //! the same (continuation probes) afterwards.

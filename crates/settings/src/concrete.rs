@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Concrete `Settings` structs for the app's main feature areas (T19-002
 //! Anweisung #5). Each wraps its `SettingsContent` area, resolved against
 //! that area's own `defaults()` so every field is guaranteed `Some` (as long

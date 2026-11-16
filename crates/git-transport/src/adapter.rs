@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Backend adapter for the UI-free Git graph contract.
 
 use labonair_git::{GitBlameLine, GitFuture, GitGraphService, GitService};

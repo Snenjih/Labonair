@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Domain models for saved hosts and host groups.
 //!
 //! Persistence, transport, and UI are intentionally outside this crate. This

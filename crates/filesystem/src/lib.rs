@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Local filesystem services shared by feature modules.
 //!
 //! This crate intentionally has no GPUI or application-shell dependency. It

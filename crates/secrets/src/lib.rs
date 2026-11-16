@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Unified local secret storage for all platforms.
 //!
 //! Secrets are stored in the app's local data directory as either:

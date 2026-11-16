@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Path-safety and shell-command guards for AI tool calls (T11-004).
 //!
 //! Pure-Rust port of `reference-src/src/modules/ai/lib/security.ts`.

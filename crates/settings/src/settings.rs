@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-settings` — the layered [`SettingsStore`] (T19-002).
 //!
 //! Loads every settings layer (`assets/settings/default.json` < the user's

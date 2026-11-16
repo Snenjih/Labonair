@@ -1,7 +1,8 @@
 [package]
 name = "labonair-terminal-host"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
+license = "GPL-3.0-or-later"
 
 # Detached session host (ADR 0009): wire protocol + daemon library + the
 # `labonair-host` binary. Must stay free of GPUI and labonair-theme.

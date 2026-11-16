@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `NumberField` — a bounded numeric stepper (`−` / value / `+`) with an
 //! optional filled track underneath.
 //!

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The onboarding page: one registered step per page, with Back / Next /
 //! Finish in a footer and Skip in the header, in the shape of Zed's onboarding
 //! page. The shell hosts it as a workspace tab.
@@ -116,37 +119,36 @@ impl Render for OnboardingView {
             .child("Skip")
             .on_click(cx.listener(|this, _, _window, cx| this.close(false, cx)));
 
-        let header = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(c.space(16.0))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(c.space(4.0))
-                    .child(
-                        div()
-                            .text_size(px(22.0))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Welcome to Labonair"),
-                    )
-                    .child(div().text_sm().text_color(c.muted).child(
-                        "Set up the basics. You can change all of this later in Settings.",
-                    )),
-            )
-            .child(skip);
+        let header =
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(c.space(16.0))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(c.space(4.0))
+                        .child(
+                            div()
+                                .text_size(px(22.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child("Welcome to Labonair"),
+                        )
+                        .child(div().text_sm().text_color(c.muted).child(
+                            "Set up the basics. You can change all of this later in Settings.",
+                        )),
+                )
+                .child(skip);
 
-        let mut footer = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(div().text_sm().text_color(c.muted).child(format!(
+        let mut footer = div().flex().items_center().justify_between().child(
+            div().text_sm().text_color(c.muted).child(format!(
                 "Step {} of {}",
                 self.page + 1,
                 self.steps.len()
-            )));
+            )),
+        );
         let mut nav = div().flex().gap(c.space(8.0));
         if self.page > 0 {
             nav = nav.child(
@@ -159,9 +161,14 @@ impl Render for OnboardingView {
             );
         }
         nav = nav.child(if last {
-            button("onboarding-finish", c, ButtonVariant::Action, ButtonSize::Sm)
-                .child("Finish setup")
-                .on_click(cx.listener(|this, _, _window, cx| this.close(true, cx)))
+            button(
+                "onboarding-finish",
+                c,
+                ButtonVariant::Action,
+                ButtonSize::Sm,
+            )
+            .child("Finish setup")
+            .on_click(cx.listener(|this, _, _window, cx| this.close(true, cx)))
         } else {
             button("onboarding-next", c, ButtonVariant::Action, ButtonSize::Sm)
                 .child("Next")

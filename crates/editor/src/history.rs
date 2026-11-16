@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Transaction-based undo / redo history.
 //!
 //! History stores forward and inverse edits, not full document snapshots.

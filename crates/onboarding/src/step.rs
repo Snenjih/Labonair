@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The step contract and its registry.
 //!
 //! A step is one screen of the onboarding card. The owning module registers

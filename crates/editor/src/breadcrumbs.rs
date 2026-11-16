@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-free data and state helpers for the Editor breadcrumb row.
 
 use std::path::Path;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Labonair AI provider integration (Phase 10 — T11-001).
 //!
 //! A pure-Rust replacement for the reference app's Vercel-AI-SDK layer

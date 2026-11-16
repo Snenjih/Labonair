@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Dual-pane SFTP file browser (T08-001).
 //!
 //! Ported from `reference-src/src/modules/sftp/` (`SftpPane` / `SftpToolbar` /
@@ -41,8 +44,8 @@ use gpui::{
 };
 use tokio::runtime::Handle as TokioHandle;
 
-use labonair_filesystem::{mutate, tree};
 use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
+use labonair_filesystem::{mutate, tree};
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings::{
     enqueue_user_settings_write, Settings as _, SettingsStore, SftpBrowserSettings, SftpColumn,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Deterministic keymap resolution, independent of GPUI and file formats.
 
 use std::collections::HashMap;

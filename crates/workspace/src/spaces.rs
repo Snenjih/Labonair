@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Spaces: named, switchable groups of tabs.
 //!
 //! A workspace previously had exactly one identity (Standalone or a single

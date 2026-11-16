@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editor-owned local language services.
 //!
 //! This module deliberately keeps the protocol boundary independent from

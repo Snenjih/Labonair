@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Component gallery — a debug-only window that renders every `ui-kit`
 //! primitive across its variants, sizes and states (T20-004).
 //!

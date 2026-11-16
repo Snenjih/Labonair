@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared `Divider` primitive.
 //!
 //! Port of `reference-src/src/components/ui/separator.tsx`:

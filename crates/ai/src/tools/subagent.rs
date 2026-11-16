@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Sub-agent registry + runner interface (T11-004).
 //!
 //! Port of `reference-src/src/modules/ai/agents/registry.ts` +

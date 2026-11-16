@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared icon-only button with caller-owned selected and disabled states.
 
 use gpui::{

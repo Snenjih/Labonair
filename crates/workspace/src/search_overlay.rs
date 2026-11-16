@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`SearchOverlay`] — the `Cmd+F` search overlay (T18-002).
 //!
 //! Replaces the titlebar's provisional inline search (T18-001) and the

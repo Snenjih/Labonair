@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Executable command contributions owned by the command-palette module.
 //!
 //! The palette UI does not know how the application presents its modal. The

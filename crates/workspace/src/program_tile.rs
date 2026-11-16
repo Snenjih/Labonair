@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Foreground-program tiles for terminal tabs (Gorex `programs.go`
 //! `programOf`). Tiles are own abstract glyphs on brand-ish colours; no
 //! third-party logos are shipped (see `docs/architecture.md` §8.19).

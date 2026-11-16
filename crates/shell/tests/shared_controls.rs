@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! CI guard for the one-button-family rule (`docs/design-system.md`).
 //!
 //! Every button, icon button and toggle comes from `labonair-ui-kit`

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! One-time compatibility migrations for pre-v2 Labonair settings files.
 //!
 //! These readers intentionally remain separate from the live SettingsStore:

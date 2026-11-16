@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Fault-tolerant JSON → [`SettingsContent`] parsing (T19-001 Anweisung #5,
 //! the `FallibleOption` equivalent: `zed-refrence/zed/crates/settings_content/
 //! src/fallible_options.rs`).

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Saved command snippets and snippet groups.
 //!
 //! Persistence, domain data, and local process execution live here. SSH

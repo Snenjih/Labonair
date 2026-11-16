@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Statusbar item for the activity registry: one inline entry (the most
 //! important one) plus a popover listing everything that is running.
 
@@ -161,17 +164,18 @@ impl ActivityStatusItem {
                             ),
                     );
                 }
-                let mut row = ListItem::new(SharedString::from(format!("activity-row-{id}")), palette)
-                    .extra(move |row| row.border_b_1().border_color(border))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .w_full()
-                            .child(icon_element(&entry, &palette, px(13.0)))
-                            .child(body),
-                    );
+                let mut row =
+                    ListItem::new(SharedString::from(format!("activity-row-{id}")), palette)
+                        .extra(move |row| row.border_b_1().border_color(border))
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .w_full()
+                                .child(icon_element(&entry, &palette, px(13.0)))
+                                .child(body),
+                        );
                 if let Some((label, is_cancel)) = trailing {
                     row = row.trailing(
                         icon_button_builder(
@@ -182,16 +186,18 @@ impl ActivityStatusItem {
                         .size(ButtonSize::IconXxs)
                         .tooltip(label)
                         .render()
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            cx.stop_propagation();
-                            this.center.update(cx, |center, cx| {
-                                if is_cancel {
-                                    center.activate(id, true, cx);
-                                } else {
-                                    center.dismiss(id, cx);
-                                }
-                            });
-                        })),
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
+                                cx.stop_propagation();
+                                this.center.update(cx, |center, cx| {
+                                    if is_cancel {
+                                        center.activate(id, true, cx);
+                                    } else {
+                                        center.dismiss(id, cx);
+                                    }
+                                });
+                            },
+                        )),
                     );
                 }
                 row
@@ -245,11 +251,10 @@ impl StatusItem for ActivityStatusItem {
         self.presence.tick(Instant::now(), &palette.motion);
 
         let label = inline_label(&primary, entries.len() - 1);
-        let tooltip = primary
-            .draft
-            .tooltip
-            .clone()
-            .or_else(|| (label != primary.draft.message).then(|| primary.draft.message.clone()));
+        let tooltip =
+            primary.draft.tooltip.clone().or_else(|| {
+                (label != primary.draft.message).then(|| primary.draft.message.clone())
+            });
         let has_click = primary.draft.click_action.is_some();
         let primary_id = primary.id;
 

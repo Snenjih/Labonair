@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Host-Manager dashboard — the "Home" tab (T07-001).
 //!
 //! Lives in `labonair-hosts-ui` since T16-008 (moved out of `labonair-workspace`,

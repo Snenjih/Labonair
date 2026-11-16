@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Session snapshot format v3: every tab is a pane group whose leaves are
 //! `{kind, state}` (R10-002, ADR 0005).
 //!

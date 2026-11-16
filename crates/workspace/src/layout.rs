@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace-owned persistence for dock and sidebar layout.
 //!
 //! Layout is runtime/session state, not a user preference. It therefore lives

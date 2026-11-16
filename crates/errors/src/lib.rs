@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! App-wide error catalog (T15-002).
 //!
 //! [`LabonairError`] is the single structured error type application modules surface

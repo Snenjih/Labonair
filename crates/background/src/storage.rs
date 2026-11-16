@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

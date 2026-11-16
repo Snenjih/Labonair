@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Declarative Settings navigation and field placement.
 //!
 //! Visible pages are independent of `SettingsContent`'s persisted JSON groups.

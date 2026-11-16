@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Status-bar item contracts.
 //!
 //! Ported from `zed-refrence/zed/crates/workspace/src/status_bar.rs`

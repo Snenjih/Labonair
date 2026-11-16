@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Composition-only state for the native application.
 //!
 //! This bundle exists at the application composition boundary. Feature code

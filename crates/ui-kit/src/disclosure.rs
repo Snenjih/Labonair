@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared `Disclosure` primitive — a clickable chevron + label row that
 //! toggles a collapsed/expanded flag the caller owns.
 //!

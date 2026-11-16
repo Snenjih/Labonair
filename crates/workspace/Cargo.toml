@@ -1,7 +1,8 @@
 [package]
 name = "labonair-workspace"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
+license = "GPL-3.0-or-later"
 
 [lib]
 name = "labonair_workspace"
@@ -46,7 +47,7 @@ labonair-sftp = { path = "../sftp" }
 labonair-transfers = { path = "../transfers" }
 labonair-ai = { path = "../ai" }
 labonair-settings = { path = "../settings" }
-labonair-settings-json = { version = "0.1.0", path = "../settings-json" }
+labonair-settings-json = { path = "../settings-json" }
 labonair-mcp-core = { path = "../mcp-core" }
 
 [dev-dependencies]

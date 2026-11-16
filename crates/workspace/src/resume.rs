@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Resume-on-restore policy (Option D of ADR 0009): which command a restored
 //! terminal pane should offer or run to re-open its former foreground program.
 //!

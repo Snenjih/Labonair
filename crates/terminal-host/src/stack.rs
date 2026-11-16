@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The concrete SSH / SFTP / transfer stack for the `labonair-host` binary:
 //! the same adapters the app composes in `labonair-shell`, wired with
 //! daemon-side equivalents of what the app provides.

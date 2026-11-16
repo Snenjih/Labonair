@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `#[derive(MergeFrom)]` — generates a field-wise [`MergeFrom::merge_from`]
 //! impl for a struct: `self.field.merge_from(&other.field)` for every field,
 //! recursing into whatever `MergeFrom` impl that field's type has (the

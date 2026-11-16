@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Provider-instance management + active model/provider persistence.
 //!
 //! Port of `reference-src/src/modules/ai/store/providersStore.ts` +

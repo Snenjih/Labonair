@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! An editable document: the canonical editor buffer plus selection, undo
 //! history, and the on-disk baseline used for dirty-state tracking.
 //!

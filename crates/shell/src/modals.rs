@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shell-local [`ModalView`] wrapper newtypes (T17-005, relocated in T17-006).
 //!
 //! The command palette and updater dialog predate the

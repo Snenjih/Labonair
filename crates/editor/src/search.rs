@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Typed in-buffer find and replace.
 //!
 //! Matching operates on one immutable [`BufferSnapshot`]. Regex compilation

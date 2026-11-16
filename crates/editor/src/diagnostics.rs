@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editor-owned project diagnostics shared by the open document views.
 //!
 //! Each EditorView publishes only revision-accepted diagnostics for its own

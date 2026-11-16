@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! A compact selection-first Helix mode over the canonical [`Document`].
 //!
 //! Select mode extends the current selection for every motion. Delete and

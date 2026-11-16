@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Neutral Project-Diff request contract (Zed-parity redesign Phase 4,
 //! `docs/ui-comparison-zed-sidebar-status-bar.md` §9.5 / §12.6).
 //!

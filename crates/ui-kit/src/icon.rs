@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Icon system — Zed-parity (`docs/architecture.md` §8.19).
 //!
 //! Two strictly separated concerns, mirroring Zed:

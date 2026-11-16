@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Theme-owned application policy (R08-005).
 //!
 //! `labonair-theme` owns the runtime `ThemeStore`, the deterministic built-in

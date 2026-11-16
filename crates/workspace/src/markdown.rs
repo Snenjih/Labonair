@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Minimal Markdown parsing for the AI chat's streaming responses (T11-003).
 //!
 //! The reference app renders assistant output with the web `streamdown`

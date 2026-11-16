@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `GitChangeRow` — a dense version-control entry (Zed-parity redesign Phase 2,
 //! `docs/ui-comparison-zed-sidebar-status-bar.md` §9.5 / §10.4 / §12.5).
 //!

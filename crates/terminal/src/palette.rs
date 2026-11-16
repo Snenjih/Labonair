@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Bridge from the design-token [`TerminalPalette`] (T02-001) to the engine's
 //! [`TerminalColors`] (T02-004).
 //!

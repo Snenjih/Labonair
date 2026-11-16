@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `Dock` — one edge dock (left / right / bottom) that hosts several
 //! registered panels with a single active one, plus open / size / zoom state
 //! and its own persistence record.

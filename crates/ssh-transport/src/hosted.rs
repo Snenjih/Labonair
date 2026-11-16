@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Sessions hosted outside this process (the detached session host).
 //!
 //! Remote git, snippet runs and the MCP bridge read the in-process session map

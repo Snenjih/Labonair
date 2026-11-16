@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The token bundle the ui-kit primitives are styled from.
 //!
 //! Rendering a primitive from inside a view's `render` usually cannot hold a
@@ -182,7 +185,8 @@ impl Palette {
         // card would show its own shadow through its fill (darkening the glass
         // to near-opaque). Glass surfaces keep only the rim.
         let no_shadow = !matches!(translucent, labonair_theme_tokens::SurfaceMaterial::Opaque);
-        let card_shadow = |layers: &[_]| ShadowStack::from_layers(if no_shadow { &[] } else { layers });
+        let card_shadow =
+            |layers: &[_]| ShadowStack::from_layers(if no_shadow { &[] } else { layers });
         Self {
             canvas: [
                 fade(f.canvas_top),
@@ -340,7 +344,8 @@ mod tests {
     fn card_over_canvas_is_as_glassy_as_the_flat_surface() {
         for theme in [Theme::dark(), Theme::light()] {
             let c = Palette::from_theme(&GlassTheme(theme.clone()));
-            let flat = 1.0 - VibrancyLayer::Canvas.opacity_in(GlassTheme(theme.clone()).surface_material());
+            let flat = 1.0
+                - VibrancyLayer::Canvas.opacity_in(GlassTheme(theme.clone()).surface_material());
             let canvas_a = c.canvas[0].a / theme.float.canvas_top.a;
             let stacked = (1.0 - canvas_a) * (1.0 - c.pane.a / theme.float.pane.a);
             assert!(c.pane.a < 1.0 && c.canvas[0].a < 1.0 && c.dock_card.a < 1.0);

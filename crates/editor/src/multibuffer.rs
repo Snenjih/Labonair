@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editable excerpts from several source documents in one virtual view.
 //!
 //! A Multi-Buffer keeps each file's text and history in its original coordinate

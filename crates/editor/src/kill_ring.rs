@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Bounded in-memory history for editor Kill Ring Cut and Yank commands.
 
 use std::collections::VecDeque;

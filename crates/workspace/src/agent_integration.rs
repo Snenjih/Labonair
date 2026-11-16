@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Agent integrations: per-pane agent state polled from `sync_meta`, the tab
 //! badge, and the "agent finished" notification. Recognition/heuristics are
 //! the pure `labonair_terminal::agent` module.

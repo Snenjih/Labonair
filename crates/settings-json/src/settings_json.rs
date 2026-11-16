@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Surgical single-node edits to a `settings.json` text (T19-005).
 //!
 //! Port of `zed-refrence/zed/crates/settings_json/src/settings_json.rs`,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Headless smoke test for the PTY → parser → cells chain (T03-001).
 //!
 //! Spawns a shell, runs a command, and prints the resulting terminal grid to

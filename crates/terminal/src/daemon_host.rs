@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`DaemonHost`]: the [`SessionHost`] that puts terminal sessions into the
 //! detached session host daemon (ADR 0009).
 //!

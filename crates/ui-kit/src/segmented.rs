@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `SegmentedControl` — a row of mutually exclusive options where exactly one
 //! is selected.
 //!

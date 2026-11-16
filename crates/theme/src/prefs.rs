@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Theme-selection preference enums.
 //!
 //! [`ThemePreference`] (System / Light / Dark) and [`EditorThemeId`] (the

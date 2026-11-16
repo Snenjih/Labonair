@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! SFTP pane adapter: the dual-pane browser. A split opens a new browser on
 //! the same host with its own SFTP session.
 

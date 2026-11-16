@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! BYOK key storage. Keys live in the OS keyring (`keyring` crate) under the
 //! `labonair-ai` service and are **never** written to disk, logs, or app state.
 //!

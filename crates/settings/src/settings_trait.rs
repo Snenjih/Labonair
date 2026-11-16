@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `trait Settings` — a feature-local, typed slice of the merged
 //! [`SettingsContent`] tree (T19-002 Anweisung #4).
 //!

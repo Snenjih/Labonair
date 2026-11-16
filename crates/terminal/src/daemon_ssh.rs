@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`SshHostedHost`]: the [`SessionHost`] of an SSH terminal pane whose
 //! connection lives in the detached session host (ADR 0009).
 //!

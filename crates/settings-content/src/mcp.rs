@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `mcp` area — the AI Agent Bridge, today's `"mcp"` settings-file key
 //! (`labonair_mcp_core::preferences::McpPreferences`).
 

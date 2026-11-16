@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Open/close reveal of the edge docks (R10-002).
 //!
 //! A dock is only built while it is open, so a reveal needs two pieces of

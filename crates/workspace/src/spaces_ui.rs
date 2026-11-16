@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Spaces UI: the Spaces popover, space headers, the Recent Projects section,
 //! the per-space "..." menu and the sidebar "New Space" dropdown (R10-002).
 //!

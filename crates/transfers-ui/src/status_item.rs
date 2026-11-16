@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Status-bar contribution for the transfer queue.
 //!
 //! The transfer UI owns both the queue dropdown and its status-bar badge. The

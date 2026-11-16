@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Host queries that do not require application composition.
 //!
 //! Connection lifecycle belongs to `labonair-persistence`; this module owns

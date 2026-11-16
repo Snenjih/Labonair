@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Client side of the detached session host (ADR 0009): ONE socket connection
 //! per app process, shared by every hosted session.
 //!

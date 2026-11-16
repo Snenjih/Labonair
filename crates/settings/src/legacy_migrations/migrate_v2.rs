@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! T19-009: one-time, idempotent migration of the legacy split
 //! `preferences`/`editor`/`mcp` top-level keys in `config.json`
 //! into the flat, area-based `SettingsContent` layout (T19-001), the

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editor-owned Git gutter and review bridge.
 //!
 //! Git remains the owner of repository state and mutations. This module only

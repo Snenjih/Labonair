@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Icon themes (T20-006, Zed-parity model — `docs/architecture.md` §8.19).
 //!
 //! A **swappable file/folder glyph mapping** with two levels of indirection:

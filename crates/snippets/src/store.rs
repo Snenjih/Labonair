@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! SQLite-backed snippet and snippet-group store.
 
 use crate::{CommandSnippet, SnippetGroup, SnippetReorderItem};

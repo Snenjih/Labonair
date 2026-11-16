@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Settings > Terminal > "Background host" status block (ADR 0009): whether
 //! the detached session host is up, the sessions living in it with a Kill
 //! button each, "Stop all sessions", and, for a host built for another

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Theme-token access for the ui-kit primitives.
 //!
 //! The [`UiTheme`] / [`ActiveThemeExt`] contracts moved to the foundation-level

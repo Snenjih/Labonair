@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Snippet execution host contract (R08-003).
 //!
 //! The Snippets panel lives in `labonair-panel-snippets`. To run a snippet it

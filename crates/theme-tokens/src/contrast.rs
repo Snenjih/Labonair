@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! WCAG 2.x contrast helpers (Zed-parity redesign Phase 5, `docs/ui-comparison-
 //! zed-sidebar-status-bar.md` §13 Phase 5.4 / §14 "theme contrast").
 //!

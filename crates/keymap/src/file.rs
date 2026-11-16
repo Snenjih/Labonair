@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `keymap.json` — parsing, layered merging and validation (T19-008).
 //!
 //! Pure data/logic, decoupled from the palette view's `CommandId`

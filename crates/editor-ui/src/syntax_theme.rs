@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editor syntax colour schemes (T06-002).
 //!
 //! An [`EditorPalette`] maps every [`HighlightKind`] to a concrete [`Hsla`].

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared tab-strip item for workspace and docked tab surfaces.
 
 use std::rc::Rc;

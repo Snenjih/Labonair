@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Loads, merges, validates and live-reloads `keymap.json` (T19-008), and
 //! feeds the result into [`crate::menu::apply_keymap`] plus the
 //! `KeybindDisplay` GPUI global the command palette and panel-toggle

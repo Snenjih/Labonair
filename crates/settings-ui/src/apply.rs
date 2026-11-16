@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Small pure helpers for the Settings UI. The `Settings` -> `ThemeStore`
 //! bridge that used to live here moved to `labonair-theme-ui` in R08-005 so
 //! the Settings UI stays a values-only editor.

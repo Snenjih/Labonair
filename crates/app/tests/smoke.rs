@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Release smoke test (T15-004).
 //!
 //! Exercises the packaging-critical core paths without a display server, so it

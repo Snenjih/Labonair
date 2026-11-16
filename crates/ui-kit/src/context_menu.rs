@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared right-click context-menu primitive.
 //!
 //! A port of the reference `components/ui/context-menu.tsx` (radix) look &

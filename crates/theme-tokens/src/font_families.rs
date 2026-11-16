@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The bundled font-family names + platform fallbacks. The embedded font bytes
 //! and system-font discovery stay in `labonair-theme::fonts`; only these
 //! string constants are needed by the token defaults, so they live here.

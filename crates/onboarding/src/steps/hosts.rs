@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Step 3 — import hosts from `~/.ssh/config`.
 //!
 //! Shown only when the config has at least one host. The import runs when the

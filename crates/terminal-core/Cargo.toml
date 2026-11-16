@@ -1,7 +1,8 @@
 [package]
 name = "labonair-terminal-core"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
+license = "GPL-3.0-or-later"
 
 # GPUI-free terminal engine and PTY session. The future `labonair-host` daemon
 # depends on this crate; `labonair-terminal` re-exports it for the app.

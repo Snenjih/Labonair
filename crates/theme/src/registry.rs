@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Theme registry + JSON theme families (T20-005).
 //!
 //! Where [`crate::import`] models the *single imported custom theme* of the

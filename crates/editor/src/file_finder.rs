@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! GPUI-free contract for the editor's workspace file finder.
 //!
 //! The editor owns matching, ranking, result limits, and the generation-bound

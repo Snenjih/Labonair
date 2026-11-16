@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-independent registry of in-flight background activity.
 //!
 //! Feature modules announce work that is running (a git fetch, an SSH
@@ -63,11 +66,7 @@ pub struct ActivityDraft {
 }
 
 impl ActivityDraft {
-    pub fn new(
-        kind: ActivityKind,
-        source: impl Into<String>,
-        message: impl Into<String>,
-    ) -> Self {
+    pub fn new(kind: ActivityKind, source: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             kind,
             key: None,
@@ -267,7 +266,10 @@ mod tests {
         let mut registry = ActivityRegistry::new();
         registry.begin(draft(ActivityKind::Git, "fetch"), start);
         let connect = registry.begin(draft(ActivityKind::Connection, "ssh"), start);
-        let later = registry.begin(draft(ActivityKind::Git, "pull"), start + Duration::from_secs(1));
+        let later = registry.begin(
+            draft(ActivityKind::Git, "pull"),
+            start + Duration::from_secs(1),
+        );
         let snapshot = registry.snapshot(start + Duration::from_secs(2));
         assert_eq!(snapshot[0].id, connect);
         assert_eq!(snapshot[1].id, later);
@@ -282,12 +284,17 @@ mod tests {
             draft(ActivityKind::Git, "status").show_after(Duration::from_millis(300)),
             start,
         );
-        assert!(registry.snapshot(start + Duration::from_millis(100)).is_empty());
+        assert!(registry
+            .snapshot(start + Duration::from_millis(100))
+            .is_empty());
         assert_eq!(
             registry.next_reveal(start + Duration::from_millis(100)),
             Some(start + Duration::from_millis(300))
         );
-        assert_eq!(registry.snapshot(start + Duration::from_millis(300)).len(), 1);
+        assert_eq!(
+            registry.snapshot(start + Duration::from_millis(300)).len(),
+            1
+        );
         registry.finish(id);
         assert!(registry.is_empty());
     }

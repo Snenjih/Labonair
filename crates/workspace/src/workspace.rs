@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace: tab bar + split-pane content (T04-001, T04-002).
 //!
 //! [`Workspace`] owns the [`TabStore`], the shared [`TerminalRegistry`], the
@@ -38,6 +41,7 @@ pub mod file_finder;
 mod host_restore;
 mod host_sessions;
 pub use host_sessions::list_background_sessions;
+pub mod frame_insets;
 pub mod layout;
 pub mod live_bridge;
 pub mod markdown;
@@ -76,7 +80,6 @@ pub(crate) mod tab_hover;
 pub mod tab_strip;
 pub mod tabs;
 pub mod tabs_panel;
-pub mod frame_insets;
 pub mod tiling;
 pub mod views;
 pub mod zoom;

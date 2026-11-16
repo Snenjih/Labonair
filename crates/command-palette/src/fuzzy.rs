@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Fuzzy / prefix / substring matcher (port of the reference `filter` in
 //! `CommandPalette.tsx`, which switches on `commandPaletteSearchMode`).
 //!

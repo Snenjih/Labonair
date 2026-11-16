@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editor pane adapter. Panes of one document share a single `EditorView`
 //! (shared buffer, history and dirty state); each pane shows its own view
 //! group (selection, scroll, folds). The pane whose group is the editor's

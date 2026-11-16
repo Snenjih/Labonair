@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared modal scrim and dialog surface.
 //!
 //! Owners keep dialog state, focus, dismissal, and decisions. This module

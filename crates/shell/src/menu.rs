@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Native macOS menu bar + Dock context menu (T04-005).
 //!
 //! Ported from `reference-src/src-tauri/src/lib.rs` (`build_menu`),
@@ -136,7 +139,8 @@ pub fn init(cx: &mut App) {
             concat!(
                 "Version ",
                 env!("CARGO_PKG_VERSION"),
-                " \u{2014} a native terminal, SSH & SFTP client with integrated AI. labonair.app"
+                " \u{2014} a native terminal, SSH & SFTP client with integrated AI. labonair.dev\n",
+                "Copyright \u{a9} 2026 Snenjih. Licensed under GPL-3.0-or-later."
             ),
         )
     });

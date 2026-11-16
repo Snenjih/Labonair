@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! JSON-Schema generation + `settings.json` validation (T19-006).
 //!
 //! [`json_schema`] derives a `serde_json::Value` JSON Schema straight from

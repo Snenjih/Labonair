@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace-owned command metadata and composition adapters.
 //!
 //! The workspace capability contributes its discoverable commands and their

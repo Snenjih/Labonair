@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Client-side mirror of the MCP bridge's per-tab agent-access grants
 //! (T11-006).
 //!

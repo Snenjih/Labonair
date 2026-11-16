@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Keyboard & mouse → terminal byte-sequence mapping (T03-003).
 //!
 //! This module is render-free and framework-free: it takes plain, GPUI-agnostic

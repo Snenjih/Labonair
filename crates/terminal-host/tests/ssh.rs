@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! In-process tests of the SSH / SFTP / transfer side of the detached session
 //! host: the real server on a temp socket with fake services injected through
 //! the `HostServices` seam (plus one run against the concrete stack).

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Compile-time `Settings` registration via `inventory` (T19-002
 //! Anweisung #4). `#[derive(RegisterSetting)]` (see `crates/settings-macros`)
 //! emits an `inventory::submit! { RegisteredSetting { .. } }` for its type;

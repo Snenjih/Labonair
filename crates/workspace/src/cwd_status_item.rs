@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace-owned current-working-directory breadcrumb status item.
 
 use gpui::prelude::FluentBuilder;

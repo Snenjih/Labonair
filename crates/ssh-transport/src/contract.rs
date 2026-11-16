@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Concrete transport adapters for the UI-free SSH capability contracts.
 
 use super::{client, config_parser, pty, sftp as remote, tunnels};

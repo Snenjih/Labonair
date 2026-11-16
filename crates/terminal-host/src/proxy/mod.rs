@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! App-side proxies of the daemon's SSH / SFTP / transfer services (ADR 0009).
 //!
 //! [`DaemonServices`] implements the UI-free service traits (`SshConnectionService`,

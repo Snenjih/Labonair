@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Composition-facing loading contract for the keymap module.
 //!
 //! This adapter owns the translation from command metadata to a loaded

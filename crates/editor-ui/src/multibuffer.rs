@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editable excerpt presentation for the Editor-owned Multi-Buffer model.
 
 use gpui::prelude::FluentBuilder;

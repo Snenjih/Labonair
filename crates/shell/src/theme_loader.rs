@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! User theme files: where they live, (re)loading them into the `ThemeStore`
 //! and reporting skipped files.
 //!

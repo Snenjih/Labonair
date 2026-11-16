@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Session v3 capture and restore on `Workspace` (R10-002, ADR 0005).
 //!
 //! A tab is captured as its pane tree: every leaf is `{kind, state}`

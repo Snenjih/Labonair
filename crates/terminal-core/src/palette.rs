@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The color model the terminal engine consumes (T02-004).
 //!
 //! `alacritty_terminal` works with 8-bit-per-channel RGB and an indexed color

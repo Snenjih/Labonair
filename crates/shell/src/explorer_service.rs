@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Composition adapter for Explorer's remote-directory contract.
 //!
 //! The Explorer panel only needs a transport-neutral directory listing. The

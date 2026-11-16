@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Deterministic stdio LSP fixture used by the Editor process tests.
 //! This is intentionally tiny and has no shell or installed-tool dependency.
 

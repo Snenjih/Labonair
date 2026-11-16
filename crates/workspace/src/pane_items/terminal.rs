@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Terminal pane adapter: a local shell or an SSH shell.
 
 use gpui::{AnyElement, App, Context, IntoElement, SharedString, Styled, Window};

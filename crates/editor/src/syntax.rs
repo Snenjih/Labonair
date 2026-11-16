@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Tree-sitter syntax highlighting (T06-002).
 //!
 //! [`SyntaxHighlighter`] parses a document with the Tree-sitter grammar for its

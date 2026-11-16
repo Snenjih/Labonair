@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Bundled font assets.
 //!
 //! The defaults mirror the frozen reference app (Inter Variable for the UI,

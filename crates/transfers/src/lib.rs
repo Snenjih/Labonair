@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-free transfer capability contracts and lifecycle registry.
 //!
 //! The transfer module owns job identity, lifecycle state, progress, conflict

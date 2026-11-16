@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! GPUI code-editor view (T06-001).
 //!
 //! Renders and drives a [`labonair_editor::Document`]: viewport-based line
@@ -10063,7 +10066,9 @@ impl EditorView {
                 .bg(palette.muted.opacity(0.18));
             match self.prefs.minimap_thumb_border() {
                 EditorMinimapThumbBorder::All => thumb.border_1().border_color(palette.border),
-                EditorMinimapThumbBorder::LeftOpen => thumb.border_l_1().border_color(palette.border),
+                EditorMinimapThumbBorder::LeftOpen => {
+                    thumb.border_l_1().border_color(palette.border)
+                }
                 EditorMinimapThumbBorder::None => thumb,
             }
         });

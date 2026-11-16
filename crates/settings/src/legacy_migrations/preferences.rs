@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The legacy flat `Preferences` shape (T13-001), kept **only** as the
 //! deserialize target for [`super::migrate_v2`]'s one-time conversion of a
 //! pre-`schemaVersion: 2` `config.json` (the `"preferences"` object) into the

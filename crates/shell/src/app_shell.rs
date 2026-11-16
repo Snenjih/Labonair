@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`AppShell`] — the app's root coordinator, reduced to pure composition in
 //! T17-006.
 //!

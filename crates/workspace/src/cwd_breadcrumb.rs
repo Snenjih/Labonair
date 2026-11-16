@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Pure path helpers for the statusbar CWD breadcrumb — port of
 //! `reference-src/src/modules/statusbar/lib/pathUtils.ts` and the
 //! `resolveProvider` seam from `CwdBreadcrumb.tsx`.

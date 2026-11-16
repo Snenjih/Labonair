@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Exit-fade plumbing for the workspace-owned floating surfaces (popovers and
 //! context menus, R10-002). Each is a `MenuSlot` (ui-kit `PresenceSlot`: the
 //! surface data plus its open/closing/closed state); the helpers here dismiss

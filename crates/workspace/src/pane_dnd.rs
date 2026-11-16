@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Drag and drop between tabs and panes: the pure half (R10-002, ADR 0005).
 //!
 //! Everything here is geometry and tree surgery on [`WorkspaceLayout`]s; no

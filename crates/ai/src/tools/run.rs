@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Agent tool-execution loop + approval orchestration (T11-004).
 //!
 //! After a model turn produces tool calls, [`ToolTurn::begin`] auto-executes

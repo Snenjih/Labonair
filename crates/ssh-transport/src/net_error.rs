@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 /// Heuristic classification of a raw error string as a network-level failure
 /// (dropped connection, dead socket) vs. any other error (permission denied,
 /// file not found, stale session, ...). Shared between the transfer worker

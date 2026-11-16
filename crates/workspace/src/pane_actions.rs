@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Pane commands on `Workspace`: split, close, focus, zoom, move
 //! (R10-002, ADR 0005). The tree maths lives in [`crate::tiling`] /
 //! [`crate::pane_ops`]; this module applies it to the live pane store and

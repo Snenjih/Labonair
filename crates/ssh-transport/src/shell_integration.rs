@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 // Remote-shell OSC7/133 bootstrap.
 //
 // `channel.shell()` (see pty.rs) just starts the user's unmodified remote

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Outer insets of the framed (Comfortable) layout as pure functions.
 //!
 //! Comfortable cards keep a gap to their *horizontal* neighbours, but never

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Local command execution owned by the snippets capability.
 //!
 //! The runner has no knowledge of GPUI, the application event bus, or the

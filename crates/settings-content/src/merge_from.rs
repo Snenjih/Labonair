@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`MergeFrom`] — recursive settings-layer merge (default < user < project).
 //!
 //! Trimmed port of `zed-refrence/zed/crates/settings_content/src/merge_from.rs`,

@@ -4160,11 +4160,11 @@ dependencies = [
 
 [[package]]
 name = "labonair-activity"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "labonair-activity-ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-activity",
@@ -4175,7 +4175,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-ai"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4194,7 +4194,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-background"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64",
  "gpui",
@@ -4212,14 +4212,14 @@ dependencies = [
 
 [[package]]
 name = "labonair-background-host"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
 ]
 
 [[package]]
 name = "labonair-command-palette"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -4235,11 +4235,11 @@ dependencies = [
 
 [[package]]
 name = "labonair-command-palette-core"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "labonair-command-palette-runtime"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-command-palette-core",
@@ -4247,7 +4247,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-credentials"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64",
  "labonair-persistence",
@@ -4261,7 +4261,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-editor"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-command-palette-core",
  "regex",
@@ -4289,7 +4289,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-editor-ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-activity-ui",
@@ -4307,7 +4307,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-errors"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "rusqlite",
  "russh",
@@ -4319,7 +4319,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-events"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4328,14 +4328,14 @@ dependencies = [
 
 [[package]]
 name = "labonair-explorer-host"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
 ]
 
 [[package]]
 name = "labonair-filesystem"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "dirs 6.0.0",
  "encoding_rs",
@@ -4353,7 +4353,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-git"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-command-palette-core",
  "serde",
@@ -4361,7 +4361,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-git-transport"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-events",
  "labonair-git",
@@ -4373,14 +4373,14 @@ dependencies = [
 
 [[package]]
 name = "labonair-gpui-ext"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
 ]
 
 [[package]]
 name = "labonair-hosts"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-command-palette-core",
  "labonair-errors",
@@ -4394,7 +4394,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-hosts-host"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-hosts",
@@ -4402,7 +4402,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-hosts-ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-command-palette-core",
@@ -4427,7 +4427,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-keymap"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "dirs 6.0.0",
  "gpui",
@@ -4439,7 +4439,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-keymap-ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-command-palette-core",
@@ -4452,7 +4452,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-mcp-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "schemars 1.2.2",
  "serde",
@@ -4461,7 +4461,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-mcp-server"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "axum",
  "labonair-errors",
@@ -4486,7 +4486,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-notifications"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-notifications-core",
@@ -4497,11 +4497,11 @@ dependencies = [
 
 [[package]]
 name = "labonair-notifications-core"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "labonair-onboarding"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-command-palette-core",
@@ -4519,7 +4519,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-panel"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-gpui-ext",
@@ -4527,7 +4527,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-panel-explorer"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-activity-ui",
@@ -4546,7 +4546,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-panel-git-graph"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-git",
@@ -4559,7 +4559,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-panel-scm"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-activity-ui",
@@ -4578,7 +4578,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-panel-snippets"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-command-palette-core",
@@ -4599,14 +4599,14 @@ dependencies = [
 
 [[package]]
 name = "labonair-persistence"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "rusqlite",
 ]
 
 [[package]]
 name = "labonair-secrets"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "labonair-filesystem",
@@ -4617,7 +4617,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-settings"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "dirs 6.0.0",
  "gpui",
@@ -4641,7 +4641,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-settings-content"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "jsonc-parser",
  "labonair-settings-macros",
@@ -4652,7 +4652,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-settings-json"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "pretty_assertions",
  "serde",
@@ -4664,7 +4664,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-settings-macros"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4673,7 +4673,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-settings-ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -4697,7 +4697,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-sftp"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-errors",
  "labonair-ssh",
@@ -4706,7 +4706,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-sftp-ssh"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-errors",
  "labonair-events",
@@ -4723,7 +4723,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-shell"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "dirs 6.0.0",
  "gpui",
@@ -4789,7 +4789,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-snippets"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-command-palette-core",
  "labonair-errors",
@@ -4803,14 +4803,14 @@ dependencies = [
 
 [[package]]
 name = "labonair-snippets-host"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
 ]
 
 [[package]]
 name = "labonair-snippets-ssh"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-events",
  "labonair-snippets",
@@ -4822,7 +4822,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-ssh"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "labonair-errors",
  "serde",
@@ -4831,7 +4831,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-ssh-transport"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "dirs 6.0.0",
  "labonair-errors",
@@ -4856,7 +4856,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-terminal"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "alacritty_terminal",
  "gpui",
@@ -4871,7 +4871,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-terminal-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "alacritty_terminal",
  "flate2",
@@ -4885,7 +4885,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-terminal-host"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64",
  "labonair-errors",
@@ -4910,11 +4910,11 @@ dependencies = [
 
 [[package]]
 name = "labonair-terminal-integration"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "labonair-theme"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "fontdb 0.24.0",
  "gpui",
@@ -4929,7 +4929,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-theme-tokens"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "palette",
@@ -4939,7 +4939,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-theme-ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -4959,7 +4959,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-transfers"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4968,7 +4968,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-transfers-ssh"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "dirs 6.0.0",
  "labonair-events",
@@ -4986,7 +4986,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-transfers-ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-panel",
@@ -5000,7 +5000,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-ui-kit"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -5026,7 +5026,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-updater-ui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "gpui",
  "labonair-activity-ui",
@@ -5042,7 +5042,7 @@ dependencies = [
 
 [[package]]
 name = "labonair-workspace"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",

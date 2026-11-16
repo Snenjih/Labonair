@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Tree operations for the universal pane model (R10-002, ADR 0005).
 //!
 //! [`crate::pane_group`] already stores a leaf as a bare [`PaneId`], so any

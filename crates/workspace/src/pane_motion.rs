@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Move/open/close transition of a tab's panes.
 //!
 //! The same reveal the docks use (`dur_slow`, `ease_premium`, grow from an edge

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Finding, installing and starting the `labonair-host` daemon, and the
 //! process-wide [`shared_client`] (ADR 0009, "OS notes").
 //!

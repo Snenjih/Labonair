@@ -1,7 +1,8 @@
 [package]
 name = "labonair-errors"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 rusqlite = { version = "0.40", features = ["bundled"] }

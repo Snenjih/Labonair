@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Pane chrome: the generic [`pane_bar`] header and the [`pane_frame`] around a
 //! pane (R10-002, ADR 0005).
 //!

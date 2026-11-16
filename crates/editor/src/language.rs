@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Lightweight language identification from a file path.
 //!
 //! T06-001 only needs the *identity* of the language (for the status bar and to

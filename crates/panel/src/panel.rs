@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-panel` — the **contracts** shared by the workspace, the panel
 //! feature crates and the shell.
 //!

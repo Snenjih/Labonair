@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Merge-conflict markers in a worktree file: parsing and resolution.
 //!
 //! Pure text in, text out. The DiffView lists every `<<<<<<<` … `>>>>>>>`

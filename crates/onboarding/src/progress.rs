@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Persisted onboarding progress: which steps the user has already seen.
 //!
 //! Per-installation state, deliberately not a setting: `settings.json` is

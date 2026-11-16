@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-free command identity, descriptors, and registry.
 //!
 //! The registry is the product-level extension point for commands. Feature

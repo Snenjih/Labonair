@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-facing data contract for keymap management.
 //!
 //! The management surface is a presentation adapter, not a second keymap

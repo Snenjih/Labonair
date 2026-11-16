@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Live-bridge: lazy access to the *currently active* terminal's context
 //! (cwd + last N lines of the buffer) for the agent (T11-004).
 //!

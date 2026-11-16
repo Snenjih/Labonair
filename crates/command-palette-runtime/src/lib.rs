@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Runtime command handlers contributed by capability owners.
 //!
 //! [`labonair_command_palette_core`] owns command metadata. This crate owns

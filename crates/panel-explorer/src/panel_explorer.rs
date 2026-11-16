@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Sidebar file explorer (T05-001).
 //!
 //! Ported from `reference-src/src/modules/explorer/` — the React tree
@@ -55,8 +58,8 @@ use labonair_filesystem::{mutate, tree};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
-use labonair_explorer_host::ExplorerHost;
 use labonair_activity_ui::{try_activity_center, ActivityCenter, ActivityDraft, ActivityKind};
+use labonair_explorer_host::ExplorerHost;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
     button, chevron_icon_path, context_menu, dialog_surface, icon_button_builder, icon_for_path,

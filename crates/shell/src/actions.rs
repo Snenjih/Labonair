@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shell-side glue that the [`CommandRegistry`](crate::commands) and the
 //! overlay layers reach through: the palette event handler, the
 //! modal-layer mirrors, the shared `AppShell` helper methods that command

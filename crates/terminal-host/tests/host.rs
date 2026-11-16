@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! In-process tests of the detached session host: the real server on a temp
 //! socket, driven by a tiny client that keeps its own emulator (the way the
 //! app will).

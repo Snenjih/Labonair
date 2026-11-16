@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Preview pane adapter: a native preview view; a split opens a second
 //! instance at the same location.
 

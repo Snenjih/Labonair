@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Local terminal session registry (T03-005).
 //!
 //! Owns every live local PTY-backed [`TerminalSession`] and hands out cheap,

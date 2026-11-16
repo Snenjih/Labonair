@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The Hosts page of Settings.
 //!
 //! One view, two levels (ADR 0007): a list page (search, Hosts | Credentials

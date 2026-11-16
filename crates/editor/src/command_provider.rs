@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editor-owned command metadata.
 
 use crate::editing::{DeleteTarget, EditIntent};
@@ -1007,7 +1010,11 @@ mod tests {
                 active: true,
             }),
         }));
-        let actions: Vec<_> = snapshot.items.iter().map(|item| item.action.clone()).collect();
+        let actions: Vec<_> = snapshot
+            .items
+            .iter()
+            .map(|item| item.action.clone())
+            .collect();
         assert_eq!(
             actions[..2],
             [

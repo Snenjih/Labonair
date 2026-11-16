@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Asynchronous local Language Server Protocol process integration.
 //!
 //! This module is the Editor-owned adapter for local JSON-RPC over stdio. The

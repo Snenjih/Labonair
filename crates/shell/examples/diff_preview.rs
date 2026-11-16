@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Developer preview: opens the workspace DiffView in its own window against a
 //! real repository, for visual checks (`docs/parity/diff-view-spec.md` §12).
 //!

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `Select` / `EnumDropdown` — a trigger showing the current option plus the
 //! anchored list of the alternatives.
 //!

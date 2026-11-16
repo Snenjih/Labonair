@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Wire protocol between the app and the detached session host (ADR 0009).
 //!
 //! A connection is a stream of length-prefixed frames, all integers

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Persisted terminal scrollback owned by the terminal capability.
 //!
 //! Local terminal sessions save their plain-text ANSI history as compressed

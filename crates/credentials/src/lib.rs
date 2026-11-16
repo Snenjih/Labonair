@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Credential management for SSH and SFTP capabilities.
 //!
 //! This crate owns credential metadata, secret references, and generated key

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Background-image layer (T02-006).
 //!
 //! Full parity with the reference `backgrounds` feature: the user imports an

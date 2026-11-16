@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Step 1 — what opens on launch. Applied live.
 
 use gpui::{AnyView, App, AppContext, Context, Entity, IntoElement, Render, SharedString, Window};

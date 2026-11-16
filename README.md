@@ -48,3 +48,7 @@ python3 scripts/check_rework_queue.py
 ```
 
 Platform priority is macOS first, with Linux later. The application contains no WebView, JavaScript frontend, or IPC layer.
+
+## License
+
+Copyright (C) 2026 Snenjih. Licensed under **GPL-3.0-or-later** ([`LICENSE`](LICENSE)) with additional terms under GPL §7 ([`ADDITIONAL-TERMS.md`](ADDITIONAL-TERMS.md)): forks must be renamed, marked as modified and credit the origin. The name, logo and icon are not licensed ([`TRADEMARK.md`](TRADEMARK.md)).

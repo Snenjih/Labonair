@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`ModalLayer`] + [`ModalView`] — the workspace's single modal overlay slot
 //! (T17-005).
 //!

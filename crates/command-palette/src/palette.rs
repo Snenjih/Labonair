@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Command registry + the [`CommandPalette`] modal overlay view.
 //!
 //! * **Data** — a UI adapter for the injected, UI-free command registry

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Typed editing intents and editor-owned editing behavior.
 //!
 //! The implementation operates on [`Document`] transactions. It never keeps

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `impl UiTheme for ThemeStore`.
 //!
 //! The [`UiTheme`](labonair_theme_tokens::UiTheme) contract is defined in

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `Banner` — a full-width info / warning / error strip.
 //!
 //! Port of `reference-src/src/components/ui/alert.tsx` (`alertVariants`):

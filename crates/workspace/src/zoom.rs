@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Per-tab pane zoom (R10-002, ADR 0005).
 //!
 //! Zoom shows one pane of a tab as an overlay over the whole tab area while

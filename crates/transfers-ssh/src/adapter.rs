@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Concrete service and event adapters for the transfer capability.
 
 use labonair_events::{EventBus, RawEvent};

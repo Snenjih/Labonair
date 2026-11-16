@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Window move from the custom titlebar.
 //!
 //! GPUI 0.2.2's macOS `start_window_move` is a no-op, so the window is opened

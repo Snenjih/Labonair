@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Explicit save policies owned by the editor.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

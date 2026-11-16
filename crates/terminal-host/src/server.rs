@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The detached session host: daemon logic as a library (ADR 0009).
 //!
 //! [`Server::bind`] takes the single-instance lock, listens on a private Unix

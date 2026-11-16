@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Singleton pane adapters: Git Graph, Diff, Keymap, Hosts. They cannot be
 //! split (reopening focuses the existing pane) but live in any pane group.
 

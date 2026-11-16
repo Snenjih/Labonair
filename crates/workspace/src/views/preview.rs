@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Native replacement for the reference in-app web-preview tab
 //! (`reference-src/src/modules/preview/`), delivered as part of the T15-006
 //! feature-parity gate.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace's narrow adapter for the Editor-owned project-search contract.
 //!
 //! This module owns neither query state nor result state. It translates one

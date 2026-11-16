@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Adapter from the concrete MCP server state to the UI-free session-access
 //! contract.
 

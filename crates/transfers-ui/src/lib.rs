@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! GPUI presentation for the transfer capability.
 //!
 //! The view owns no transport or transfer lifecycle logic. It renders

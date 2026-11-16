@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Command-Snippets system (T12-001).
 //!
 //! Port of `reference-src/src/modules/snippets/*`: reusable command templates

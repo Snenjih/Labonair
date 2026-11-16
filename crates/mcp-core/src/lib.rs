@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! UI-free contracts shared by the MCP bridge and its terminal/workspace hosts.
 //!
 //! The bridge implementation may live behind a platform adapter, but these

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Runtime theme provider and store (T02-002).
 //!
 //! [`ThemeStore`] is a GPUI entity and the single source of truth for which
@@ -800,11 +803,19 @@ impl ThemeStore {
     /// The terminal surface fill. Opaque unless a background image shows
     /// through (the terminal's own opacity setting is applied by the view).
     pub fn terminal_background(&self) -> Hsla {
-        labonair_theme_tokens::UiTheme::content_fill(self, VibrancyLayer::Terminal, self.theme().terminal.background)
+        labonair_theme_tokens::UiTheme::content_fill(
+            self,
+            VibrancyLayer::Terminal,
+            self.theme().terminal.background,
+        )
     }
 
     pub fn background(&self) -> Hsla {
-        labonair_theme_tokens::UiTheme::content_fill(self, VibrancyLayer::Canvas, self.theme().core.background)
+        labonair_theme_tokens::UiTheme::content_fill(
+            self,
+            VibrancyLayer::Canvas,
+            self.theme().core.background,
+        )
     }
 
     pub fn foreground(&self) -> Hsla {

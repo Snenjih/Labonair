@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shell hosting for the first-run onboarding (ADR 0008).
 //!
 //! The `labonair-onboarding` crate owns steps, progress and the page; the

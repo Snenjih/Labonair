@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Concrete russh-sftp integration for the UI-free SFTP capability.
 //!
 //! The crate owns SFTP session setup and the capability contract adapters.

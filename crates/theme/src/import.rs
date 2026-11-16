@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! User theme import/export (T02-003).
 //!
 //! **Deferred boundary (R08-011).** This module is retained under test but is
@@ -178,7 +181,11 @@ impl ThemeFileConversion for Theme {
 
         // A theme that doesn't set the canvas gradient would inherit the
         // built-in purple→gold one; derive it from its own hues instead.
-        if !variant.colors.keys().any(|k| norm(k).starts_with("canvas.")) {
+        if !variant
+            .colors
+            .keys()
+            .any(|k| norm(k).starts_with("canvas."))
+        {
             let (bg, tint) = (theme.core.background, theme.core.primary);
             let mix = |t: f32| bg.blend(tint.opacity(t));
             theme.float.canvas_top = mix(0.10);

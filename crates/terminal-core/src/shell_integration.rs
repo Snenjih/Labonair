@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shell-integration bootstrap (T03-004).
 //!
 //! Configures a [`CommandBuilder`] so the spawned login shell loads Labonair's

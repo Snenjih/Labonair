@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `option_card` — a selectable card with a title and a description, for
 //! choosing one of a few mutually exclusive options (onboarding steps).
 //!

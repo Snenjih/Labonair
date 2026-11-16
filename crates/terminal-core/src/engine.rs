@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Terminal emulation core (T03-001).
 //!
 //! Wraps [`alacritty_terminal::Term`] + its VTE parser into a small, render-free

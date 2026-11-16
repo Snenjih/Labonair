@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Host-view contract between `labonair-workspace` and the Hosts UI (R08-012).
 //!
 //! The workspace needs to read the host catalog (ids, names, jump-host labels,

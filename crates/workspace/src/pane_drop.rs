@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Applying tab / pane drags to the live workspace (R10-002, ADR 0005).
 //!
 //! The geometry and tree surgery are pure and live in [`crate::pane_dnd`];

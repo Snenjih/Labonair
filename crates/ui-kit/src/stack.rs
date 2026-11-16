@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Flex-layout shorthands.
 //!
 //! `div().flex().flex_col()` / `div().flex().flex_row().items_center()` are by

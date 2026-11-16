@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Agent / tool system + live-bridge (T11-004).
 //!
 //! Gives the AI companion the ability to interact with the app and the system:

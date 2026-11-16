@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Concrete russh-based implementation of the SSH capability.
 //!
 //! This crate is a platform/integration sibling of `labonair-ssh`: it owns

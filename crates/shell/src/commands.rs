@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `CommandDispatcher` — application composition for command contributions.
 //!
 //! Before T17-007 the shell root carried a ~50-entry

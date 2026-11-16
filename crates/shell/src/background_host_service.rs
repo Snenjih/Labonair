@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Composition adapter for the Settings "Background host" status block: maps
 //! the terminal's detached session host client (`DaemonHost`, ADR 0009) onto
 //! the UI-free `BackgroundHostService` contract. Unix only.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Hover list of a pane-group tab (R10-002 "Hover-Liste der Panes").
 //!
 //! Hovering a tab with two or more panes opens, after a short delay, a small

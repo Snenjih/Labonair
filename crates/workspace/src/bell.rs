@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Audible terminal bell (T06-005).
 //!
 //! Port of `reference-src/src/modules/terminal/lib/rendererPool.ts::playBell`:

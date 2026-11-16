@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-hosts-ui` — host and credential management UI.
 //!
 //! This is deliberately **not** a dock panel and has **no** `impl Panel` (see

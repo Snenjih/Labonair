@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared `List` row primitives — `ListHeader`, `ListItem`, `ListSeparator`.
 //!
 //! Port of the "row with icon + label + trailing" and "section heading above

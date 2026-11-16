@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Apple-style grouped Settings widgets (R10-002): [`settings_group`],
 //! [`settings_row`], [`slider_row`] and [`category_chip`].
 //!

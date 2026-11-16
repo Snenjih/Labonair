@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! SSH, SFTP and transfers inside the detached session host (ADR 0009).
 //!
 //! The daemon runs the concrete service stack ([`HostServices`]); the app

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The token-accessor contract the `labonair-ui-kit` primitives build against.
 //!
 //! Moved out of `labonair-ui-kit::theme` in R08-008. `ui-kit` only ever sees
@@ -7,8 +10,8 @@
 
 use gpui::{App, Hsla};
 
-use crate::metrics::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
 use crate::metrics::PaneLayout;
+use crate::metrics::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
 use crate::tokens::{RadiusScale, SurfaceMaterial, Theme, VibrancyLayer};
 
 /// Token accessor the ui-kit primitives build against.
@@ -58,7 +61,8 @@ pub trait UiTheme {
     /// translucent material in the Comfortable layout it is transparent.
     fn content_fill(&self, layer: VibrancyLayer, color: Hsla) -> Hsla {
         let material = self.surface_material();
-        if material != SurfaceMaterial::Opaque && self.metrics().pane_layout == PaneLayout::Comfortable
+        if material != SurfaceMaterial::Opaque
+            && self.metrics().pane_layout == PaneLayout::Comfortable
         {
             return Hsla { a: 0.0, ..color };
         }

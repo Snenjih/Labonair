@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 // --- Blocking, in-process variants for the sidebar file explorer (T05-001). ---
 // Same semantics as the async commands below, minus the `spawn_blocking`
 // wrapper; the GPUI explorer runs these on `cx.background_executor().spawn`.

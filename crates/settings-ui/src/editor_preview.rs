@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Live editor-font preview shown above the Editor font settings: a small code
 //! sample set in the same font, size and line height the editor uses.
 

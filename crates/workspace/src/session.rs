@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Session persistence — restore open tabs / layout on restart (T14-001).
 //!
 //! Port of the reference `src/modules/session/` (`types.ts`, `capture.ts`,

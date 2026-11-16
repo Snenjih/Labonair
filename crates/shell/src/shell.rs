@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-shell` — the thin composition layer.
 //!
 //! `AppShell` composes the titlebar, docks, workspace, statusbar and the
@@ -52,8 +55,8 @@ pub use titlebar::Titlebar;
 // through the single `labonair_shell::` import root. These simply forward to
 // the crate that actually owns each hook (theme store, background store,
 // notification center), so no bootstrap logic changed with the crate split.
-pub use labonair_background::init as init_background;
 pub use labonair_activity_ui::init as init_activity;
+pub use labonair_background::init as init_background;
 pub use labonair_notifications::init as init_notifications;
 pub use labonair_settings::init as init_settings;
 pub use labonair_theme::{init_fonts, init_theme};

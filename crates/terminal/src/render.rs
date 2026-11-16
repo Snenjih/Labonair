@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Render-preparation helpers for the GPUI terminal renderer (T03-002).
 //!
 //! Pure data transforms with no GPUI dependency so they stay unit-testable:

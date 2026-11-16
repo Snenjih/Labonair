@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Minimal window position/size persistence (T04-003).
 //!
 //! The original app uses Tauri's `window-state` plugin to remember the main

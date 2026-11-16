@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Session creation seam for the detached session host (ADR 0009).
 //!
 //! [`TerminalRegistry`](crate::TerminalRegistry) asks a [`SessionHost`] to

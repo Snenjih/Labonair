@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace-level DiffView (`docs/parity/diff-view-spec.md`).
 //!
 //! One scrolling document lists every changed file: a file header (fold,

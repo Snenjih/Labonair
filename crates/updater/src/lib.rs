@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Auto-update foundation (T15-004).
 //!
 //! The reference app used the Tauri updater plugin: it polled a `latest.json`
@@ -33,7 +36,7 @@ pub use install::{
 /// Mirrors the reference `tauri.conf.json` updater endpoint, retargeted at this
 /// fork's repo.
 pub const DEFAULT_UPDATE_ENDPOINT: &str =
-    "https://github.com/Snenjih/Labonair-rust/releases/latest/download/latest.json";
+    "https://github.com/Snenjih/Labonair/releases/latest/download/latest.json";
 
 /// The manifest key for the platform this binary was built for.
 ///
@@ -64,8 +67,8 @@ const fn current_target() -> &'static str {
     }
 }
 
-/// The running application version (`CARGO_PKG_VERSION` of the `labonair`
-/// binary is the single source of truth; the packaging script reads the same
+/// The running application version: the one `[workspace.package] version`
+/// shared by every crate (the packaging script reads the same
 /// value via `cargo metadata`).
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Label, icon and hover list of a tab that is a pane group (R10-002).
 //!
 //! Rules (plan "Tab-Name/Icon einer Gruppe"):

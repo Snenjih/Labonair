@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Headless tests for the DiffView: a scripted in-memory `GitService` drives
 //! load → render → stage → reload end to end.
 

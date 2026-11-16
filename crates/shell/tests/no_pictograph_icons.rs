@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! CI guard for the Block A icon purge (T16-003).
 //!
 //! The reference app never uses emoji or geometric glyphs as icons — every

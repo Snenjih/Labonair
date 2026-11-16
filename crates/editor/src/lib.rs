@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Labonair code editor core (T06-*).
 //!
 //! Framework-free editing model: a rope-backed [`buffer::EditorBuffer`], a
@@ -10,9 +13,9 @@
 pub mod breadcrumbs;
 pub mod buffer;
 pub mod command_provider;
+pub mod conflict;
 pub mod diagnostics;
 pub mod diff;
-pub mod conflict;
 pub mod diff_document;
 pub mod display;
 pub mod document;

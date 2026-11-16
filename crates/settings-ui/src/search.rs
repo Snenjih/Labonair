@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Global settings search (T19-007), replacing the T19-004 in-page substring
 //! filter (`panes/generic.rs`'s old `render_global_search`, which rendered
 //! matched fields inline). This module is pure data: an index built once

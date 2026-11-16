@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Chat sessions, message model and send/stream orchestration (T11-002).
 //!
 //! Pure-Rust port of the reference app's

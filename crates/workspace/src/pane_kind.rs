@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Pane kinds and the pure `PaneId`-keyed bookkeeping (R10-002, ADR 0005).
 //!
 //! Every [`TabKind`](crate::tabs::TabKind) becomes a pane kind: a tab is a

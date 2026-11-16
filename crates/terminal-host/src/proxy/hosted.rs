@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The app-side end of one daemon-hosted SSH session: receives everything the
 //! daemon sends for it (PTY bytes, steal / loss notices) on the client's
 //! reader thread and hands it to whoever shows the session: a hosted terminal

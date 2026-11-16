@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-ui-kit` — the shared design-system crate.
 //!
 //! Block A of the feature-parity audit (`vergleichsbericht-subagent-3.md`,

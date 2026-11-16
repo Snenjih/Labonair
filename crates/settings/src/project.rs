@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Project-layer settings (`.labonair/settings.json`, T19-003).
 //!
 //! `.labonair/settings.json` under the active project root

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Startup wiring for [`AppShell`] — extracted from `AppShell::new` in T17-006.
 //!
 //! [`bootstrap`] builds every child entity (workspace, panels, palette,

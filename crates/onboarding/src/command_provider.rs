@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The `Onboarding: Open` command (replays every applicable step).
 
 use std::rc::Rc;

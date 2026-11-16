@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Pane adapters (R10-002, ADR 0005).
 //!
 //! Every tab is a pane group and every leaf of its tree is a pane of some

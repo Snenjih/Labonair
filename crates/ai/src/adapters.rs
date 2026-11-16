@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Per-family HTTP adapters: build the request for a provider and decode its
 //! streaming response into [`StreamEvent`]s.
 //!

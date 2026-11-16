@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The unified streaming chat client. Resolves a model reference against the
 //! provider instances + keyring, dispatches to the right adapter, performs the
 //! HTTP request with `reqwest`, and streams decoded [`StreamEvent`]s over an

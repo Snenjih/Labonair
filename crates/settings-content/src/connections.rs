@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `connections` area — global SSH connection defaults. Per-host values
 //! (`hosts.keep_alive_interval`, `hosts.keep_alive_tries`) still win when a
 //! host record sets them explicitly; these are only the fallback applied to

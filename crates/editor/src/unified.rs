@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Unified-diff (`git diff` textual output) parsing.
 //!
 //! Moved here from `labonair-panel-scm` in the Zed-parity Phase 4 redesign so

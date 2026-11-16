@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Picks app or daemon per SSH connection (ADR 0009: the host is fixed when a
 //! session is created) and routes every later call to the host that owns it.
 //!

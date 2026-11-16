@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Identity and activity state for project and standalone workspaces.
 //!
 //! The identity is deliberately separate from the tab count: a project

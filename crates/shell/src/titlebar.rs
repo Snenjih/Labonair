@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`Titlebar`] — the app's top chrome, redesigned in T18-001.
 //!
 //! The titlebar now carries **only**:

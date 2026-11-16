@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Module-owned keymap runtime: default/user layer composition, context-aware
 //! resolution, conflict detection, and the lossless keymap-file editor model.
 //! See [`adapter`], [`file`], [`runtime`], and [`management`].

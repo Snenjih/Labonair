@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The `statusBarItemPlacements` blob — T18-005.
 //!
 //! Replaces the old, titlebar-and-statusbar-spanning `barItemPlacements` /

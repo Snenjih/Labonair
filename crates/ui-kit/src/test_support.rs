@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared fixtures for the crate's unit tests.
 //!
 //! The primitives only *read* tokens, so their tests need no runtime store —

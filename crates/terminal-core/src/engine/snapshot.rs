@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Emulator state snapshot: serialize a [`TerminalEmulator`] as an escape-sequence
 //! byte stream that, fed into an emulator of the same size, reproduces its state.
 //!

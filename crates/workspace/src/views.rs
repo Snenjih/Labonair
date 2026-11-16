@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace-hosted views that remain part of Workspace orchestration.
 //!
 //! Moved out of `crates/ui` in T16-006. `git_graph` moved to

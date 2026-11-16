@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! GPUI-free terminal core: the alacritty-based emulator, local PTY sessions,
 //! scrollback persistence and shell-integration bootstrap.
 //!

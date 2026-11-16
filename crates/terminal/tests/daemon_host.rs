@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Client <-> daemon integration: the real `labonair-host` server on a temp
 //! socket (in-process, own runtime thread), driven through `DaemonHost` and the
 //! terminal registry exactly as the workspace does. Unix only.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! What the composition root injects into the built-in steps.
 
 use std::rc::Rc;

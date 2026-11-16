@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared search-field chrome.
 //!
 //! The caller owns the input entity, query behavior, and optional clear

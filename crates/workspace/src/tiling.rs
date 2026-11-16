@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Smart tiling for the universal pane model (R10-002, ADR 0005).
 //!
 //! Everything here is pure geometry over [`crate::pane_group`] trees and plain

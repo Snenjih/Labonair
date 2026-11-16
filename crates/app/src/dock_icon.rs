@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! macOS Dock / cmd-tab icon.
 //!
 //! GPUI 0.2.2 exposes no runtime app-icon API, and this project runs

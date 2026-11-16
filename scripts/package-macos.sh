@@ -151,7 +151,7 @@ else
 fi
 
 PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-NOTES="See https://github.com/Snenjih/Labonair-rust/releases/tag/v${VERSION}"
+NOTES="See https://github.com/Snenjih/Labonair/releases/tag/v${VERSION}"
 cat > "$OUT_DIR/latest.json" <<JSON
 {
   "version": "${VERSION}",
@@ -159,7 +159,7 @@ cat > "$OUT_DIR/latest.json" <<JSON
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "${UPDATE_TARGET}": {
-      "url": "https://github.com/Snenjih/Labonair-rust/releases/download/v${VERSION}/$(basename "$TARBALL")",
+      "url": "https://github.com/Snenjih/Labonair/releases/download/v${VERSION}/$(basename "$TARBALL")",
       "signature": "${SIGNATURE}"
     }
   }

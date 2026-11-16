@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Color handling for the theme system.
 //!
 //! Labonair authors every color in `reference-src/src/styles/globals.css` in the

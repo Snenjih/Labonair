@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The provider-agnostic chat interface: conversation input, tool definitions,
 //! generation config, and the streamed output events. Adapters map these to and
 //! from each provider's concrete wire format.

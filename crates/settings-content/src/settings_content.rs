@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-settings-content` — the fully typed settings tree (T19-001).
 //!
 //! Blueprint: `zed-refrence/zed/crates/settings_content/src/settings_content.rs`

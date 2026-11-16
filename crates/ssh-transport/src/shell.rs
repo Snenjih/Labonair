@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 /// Single-quotes a string for safe inclusion in a remote shell command line.
 /// Embedded single quotes are escaped via the standard `'\''` technique
 /// (close quote, escaped quote, reopen quote), which also handles embedded

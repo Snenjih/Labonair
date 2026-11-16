@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Icon-theme data types + the built-in file/folder glyph tables.
 //!
 //! Moved out of `labonair-theme::icon_theme` in R08-008 so `labonair-ui-kit`

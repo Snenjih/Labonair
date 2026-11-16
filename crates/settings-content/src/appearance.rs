@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `appearance` area — theme / typography / background / tab-chrome layout.
 
 use std::collections::BTreeMap;

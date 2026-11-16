@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The settings OS window: `open_settings_window`, `settings_bounds`, and the
 //! GPUI globals it is driven by (`SettingsDeps`, `SettingsWindowRef`,
 //! `SettingsTarget`). Split out of the old `crates/ui/src/settings.rs` monolith

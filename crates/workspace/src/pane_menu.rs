@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Pane entries of the tab context menu (R10-002).
 //!
 //! The entries act on the focused pane of the right-clicked tab and run the

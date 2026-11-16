@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Field / category / keybind / theme-file unit tests, split out of the old
 //! `crates/ui/src/settings.rs` monolith in T16-007. Ported off the retired
 //! `PreferencesStore` onto the layered `labonair_settings::SettingsStore`.

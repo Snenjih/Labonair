@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Statusbar presentation for the notification registry.
 //!
 //! This belongs to the notifications capability rather than the application

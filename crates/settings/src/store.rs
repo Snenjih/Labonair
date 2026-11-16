@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! [`SettingsStore`] — layered [`SettingsContent`] merge (T19-002).
 //!
 //! Blueprint: `zed-refrence/zed/crates/settings/src/settings_store.rs`,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `TreeRow` — a dense, flat, full-width hierarchical row (Zed-parity redesign
 //! Phase 2, `docs/ui-comparison-zed-sidebar-status-bar.md` §8.6 / §10.4 / §12.4).
 //!

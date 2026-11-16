@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The status bar (T17-003).
 //!
 //! Replaces the shell's former `render_bar_item` `match` cascade: this

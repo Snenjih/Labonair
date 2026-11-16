@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! MCP bridge event delivery into the workspace.
 //!
 //! The workspace consumes the typed MCP event contract. The concrete source

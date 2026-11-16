@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Per-pane `impl SettingsView` render blocks, split out of the old
 //! `crates/ui/src/settings.rs` monolith in T16-007 (mechanical move — no logic
 //! change). Each sibling module is one additional `impl SettingsView` block; a

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Dependency-free Emmet abbreviation expansion for editor previews.
 //!
 //! The markup parser handles element names, ids, classes, attributes, text,

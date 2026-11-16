@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Shared local database infrastructure.
 //!
 //! This crate owns the SQLite connection and schema lifecycle only. Feature

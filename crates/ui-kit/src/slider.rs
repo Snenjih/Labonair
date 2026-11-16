@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Token-bound styling for the native GPUI Component slider.
 //!
 //! Slider state remains owned by the feature. This adapter only applies the

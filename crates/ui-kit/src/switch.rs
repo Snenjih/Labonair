@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `switch` - an on/off track with a sliding thumb.
 //!
 //! The caller owns the boolean and flips it in `on_click`. The track fill fades

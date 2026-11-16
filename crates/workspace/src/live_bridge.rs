@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `WorkspaceLiveBridge` — the real [`labonair_ai::LiveBridge`] backing the AI
 //! agent's terminal/workspace tools (`terminal_read`, `terminal_write`,
 //! `suggest_command`, and relative-path resolution for `bash_run` / file ops).

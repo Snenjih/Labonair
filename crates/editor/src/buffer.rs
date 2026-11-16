@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! The editor's UI-free text model.
 //!
 //! `EditorBuffer` is the only mutable text store in the editor capability. It

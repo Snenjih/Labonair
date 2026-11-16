@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Workspace-owned status-bar contributions.
 //!
 //! Status items that expose workspace state or workspace-scoped agent access

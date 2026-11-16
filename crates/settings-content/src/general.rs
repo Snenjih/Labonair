@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `general` area — startup / lifecycle behaviour. Field names carried over
 //! 1:1 (camelCase serde) from the legacy `Preferences` "General" group.
 

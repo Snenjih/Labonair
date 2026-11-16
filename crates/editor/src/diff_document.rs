@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Multi-file diff presentation model for the workspace DiffView
 //! (`docs/parity/diff-view-spec.md` §2, §4, §6).
 //!

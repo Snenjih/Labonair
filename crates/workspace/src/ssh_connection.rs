@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Per-session SSH connection status store (T16-015).
 //!
 //! Moved from `labonair-hosts-ui` to `labonair-workspace` in R08-012: nothing
@@ -453,7 +456,12 @@ impl ConnectionStatusStore {
         let live: HashMap<String, (ConnectionState, String, Option<String>)> = self
             .entries
             .values()
-            .filter(|entry| !matches!(entry.state, ConnectionState::Idle | ConnectionState::Connected))
+            .filter(|entry| {
+                !matches!(
+                    entry.state,
+                    ConnectionState::Idle | ConnectionState::Connected
+                )
+            })
             .map(|entry| {
                 (
                     entry.session_id.clone(),
@@ -491,7 +499,10 @@ impl ConnectionStatusStore {
                     ActivityKind::Connection,
                     format!("Waiting for credentials \u{2014} {label}"),
                 ),
-                _ => (ActivityKind::Connection, format!("Connecting to {label}\u{2026}")),
+                _ => (
+                    ActivityKind::Connection,
+                    format!("Connecting to {label}\u{2026}"),
+                ),
             };
             let mut draft = ActivityDraft::new(kind, "ssh", message);
             if let Some(error) = error {
@@ -617,7 +628,11 @@ mod tests {
         assert_eq!(failed.len(), 1);
         assert_eq!(failed[0].draft.kind, ActivityKind::Failure);
 
-        cx.update(|cx| store.update(cx, |s, cx| s.set_state("sess", ConnectionState::Connected, cx)));
+        cx.update(|cx| {
+            store.update(cx, |s, cx| {
+                s.set_state("sess", ConnectionState::Connected, cx)
+            })
+        });
         assert!(snapshot(cx).is_empty());
     }
 

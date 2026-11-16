@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Labonair terminal engine (alacritty_terminal) and GPUI renderer.
 //!
 //! * [`palette`] — theme → engine color bridge (T02-004).

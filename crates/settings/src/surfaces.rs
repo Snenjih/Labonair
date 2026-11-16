@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Capability-owned links contributed to the Settings navigation.
 
 use gpui::{AnyView, App, Window};

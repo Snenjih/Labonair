@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Theme-owned views embedded inline on the Settings "Themes" page
 //! (ADR 0006): the colour-theme grid and the icon-theme picker.
 //!

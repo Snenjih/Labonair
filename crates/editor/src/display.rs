@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Editor-owned display mapping.
 //!
 //! A display snapshot maps one immutable buffer revision to visual rows. It

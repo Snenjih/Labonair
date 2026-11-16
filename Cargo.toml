@@ -67,6 +67,9 @@ members = [
     "crates/onboarding",
 ]
 
+[workspace.package]
+version = "1.0.0"
+
 [workspace.dependencies]
 # GPUI (Zed's GPU-accelerated UI framework).
 gpui = "0.2.2"

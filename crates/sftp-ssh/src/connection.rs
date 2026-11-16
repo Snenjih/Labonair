@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 use labonair_errors::LabonairError;
 use labonair_events::EventBus;
 use labonair_ssh_transport::net_error::is_network_error;

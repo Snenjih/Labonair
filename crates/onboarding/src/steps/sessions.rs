@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Step — should terminals and connections outlive the app? Unix only.
 
 use gpui::{

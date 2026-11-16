@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `editor` area. Folds together the `Preferences` "Editor" field group and
 //! the previously-separate `"editor"` settings-file key
 //! (The old standalone editor wire object is read only by the Settings

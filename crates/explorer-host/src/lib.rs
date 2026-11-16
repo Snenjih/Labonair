@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Explorer host contract and shared file-interaction value types (R07-004).
 //!
 //! The sidebar file explorer lives in `labonair-panel-explorer`. It needs to

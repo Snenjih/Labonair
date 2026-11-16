@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Background presentation contract (B02 boundary).
 //!
 //! The Workspace terminal view (and the app-shell window chrome) paint a

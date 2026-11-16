@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Composition of the SSH / SFTP / transfer services (ADR 0009).
 //!
 //! The in-process services are always built. In front of them sits the router

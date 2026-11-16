@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Source-Control panel — Git status & staging (T09-001).
 //!
 //! [`GitPanelView`] is the GPUI-native port of the reference web app's
@@ -47,10 +50,11 @@ use crate::theme::ThemeStore;
 use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_ui_kit::{
-    button_disabled, checkbox, context_menu, disclosure, file_icon_path, h_stack, icon_button_builder,
-    segmented_control, text_area_surface, text_field, text_field_surface_sized, text_input,
-    ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
-    SegmentSize, SegmentVariant, TextFieldSize, TextFieldState,
+    button_disabled, checkbox, context_menu, disclosure, file_icon_path, h_stack,
+    icon_button_builder, segmented_control, text_area_surface, text_field,
+    text_field_surface_sized, text_input, ButtonSize, ButtonVariant, IconName, InputEvent,
+    InputState, ListItem, MenuItem, Palette, SegmentSize, SegmentVariant, TextFieldSize,
+    TextFieldState,
 };
 
 /// Build the Source Control contribution for the workspace-owned panel registry.
@@ -1511,8 +1515,12 @@ impl GitPanelView {
         };
         let activity = kind.activity_message().and_then(|message| {
             let center = try_activity_center(cx)?;
-            let draft = ActivityDraft::new(ActivityKind::Git, "git", message).show_after(show_after);
-            Some((center.clone(), center.update(cx, |center, cx| center.begin(draft, cx))))
+            let draft =
+                ActivityDraft::new(ActivityKind::Git, "git", message).show_after(show_after);
+            Some((
+                center.clone(),
+                center.update(cx, |center, cx| center.begin(draft, cx)),
+            ))
         });
         let jh = self.tokio.spawn(op);
         cx.spawn(async move |this, cx| {
@@ -3738,115 +3746,112 @@ impl GitPanelView {
         let selected = self.history_selected;
         let row_h = px(46.0);
         let view = cx.entity();
-        let list = uniform_list("git-history-list", commits.len(), move |range, _win, _cx| {
-            range
-                .map(|i| {
-                    let cm = &commits[i];
-                    let is_sel = selected == Some(i);
-                    let click_v = view.clone();
-                    let menu_v = view.clone();
-                    // Line 1: ref chips + subject. Line 2: author · age, with
-                    // the diff stat and short hash pushed to the right.
-                    let mut top = div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_size(px(12.0));
-                    for r in cm.refs.iter().take(2) {
-                        top = top.child(
-                            div()
-                                .flex_none()
-                                .px(px(5.0))
-                                .rounded_sm()
-                                .bg(c.accent.opacity(0.14))
-                                .text_size(px(10.0))
-                                .text_color(c.accent)
-                                .child(SharedString::from(r.clone())),
-                        );
-                    }
-                    top = top.child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(c.fg)
-                            .when(is_sel, |d| d.font_weight(gpui::FontWeight::MEDIUM))
-                            .child(SharedString::from(cm.subject.clone())),
-                    );
-                    let meta = div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_size(px(10.5))
-                        .text_color(c.muted)
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .child(SharedString::from(format!(
-                                    "{} \u{b7} {}",
-                                    cm.author_name,
-                                    short_relative(cm.timestamp)
-                                ))),
-                        )
-                        .child(div().flex_1())
-                        .when(cm.insertions > 0, |d| {
-                            d.child(
+        let list =
+            uniform_list(
+                "git-history-list",
+                commits.len(),
+                move |range, _win, _cx| {
+                    range
+                        .map(|i| {
+                            let cm = &commits[i];
+                            let is_sel = selected == Some(i);
+                            let click_v = view.clone();
+                            let menu_v = view.clone();
+                            // Line 1: ref chips + subject. Line 2: author · age, with
+                            // the diff stat and short hash pushed to the right.
+                            let mut top = div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.0))
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_size(px(12.0));
+                            for r in cm.refs.iter().take(2) {
+                                top = top.child(
+                                    div()
+                                        .flex_none()
+                                        .px(px(5.0))
+                                        .rounded_sm()
+                                        .bg(c.accent.opacity(0.14))
+                                        .text_size(px(10.0))
+                                        .text_color(c.accent)
+                                        .child(SharedString::from(r.clone())),
+                                );
+                            }
+                            top = top.child(
                                 div()
-                                    .flex_none()
-                                    .text_color(c.success)
-                                    .child(SharedString::from(format!("+{}", cm.insertions))),
-                            )
-                        })
-                        .when(cm.deletions > 0, |d| {
-                            d.child(
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_color(c.fg)
+                                    .when(is_sel, |d| d.font_weight(gpui::FontWeight::MEDIUM))
+                                    .child(SharedString::from(cm.subject.clone())),
+                            );
+                            let meta =
                                 div()
-                                    .flex_none()
-                                    .text_color(c.error)
-                                    .child(SharedString::from(format!("\u{2212}{}", cm.deletions))),
-                            )
-                        })
-                        .child(
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_size(px(10.5))
+                                    .text_color(c.muted)
+                                    .child(div().min_w_0().truncate().child(SharedString::from(
+                                        format!(
+                                            "{} \u{b7} {}",
+                                            cm.author_name,
+                                            short_relative(cm.timestamp)
+                                        ),
+                                    )))
+                                    .child(div().flex_1())
+                                    .when(cm.insertions > 0, |d| {
+                                        d.child(div().flex_none().text_color(c.success).child(
+                                            SharedString::from(format!("+{}", cm.insertions)),
+                                        ))
+                                    })
+                                    .when(cm.deletions > 0, |d| {
+                                        d.child(div().flex_none().text_color(c.error).child(
+                                            SharedString::from(format!("\u{2212}{}", cm.deletions)),
+                                        ))
+                                    })
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .text_color(c.muted.opacity(0.7))
+                                            .child(SharedString::from(cm.short_hash.clone())),
+                                    );
                             div()
-                                .flex_none()
-                                .text_color(c.muted.opacity(0.7))
-                                .child(SharedString::from(cm.short_hash.clone())),
-                        );
-                    div()
-                        .id(("git-history-row", i))
-                        .flex()
-                        .flex_col()
-                        .justify_center()
-                        .gap(px(2.0))
-                        .h(row_h)
-                        .px(px(12.0))
-                        .cursor_pointer()
-                        .when(is_sel, |d| d.bg(c.palette.selected_fill))
-                        .when(!is_sel, |d| d.hover(|s| s.bg(c.accent.opacity(0.5))))
-                        .child(top)
-                        .child(meta)
-                        .on_click(move |_: &ClickEvent, _w, cx| {
-                            click_v.update(cx, |this, cx| this.open_history_commit(i, cx));
+                                .id(("git-history-row", i))
+                                .flex()
+                                .flex_col()
+                                .justify_center()
+                                .gap(px(2.0))
+                                .h(row_h)
+                                .px(px(12.0))
+                                .cursor_pointer()
+                                .when(is_sel, |d| d.bg(c.palette.selected_fill))
+                                .when(!is_sel, |d| d.hover(|s| s.bg(c.accent.opacity(0.5))))
+                                .child(top)
+                                .child(meta)
+                                .on_click(move |_: &ClickEvent, _w, cx| {
+                                    click_v.update(cx, |this, cx| this.open_history_commit(i, cx));
+                                })
+                                .on_mouse_down(
+                                    gpui::MouseButton::Right,
+                                    move |ev: &MouseDownEvent, _w, cx| {
+                                        menu_v.update(cx, |this, cx| {
+                                            this.history_selected = Some(i);
+                                            this.history_menu = Some((i, ev.position));
+                                            cx.notify();
+                                        });
+                                    },
+                                )
+                                .into_any_element()
                         })
-                        .on_mouse_down(
-                            gpui::MouseButton::Right,
-                            move |ev: &MouseDownEvent, _w, cx| {
-                                menu_v.update(cx, |this, cx| {
-                                    this.history_selected = Some(i);
-                                    this.history_menu = Some((i, ev.position));
-                                    cx.notify();
-                                });
-                            },
-                        )
-                        .into_any_element()
-                })
-                .collect::<Vec<_>>()
-        })
-        .flex_1();
+                        .collect::<Vec<_>>()
+                },
+            )
+            .flex_1();
 
         div()
             .flex_1()

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! In-app auto-updater (T15-005).
 //!
 //! Port of `reference-src/src/modules/updater/` (`updaterStore.ts`,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! SSH connection-event bridge (T17-008).
 //!
 //! The workspace receives only the typed SSH connection contract. The concrete

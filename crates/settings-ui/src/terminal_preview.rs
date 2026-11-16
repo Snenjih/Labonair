@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! Live terminal preview shown above the Terminal settings.
 //!
 //! Renders a fixed sample screen with the same inputs the real terminal view

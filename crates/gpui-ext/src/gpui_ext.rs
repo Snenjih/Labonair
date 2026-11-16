@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
 //! `labonair-gpui-ext` — shared GPUI prelude and helper glue.
 //!
 //! GPUI's own imports are verbose: nearly every view file in the port opens
