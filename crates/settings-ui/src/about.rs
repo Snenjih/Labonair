@@ -11,6 +11,9 @@ use crate::view::*;
 
 const WEBSITE: &str = "https://labonair.dev";
 const REPOSITORY: &str = "https://github.com/Snenjih/Labonair";
+const LICENSE_URL: &str = "https://github.com/Snenjih/Labonair/blob/master/LICENSE";
+const ADDITIONAL_TERMS_URL: &str =
+    "https://github.com/Snenjih/Labonair/blob/master/ADDITIONAL-TERMS.md";
 
 fn os_name() -> &'static str {
     match std::env::consts::OS {
@@ -119,7 +122,7 @@ impl SettingsView {
                     button(
                         "about-check-updates",
                         *c,
-                        ButtonVariant::Filled,
+                        ButtonVariant::Action,
                         ButtonSize::Sm,
                     )
                     .child("Check for updates")
@@ -131,6 +134,37 @@ impl SettingsView {
                 ),
             );
         }
+
+        let license_link = |id: &'static str, label: &'static str, url: &'static str| {
+            let url = url.to_owned();
+            button(id, *c, ButtonVariant::Link, ButtonSize::None)
+                .child(label)
+                .on_click(move |_, _, cx| cx.open_url(&url))
+        };
+        let notice = |text: &'static str| {
+            div()
+                .text_size(c.control_space(12.0))
+                .text_color(c.muted)
+                .child(text)
+        };
+        let legal = v_stack()
+            .gap(c.space(2.0))
+            .child(notice(
+                "Copyright \u{a9} 2026 Snenjih. GPL-3.0-or-later. No warranty; redistribution permitted under this license.",
+            ))
+            .child(notice("Based on Labonair by Snenjih \u{2014} labonair.dev"))
+            .child(
+                h_stack()
+                    .items_center()
+                    .gap(c.space(8.0))
+                    .child(license_link("about-license", "License", LICENSE_URL))
+                    .child(license_link(
+                        "about-additional-terms",
+                        "Additional terms",
+                        ADDITIONAL_TERMS_URL,
+                    )),
+            );
+        identity = identity.child(legal);
 
         let links = v_stack()
             .gap(c.space(4.0))
@@ -156,26 +190,6 @@ impl SettingsView {
                 WEBSITE.to_owned(),
             ));
 
-        let notice = |text: &'static str| {
-            div()
-                .text_size(c.control_space(12.0))
-                .text_color(c.muted)
-                .child(text)
-        };
-        let legal = v_stack()
-            .gap(c.space(2.0))
-            .pt(c.space(12.0))
-            .mt(c.space(4.0))
-            .border_t_1()
-            .border_color(c.border)
-            .child(notice(
-                "Copyright \u{a9} 2026 Snenjih. Licensed under the GNU General Public License v3.0 or later, with additional terms (GPL \u{a7}7).",
-            ))
-            .child(notice(
-                "\u{201C}Labonair\u{201D}, the logo and the icon are trademarks of Snenjih and are not covered by the licence.",
-            ))
-            .child(notice("Forks must be renamed, marked as modified and credit the original: Based on Labonair by Snenjih \u{2014} labonair.dev"));
-
         v_stack()
             .w_full()
             .p(c.space(16.0))
@@ -189,7 +203,6 @@ impl SettingsView {
                     .child(identity)
                     .child(links),
             )
-            .child(legal)
             .into_any_element()
     }
 }

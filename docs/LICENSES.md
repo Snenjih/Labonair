@@ -5,7 +5,9 @@ T15-004 release. Re-run when `Cargo.lock` changes materially.
 
 ## This project
 
-MIT (`/LICENSE`). Distributing a compiled binary is unrestricted.
+GNU GPL-3.0-or-later (`/LICENSE`) with the additional terms in
+[`ADDITIONAL-TERMS.md`](../ADDITIONAL-TERMS.md). Distribution of Labonair must
+follow both documents.
 
 ## Method
 
