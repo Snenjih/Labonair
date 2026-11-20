@@ -9,7 +9,7 @@ The package source of truth is `crates/app/Cargo.toml` for the version and
 
 ```text
 cargo build --release -p labonair
-→ Labonair.app (binary, Info.plist, icon, compiled resources)
+→ Labonair.app (binaries, Info.plist, icon, compiled resources, license texts)
 → optional signing/notarization
 → optional DMG and signed updater artifact
 → smoke test and artifact verification

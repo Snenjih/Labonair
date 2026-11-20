@@ -5,8 +5,8 @@
 # There is no `tauri bundle` equivalent for a GPUI app, so the bundle is
 # assembled by hand from a release build of the `labonair` binary + the static
 # assets in packaging/macos/. Fonts and Tree-sitter grammars are compiled into
-# the binary (see crates/theme/src/fonts.rs and crates/editor/Cargo.toml), so
-# the bundle is fully self-contained — nothing extra to copy.
+# the binary (see crates/theme/src/fonts.rs and crates/editor/Cargo.toml).
+# Human-readable license texts are copied separately into Contents/Resources.
 #
 # Usage:
 #   scripts/package-macos.sh [--dmg] [--target <triple>]
@@ -73,6 +73,34 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/labonair"
 cp "$HOST_BIN" "$APP/Contents/MacOS/labonair-host"
 cp packaging/macos/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp LICENSE ADDITIONAL-TERMS.md "$APP/Contents/Resources/"
+
+LICENSES_DIR="$APP/Contents/Resources/Licenses"
+mkdir -p "$LICENSES_DIR/Fonts" "$LICENSES_DIR/GPUI" "$LICENSES_DIR/Icons/Material"
+cp vendor/gpui/LICENSE-APACHE "$LICENSES_DIR/GPUI/LICENSE-APACHE"
+cp crates/shell/assets/icons/LICENSES "$LICENSES_DIR/Icons/Lucide-ISC.txt"
+cp crates/shell/assets/icons/material_icon_theme/LICENSE-APACHE "$LICENSES_DIR/Icons/Material/LICENSE-APACHE"
+cp crates/shell/assets/icons/material_icon_theme/LICENSE-MIT "$LICENSES_DIR/Icons/Material/LICENSE-MIT"
+cp crates/shell/assets/icons/material_icon_theme/NOTICE.md "$LICENSES_DIR/Icons/Material/NOTICE.md"
+cp crates/theme/assets/fonts/LICENSE \
+	crates/theme/assets/fonts/IBMPlexSans-license.txt \
+	crates/theme/assets/fonts/Inter-OFL.txt \
+	crates/theme/assets/fonts/JetBrainsMono-OFL.txt \
+	crates/theme/assets/fonts/Lilex-OFL.txt \
+	"$LICENSES_DIR/Fonts/"
+
+if ! command -v cargo-about >/dev/null 2>&1; then
+	echo "cargo-about 0.9.3 is required to package third-party dependency licenses" >&2
+	exit 1
+fi
+if [[ "$(cargo-about --version)" != "cargo-about 0.9.3" ]]; then
+	echo "cargo-about 0.9.3 is required to package third-party dependency licenses" >&2
+	exit 1
+fi
+cargo-about generate --fail --locked --workspace \
+	--config packaging/licenses/about.toml \
+	-o "$APP/Contents/Resources/THIRD-PARTY-LICENSES.txt" \
+	packaging/licenses/third-party-licenses.hbs
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" \
 	packaging/macos/Info.plist > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"

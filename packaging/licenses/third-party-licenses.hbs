@@ -1,0 +1,19 @@
+Third-party Rust crate licenses bundled with Labonair
+====================================================
+
+This file lists the licenses and crate versions included in the Cargo
+workspace dependency graph for the macOS app and session host.
+
+{{#each licenses}}
+{{#if first_of_kind}}
+============================================================
+{{name}}
+============================================================
+{{/if}}
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

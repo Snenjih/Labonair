@@ -1,3 +1,4 @@
+// Modified by Labonair on 2026-11-20.
 use cocoa::base::id;
 use cocoa::foundation::NSRange;
 use objc::{class, msg_send, sel, sel_impl};

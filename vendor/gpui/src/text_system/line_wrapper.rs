@@ -1,3 +1,4 @@
+// Modified by Labonair on 2026-11-20.
 use crate::{FontId, FontRun, Pixels, PlatformTextSystem, SharedString, TextRun, px};
 use collections::HashMap;
 use std::{iter, sync::Arc};

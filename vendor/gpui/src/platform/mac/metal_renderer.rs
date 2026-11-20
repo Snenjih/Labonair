@@ -1,3 +1,4 @@
+// Modified by Labonair on 2026-11-20.
 use super::metal_atlas::MetalAtlas;
 use crate::{
     AtlasTextureId, Background, Bounds, ContentMask, DevicePixels, MonochromeSprite, PaintSurface,

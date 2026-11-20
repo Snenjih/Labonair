@@ -1,3 +1,4 @@
+// Modified by Labonair on 2026-11-20.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{

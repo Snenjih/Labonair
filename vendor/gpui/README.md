@@ -1,3 +1,4 @@
+<!-- Modified by Labonair on 2026-11-20. -->
 # Welcome to GPUI!
 
 GPUI is a hybrid immediate and retained mode, GPU accelerated, UI framework

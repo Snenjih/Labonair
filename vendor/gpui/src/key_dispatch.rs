@@ -1,3 +1,4 @@
+// Modified by Labonair on 2026-11-20.
 //! KeyDispatch is where GPUI deals with binding actions to key events.
 //!
 //! The key pieces to making a key binding work are to define an action,

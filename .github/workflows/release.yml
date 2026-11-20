@@ -28,6 +28,9 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
+      - name: Install license report generator
+        run: cargo install --locked --version 0.9.3 --features cli cargo-about
+
       - name: Install minisign (auto-update signing)
         run: brew install minisign
 

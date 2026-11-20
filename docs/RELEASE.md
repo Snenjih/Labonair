@@ -46,21 +46,26 @@ checks must use the absolute Rust bundle path and an exact executable PID.
 
 The script:
 
-1. `cargo build --release -p labonair`,
+1. builds `labonair` and `labonair-host` in release mode,
 2. creates `Labonair.app/Contents/{MacOS,Resources}`,
-3. copies the binary, `AppIcon.icns`, a version-substituted `Info.plist`
-   (from `packaging/macos/Info.plist`) and `PkgInfo`,
-4. `plutil -lint`s the plist,
+3. copies both binaries, `AppIcon.icns`, `LICENSE`, `ADDITIONAL-TERMS.md`,
+   asset/vendor license texts, and a generated Cargo license report,
+4. writes a version-substituted `Info.plist` and `PkgInfo`, then checks the
+   plist with `plutil -lint`,
 5. optionally signs, builds a dmg, and notarizes (see below).
 
 ### What's in the bundle
 
-Just the binary + `Info.plist` + icon. **Fonts** (Inter, JetBrains Mono) and
-**Tree-sitter grammars** are compiled *into* the binary
-(`crates/theme/src/fonts.rs` via `include_bytes!`, the `tree-sitter-*` crates
-are statically linked), so there are no loose resources to lose — the warning
-in the task about missing bundled resources does not apply to this
-architecture. A release build that is missing a grammar simply would not link.
+The bundle contains the app and host binaries, `Info.plist`, app icon, the
+project license and additional terms, a generated `THIRD-PARTY-LICENSES.txt`,
+and readable license/notice files for bundled assets and vendored GPUI. Fonts
+(Inter, JetBrains Mono, IBM Plex Sans, and Lilex) and Tree-sitter grammars are
+compiled into the binary; their corresponding font license files are copied
+into `Contents/Resources/Licenses/Fonts/`.
+
+The release workflow installs `cargo-about` 0.9.3. Local packaging requires
+the same version on `PATH` (`cargo install --locked --version 0.9.3 --features
+cli cargo-about`).
 
 ### Universal binary (optional)
 

@@ -1,3 +1,4 @@
+// Modified by Labonair on 2026-11-20.
 use super::{
     BoolExt, MacKeyboardLayout, MacKeyboardMapper,
     attributed_string::{NSAttributedString, NSMutableAttributedString},

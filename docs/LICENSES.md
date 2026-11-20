@@ -57,21 +57,27 @@ framework version.
 
 ## Distribution obligations
 
-When shipping a binary, include attribution / license text for the bundled
-third-party code (standard for MIT/Apache/BSD). Generate a bundled
-`THIRD-PARTY-LICENSES.txt` at release time, e.g.:
+When shipping a binary, include attribution and license text for the bundled
+third-party code. The macOS packaging script generates
+`Contents/Resources/THIRD-PARTY-LICENSES.txt` from the full Cargo workspace
+for the two macOS architectures using the checked-in `cargo-about` config and
+plain-text template. Release CI installs the pinned `cargo-about` 0.9.3 tool;
+local packaging requires the same version on `PATH`:
 
 ```sh
-cargo install cargo-about   # one-time
-cargo about generate about.hbs > THIRD-PARTY-LICENSES.txt
+cargo install --locked --version 0.9.3 --features cli cargo-about
+scripts/package-macos.sh
 ```
 
-(Not committed here — regenerated per release and attached to the GitHub
-release / placed in the app bundle's `Resources/`.)
+The app bundle also carries `LICENSE`, `ADDITIONAL-TERMS.md`, the GPUI Apache
+license, Lucide ISC license, Material Icon Theme MIT/Apache licenses and
+notice, and the license files for all bundled fonts. They are copied under
+`Contents/Resources/Licenses/` so they remain readable in the `.app`, DMG, and
+updater archive.
 
 ## Bundled non-code assets
 
-- **Fonts** — Inter + JetBrains Mono, both **SIL OFL 1.1**
-  (`crates/theme/assets/fonts/LICENSE`). OFL permits bundling in software.
+- **Fonts** — Inter, JetBrains Mono, IBM Plex Sans, and Lilex; their OFL
+  license texts are in `crates/theme/assets/fonts/` and shipped in the app.
 - **App icon** — project asset (`packaging/macos/AppIcon.icns`), copied from
   the frozen `reference-src/` design reference.
