@@ -49,6 +49,7 @@ labonair-ai = { path = "../ai" }
 labonair-settings = { path = "../settings" }
 labonair-settings-json = { path = "../settings-json" }
 labonair-mcp-core = { path = "../mcp-core" }
+labonair-workspace-storage = { path = "../workspace-storage" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

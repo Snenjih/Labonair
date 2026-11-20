@@ -37,8 +37,51 @@ use crate::session_v3::{
 use crate::tabs::{Tab, TabData, TabKind};
 use crate::views::preview::PreviewView;
 use crate::{terminal_settings, PaneEntry, ScrollbackCapture, Workspace};
+use labonair_workspace_storage::StoredTab;
 
 impl Workspace {
+    /// Restore one row from the shared Workspace database and retain its
+    /// stable tab and pane identities beside the process-local GPUI handles.
+    pub(crate) fn restore_shared_tab(
+        &mut self,
+        stored: &StoredTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let payload =
+            crate::shared_session::SharedTabPayload::from_value(stored.payload.clone()).ok()?;
+        let (group, temporary_to_stable) = payload.to_runtime_group()?;
+        let known_hosts: std::collections::HashSet<String> =
+            self.host_view.host_ids(cx).into_iter().collect();
+        let restored = restore_tree(&group.tree, &mut crate::pane::next_id, &|state| {
+            state.is_valid()
+                && match state {
+                    PaneState::Terminal(t) => {
+                        t.kind == PaneSessionKind::Local
+                            || t.host_id
+                                .as_deref()
+                                .is_some_and(|host| known_hosts.contains(host))
+                    }
+                    PaneState::Editor(editor) => std::path::Path::new(&editor.path).is_file(),
+                    PaneState::Preview(_) => true,
+                    PaneState::Sftp(sftp) => known_hosts.contains(&sftp.host_id),
+                }
+        });
+        if restored.is_empty() {
+            return None;
+        }
+        let remap = restored.remap.clone();
+        let tab_id = self.restore_tab(&group, restored.layout, restored.panes, window, cx)?;
+        self.tabs
+            .update(cx, |tabs, _| tabs.set_shared_id(tab_id, stored.id));
+        for (temporary, local) in remap {
+            if let Some(stable) = temporary_to_stable.get(&temporary).copied() {
+                self.shared_pane_ids.insert((tab_id, local), stable);
+            }
+        }
+        Some(tab_id)
+    }
+
     pub(crate) fn session_snapshot_collect(
         &self,
         cx: &gpui::App,
@@ -58,7 +101,7 @@ impl Workspace {
             let mut tabs = Vec::new();
             let mut active_index = 0;
             for tab in store.tabs_in_space(space.id) {
-                if let Some(group) = self.snapshot_tab(tab, cx, &captured) {
+                if let Some(group) = self.snapshot_tab(tab, cx, &captured, true) {
                     if tab.id == active_id {
                         active_index = tabs.len();
                     }
@@ -74,11 +117,12 @@ impl Workspace {
         SpacesSnapshotV3::new(entries, active_space_index)
     }
 
-    fn snapshot_tab(
+    pub(crate) fn snapshot_tab(
         &self,
         tab: &Tab,
         cx: &gpui::App,
         scrollbacks: &RefCell<Vec<ScrollbackCapture>>,
+        capture_scrollback: bool,
     ) -> Option<PaneGroupSnapshot> {
         let layout = match self.layouts.get(&tab.id) {
             Some(layout) => layout.clone(),
@@ -87,7 +131,7 @@ impl Workspace {
             None => return None,
         };
         let tree = SerializedTree::capture(&layout, |pane| {
-            self.pane_state_for_session(tab, pane, cx, scrollbacks)
+            self.pane_state_for_session(tab, pane, cx, scrollbacks, capture_scrollback)
         });
         tree.root.as_ref()?;
         Some(PaneGroupSnapshot {
@@ -106,6 +150,7 @@ impl Workspace {
         pane: PaneId,
         cx: &gpui::App,
         scrollbacks: &RefCell<Vec<ScrollbackCapture>>,
+        capture_scrollback: bool,
     ) -> Option<PaneState> {
         match self.pane_kind(pane, cx) {
             PaneKind::Terminal => {
@@ -114,17 +159,19 @@ impl Workspace {
                 let ssh = self.ssh_tabs.get(&entry.session_id);
                 let scrollback_id = match ssh {
                     None => {
-                        if let Some(ansi) = entry
-                            .view
-                            .read(cx)
-                            .handle()
-                            .serialize_scrollback(ts.session_scrollback_lines())
-                        {
-                            scrollbacks.borrow_mut().push(ScrollbackCapture {
-                                session_id: entry.scrollback_id.clone(),
-                                ansi,
-                                max_bytes: Some(ts.scrollback_max_bytes()),
-                            });
+                        if capture_scrollback && !entry.view.read(cx).handle().is_hosted() {
+                            if let Some(ansi) = entry
+                                .view
+                                .read(cx)
+                                .handle()
+                                .serialize_scrollback(ts.session_scrollback_lines())
+                            {
+                                scrollbacks.borrow_mut().push(ScrollbackCapture {
+                                    session_id: entry.scrollback_id.clone(),
+                                    ansi,
+                                    max_bytes: Some(ts.scrollback_max_bytes()),
+                                });
+                            }
                         }
                         Some(entry.scrollback_id.clone())
                     }

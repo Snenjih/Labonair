@@ -70,6 +70,7 @@ impl BackgroundHostService for DaemonHostService {
                         cwd: session.cwd,
                         foreground: session.foreground,
                         attached: session.attached,
+                        attached_count: session.attached_count,
                         exited: session.exited,
                     })
                     .collect()

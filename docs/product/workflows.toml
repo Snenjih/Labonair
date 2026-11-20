@@ -303,3 +303,22 @@ visual_evidence = ["Pending: representative error/loading/recovery captures per 
 status = "partial"
 next_action = "Link each capability descriptor to concrete failure/recovery evidence."
 next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
+
+[[workflow]]
+id = "multi-instance-shared-workspace-detached-sessions"
+display_name = "Multi-instance shared Workspace and Detached sessions"
+owner_module = "workspace"
+canonical_crate = "labonair-workspace"
+preconditions = ["Detached session host is enabled; a per-user local host is available or can be started."]
+entry_point = "Application startup allocates a Space; the existing Spaces popover explicitly joins an occupied Space."
+state_transitions = ["claim last-used free Space or allocate another", "explicitly join occupied Space", "commit revisioned tab/pane mutation", "attach terminal client and receive snapshot/live output", "route host-key/auth/transfer prompts to one owning connection", "explicitly take over a parked transfer decision after owner disconnect", "release/expire Workspace lease and detach client"]
+commands = ["none"]
+persistence = ["Workspace-owned transactional store with stable UUID domain IDs, per-Space revisions, change records, expiring leases, and one-time migration from session.json v3/v2/flat formats.", "Terminal host session lifecycle remains separate; sessionRestore controls restore after the last live Workspace lease, not sharing between active instances."]
+notifications = ["Passive Workspace/host failures use the notification-center dropdown; attachment, resize-control, and recovery state stays in existing owner surfaces."]
+failure_modes = ["Concurrent Space claim, expired/crashed lease, stale revision, missed change event, slow terminal client, input rejection, resize lease conflict, daemon disconnect, incompatible app/host protocol, prompt-owner disconnect, duplicate/stale/wrong-owner decision response"]
+security_boundary = "Per-user private Unix socket, 0700 host directory, 0600 socket, peer UID check, in-memory secrets, and fail-closed prompt ownership; no TCP or remote pairing."
+tests = ["crates/workspace/src", "crates/workspace-storage/src", "crates/terminal-host/tests/host.rs", "crates/terminal-host/tests/ssh.rs", "crates/terminal/tests/daemon_host.rs"]
+visual_evidence = ["Pending: native inspection of two app processes, Space allocation/join, live tab/pane updates, shared terminal I/O, resize control, reconnect, and transfer takeover"]
+status = "partial"
+next_action = "Capture the native two-instance flow when a desktop display is available."
+next_task = "tasks/rework/R07-008-multi-instance-shared-workspace-and-detached-sessions.md"

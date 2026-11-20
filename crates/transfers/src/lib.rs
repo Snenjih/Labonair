@@ -19,6 +19,22 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Identifies one particular conflict or file-error decision. The host
+/// replaces it whenever a parked decision changes owner.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TransferPromptId(String);
+
+impl TransferPromptId {
+    pub fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferDirection {
@@ -110,6 +126,25 @@ pub trait TransferService: Send + Sync {
         job_id: String,
         resolution: TransferResolution,
     ) -> BoxFuture<'a, Result<(), String>>;
+
+    /// Claim a parked conflict that has no live decision owner. Local
+    /// services already deliver actionable events to their single UI, so the
+    /// default is only used by adapters that do not support remote takeover.
+    fn recover_conflict<'a>(&'a self, _job_id: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async { Err("this transfer service cannot take over conflicts".into()) })
+    }
+
+    /// Resolve one identified prompt. The default keeps single-process and
+    /// legacy adapters compatible while hosted implementations validate the
+    /// request ID at their boundary.
+    fn resolve_prompt<'a>(
+        &'a self,
+        job_id: String,
+        resolution: TransferResolution,
+        _prompt_request_id: Option<TransferPromptId>,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        self.resolve(job_id, resolution)
+    }
 }
 
 /// Messages sent to a transport-backed transfer worker.
@@ -195,11 +230,17 @@ pub enum TransferEvent {
         job_id: String,
         source_path: String,
         destination_path: String,
+        actionable: bool,
+        recoverable: bool,
+        prompt_request_id: Option<TransferPromptId>,
     },
     FileError {
         job_id: String,
         path: String,
         error: String,
+        actionable: bool,
+        recoverable: bool,
+        prompt_request_id: Option<TransferPromptId>,
     },
 }
 
@@ -221,11 +262,35 @@ impl TransferEvent {
                 job_id: payload.get("job_id")?.as_str()?.to_string(),
                 source_path: payload.get("src_path")?.as_str()?.to_string(),
                 destination_path: payload.get("dest_path")?.as_str()?.to_string(),
+                actionable: payload
+                    .get("actionable")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(true),
+                recoverable: payload
+                    .get("recoverable")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+                prompt_request_id: payload
+                    .get("prompt_request_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|value| TransferPromptId::new(value.to_string())),
             }),
             "file_error" => Some(Self::FileError {
                 job_id: payload.get("job_id")?.as_str()?.to_string(),
                 path: payload.get("path")?.as_str()?.to_string(),
                 error: payload.get("error")?.as_str()?.to_string(),
+                actionable: payload
+                    .get("actionable")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(true),
+                recoverable: payload
+                    .get("recoverable")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+                prompt_request_id: payload
+                    .get("prompt_request_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|value| TransferPromptId::new(value.to_string())),
             }),
             _ => None,
         }
@@ -250,6 +315,7 @@ pub struct TransferSnapshot {
     pub steps: Vec<TransferStep>,
     pub conflict: Option<TransferConflict>,
     pub file_error: Option<TransferFileError>,
+    pub prompt_request_id: Option<TransferPromptId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,6 +328,7 @@ pub struct TransferStep {
 pub struct ResolveRequest {
     pub job_id: String,
     pub resolution: TransferResolution,
+    pub prompt_request_id: Option<TransferPromptId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,6 +346,7 @@ struct Record {
     steps: Vec<TransferStep>,
     conflict: Option<TransferConflict>,
     file_error: Option<TransferFileError>,
+    prompt_request_id: Option<TransferPromptId>,
 }
 
 /// The single owner of transfer lifecycle state.
@@ -299,6 +367,7 @@ impl TransferRegistry {
                     if !matches!(record.job.status, TransferStatus::Queued) {
                         record.conflict = None;
                         record.file_error = None;
+                        record.prompt_request_id = None;
                     }
                 } else {
                     self.records.insert(
@@ -308,6 +377,7 @@ impl TransferRegistry {
                             steps: Vec::new(),
                             conflict: None,
                             file_error: None,
+                            prompt_request_id: None,
                         },
                     );
                 }
@@ -334,6 +404,9 @@ impl TransferRegistry {
                 job_id,
                 source_path,
                 destination_path,
+                actionable: _,
+                recoverable: _,
+                prompt_request_id,
             } => {
                 let Some(record) = self.records.iter_mut().find(|r| r.job.id == job_id) else {
                     return RegistryUpdate::None;
@@ -352,12 +425,15 @@ impl TransferRegistry {
                     return RegistryUpdate::Resolve(vec![ResolveRequest {
                         job_id,
                         resolution: policy,
+                        prompt_request_id,
                     }]);
                 }
                 record.conflict = Some(TransferConflict {
                     source_path,
                     destination_path,
                 });
+                record.file_error = None;
+                record.prompt_request_id = prompt_request_id;
                 record.job.status = TransferStatus::Paused;
                 RegistryUpdate::None
             }
@@ -365,6 +441,9 @@ impl TransferRegistry {
                 job_id,
                 path,
                 error,
+                actionable: _,
+                recoverable: _,
+                prompt_request_id,
             } => {
                 if let Some(policy) = self
                     .sticky
@@ -375,10 +454,13 @@ impl TransferRegistry {
                     return RegistryUpdate::Resolve(vec![ResolveRequest {
                         job_id,
                         resolution: policy,
+                        prompt_request_id,
                     }]);
                 }
                 if let Some(record) = self.records.iter_mut().find(|r| r.job.id == job_id) {
                     record.file_error = Some(TransferFileError { path, error });
+                    record.conflict = None;
+                    record.prompt_request_id = prompt_request_id;
                     record.job.status = TransferStatus::Paused;
                 }
                 RegistryUpdate::None
@@ -394,6 +476,7 @@ impl TransferRegistry {
         let mut requests = vec![ResolveRequest {
             job_id: job_id.to_string(),
             resolution: resolution.clone(),
+            prompt_request_id: record.prompt_request_id.clone(),
         }];
         if let Some(policy) = resolution.all_policy() {
             self.sticky.insert(session_id.clone(), policy.clone());
@@ -411,15 +494,23 @@ impl TransferRegistry {
             } else {
                 Vec::new()
             };
-            requests.extend(siblings.into_iter().map(|sibling| ResolveRequest {
-                job_id: sibling,
-                resolution: policy.clone(),
+            requests.extend(siblings.into_iter().map(|sibling| {
+                ResolveRequest {
+                    prompt_request_id: self
+                        .records
+                        .iter()
+                        .find(|record| record.job.id == sibling)
+                        .and_then(|record| record.prompt_request_id.clone()),
+                    job_id: sibling,
+                    resolution: policy.clone(),
+                }
             }));
         }
         for request in &requests {
             if let Some(record) = self.records.iter_mut().find(|r| r.job.id == request.job_id) {
                 record.conflict = None;
                 record.file_error = None;
+                record.prompt_request_id = None;
                 record.job.status = TransferStatus::Running;
             }
         }
@@ -434,6 +525,7 @@ impl TransferRegistry {
                 steps: record.steps.clone(),
                 conflict: record.conflict.clone(),
                 file_error: record.file_error.clone(),
+                prompt_request_id: record.prompt_request_id.clone(),
             })
             .collect()
     }
@@ -512,6 +604,9 @@ mod tests {
                 job_id: id.into(),
                 source_path: "/source".into(),
                 destination_path: "/destination".into(),
+                actionable: true,
+                recoverable: false,
+                prompt_request_id: None,
             });
         }
         let RegistryUpdate::Resolve(requests) = registry.resolve("a", TransferResolution::Skip)
@@ -531,6 +626,9 @@ mod tests {
                 job_id: id.into(),
                 path: "/file".into(),
                 error: "read failed".into(),
+                actionable: true,
+                recoverable: false,
+                prompt_request_id: None,
             });
         }
 
@@ -545,12 +643,16 @@ mod tests {
             job_id: "b".into(),
             path: "/next-file".into(),
             error: "read failed".into(),
+            actionable: true,
+            recoverable: false,
+            prompt_request_id: None,
         });
         assert_eq!(
             update,
             RegistryUpdate::Resolve(vec![ResolveRequest {
                 job_id: "b".into(),
                 resolution: TransferResolution::SkipAll,
+                prompt_request_id: None,
             }])
         );
     }
@@ -558,5 +660,35 @@ mod tests {
     #[test]
     fn raw_event_decoder_rejects_unknown_names() {
         assert!(TransferEvent::from_raw("unknown", &serde_json::json!({})).is_none());
+    }
+
+    #[test]
+    fn decision_request_ids_survive_registry_and_resolution() {
+        let request_id = TransferPromptId::new("request-1".into());
+        let event = TransferEvent::from_raw(
+            "file_conflict",
+            &serde_json::json!({
+                "job_id": "a",
+                "src_path": "/source",
+                "dest_path": "/destination",
+                "actionable": true,
+                "recoverable": false,
+                "prompt_request_id": request_id.as_str(),
+            }),
+        )
+        .expect("conflict event");
+        let mut registry = TransferRegistry::default();
+        registry.apply(TransferEvent::Progress(job("a", TransferStatus::Running)));
+        assert_eq!(registry.apply(event), RegistryUpdate::None);
+        assert_eq!(
+            registry.snapshot()[0].prompt_request_id,
+            Some(request_id.clone())
+        );
+
+        let RegistryUpdate::Resolve(requests) = registry.resolve("a", TransferResolution::Skip)
+        else {
+            panic!("expected conflict resolution request");
+        };
+        assert_eq!(requests[0].prompt_request_id, Some(request_id));
     }
 }

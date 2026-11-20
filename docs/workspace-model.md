@@ -24,6 +24,31 @@ identity, while legacy snapshots default to Standalone. The explicit
 return-to-standalone action uses the same workspace model without changing
 the tab, pane, or shell layout.
 
+## Shared Spaces across app instances
+
+When the Detached Host is enabled, Workspace stores Spaces, ordered tabs,
+pane trees, and session references in its own `workspace.db`. Space, tab,
+pane, and split-node identities are durable UUIDs; each app window has a
+separate random Workspace instance ID. GPUI entities and presentation state
+remain local to each process.
+
+Startup atomically leases the most recently used unclaimed Space. If every
+existing Space is leased, Workspace creates an empty Space that carries the
+most recently used Space's project identity. The Spaces picker is the explicit
+join path for a Space another instance already uses. Leases are renewed while
+the window is alive, released on clean close, and expire after a crash. Every
+shared mutation carries the current lease generation and expected Space
+revision; a stale write is rejected and the client reloads or merges the
+revisioned snapshot instead of reporting success.
+
+Tab order and pane structure synchronize across participants. Active tab,
+focus, window geometry, terminal size, selection, search, and scroll position
+remain local. `general.sessionRestore` controls restoration after the final
+live Workspace lease; it does not disable sharing while instances are open.
+When restoration is disabled, releasing the final lease clears the shared
+Workspace records, while Detached Host sessions continue under their own
+lifecycle. Shared Editor tabs do not synchronize unsaved buffers or cursors.
+
 A workspace is an application context, not a requirement that every action be
 project-based. The context carries optional identity and shared navigation
 state; the tool module still owns the terminal, editor, SSH, SFTP, or transfer

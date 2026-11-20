@@ -46,7 +46,7 @@ use labonair_transfers::{
 };
 use serde_json::{json, Value};
 
-use super::{lock, Outbox, Session, Sink, Source, SshCmd, SshSource, State, Status};
+use super::{lock, Attachments, Outbox, Session, Source, SshCmd, SshSource, State, Status};
 use crate::protocol::{
     Message, RpcCall, RpcValue, SshConnectParams, SshHostSnapshot, SshSessionInfo, TransferConfig,
     WireError, WireTransferSnapshot,
@@ -106,16 +106,39 @@ struct ConnState {
     lost: Option<String>,
 }
 
+struct PendingTrust {
+    owner_conn: u64,
+    request_id: labonair_ssh::PromptRequestId,
+}
+
+struct TransferPrompt {
+    owner_conn: u64,
+    request_id: labonair_transfers::TransferPromptId,
+    in_flight: bool,
+}
+
 #[derive(Default)]
 struct Hub {
     registry: TransferRegistry,
     /// Ids of transfer jobs that are queued, running, paused or parked on a
     /// decision: they keep the daemon alive.
     live_jobs: HashSet<String>,
-    /// `(connection id, outbox)` of clients that called `SubscribeEvents`.
-    subscribers: Vec<(u64, Arc<Outbox>)>,
-    /// SSH session ids with a host-key prompt a client has not answered.
-    pending_trust: HashSet<String>,
+    /// `(connection id, protocol version, outbox)` for event subscribers.
+    subscribers: Vec<(u64, u32, Arc<Outbox>)>,
+    /// App connection that initiated each live SSH connect/retry.
+    prompt_owners: HashMap<String, u64>,
+    /// App connection allowed to answer each live transfer decision.
+    transfer_owners: HashMap<String, u64>,
+    /// One-use decision IDs, fenced by the owning socket connection.
+    transfer_prompts: HashMap<String, TransferPrompt>,
+    /// Enqueue calls whose worker job id has not been returned to the app yet.
+    pending_transfer_enqueues: usize,
+    /// Decisions observed while enqueue ownership was still being assigned.
+    unannounced_transfer_decisions: HashSet<String>,
+    /// Prevent takeover while a previously authorized resolution is executing.
+    pending_transfer_resolves: HashSet<String>,
+    /// SSH sessions with a host-key prompt awaiting its one owner.
+    pending_trust: HashMap<String, PendingTrust>,
     connections: HashMap<String, ConnState>,
     /// The conflict policy the user configured (before the unattended clamp).
     configured_policy: Option<String>,
@@ -139,7 +162,10 @@ impl SshRuntime {
     }
 
     pub(super) fn forget_session(&self, ssh_id: &str) {
-        lock(&self.hub).connections.remove(ssh_id);
+        let mut hub = lock(&self.hub);
+        hub.connections.remove(ssh_id);
+        hub.prompt_owners.remove(ssh_id);
+        hub.pending_trust.remove(ssh_id);
     }
 
     /// Follow the service event bus for the daemon's lifetime.
@@ -204,18 +230,33 @@ impl SshRuntime {
                 }
             }
             "known_hosts_warning" => {
-                let mut hub = lock(&self.hub);
-                if hub.subscribers.is_empty() {
-                    drop(hub);
-                    tracing::warn!("host key prompt with no client connected: rejecting");
-                    if let Some(sid) = sid {
-                        self.reject_trust(vec![sid]);
-                    }
+                let Some(sid) = sid else { return };
+                let owner = self.owner_outbox(&sid);
+                let Some((owner_conn, outbox, request_id)) = owner else {
+                    tracing::warn!(session = %sid, "host key prompt has no connected owner; rejecting");
+                    self.reject_trust(vec![sid]);
                     return;
+                };
+                let mut payload = raw.payload;
+                if let Value::Object(fields) = &mut payload {
+                    fields.insert("prompt_request_id".into(), json!(request_id.as_str()));
                 }
-                if let Some(sid) = sid {
-                    hub.pending_trust.insert(sid);
+                let _ = owner_conn;
+                outbox.push_control(&Message::BusEvent {
+                    name: raw.name,
+                    payload,
+                });
+                return;
+            }
+            "auth_required" | "passphrase_required" => {
+                let Some(sid) = sid else { return };
+                if let Some((_, outbox)) = self.owner_subscriber(&sid) {
+                    outbox.push_control(&Message::BusEvent {
+                        name: raw.name,
+                        payload: raw.payload,
+                    });
                 }
+                return;
             }
             _ => {
                 if let Some(event) = TransferEvent::from_raw(name, &raw.payload) {
@@ -242,9 +283,64 @@ impl SshRuntime {
                         }
                         TransferEvent::Step { .. } => {}
                     }
-                    let _ = hub.registry.apply(event);
+                    let decision_job = match &event {
+                        TransferEvent::Conflict { job_id, .. }
+                        | TransferEvent::FileError { job_id, .. } => Some(job_id.clone()),
+                        TransferEvent::Progress(job)
+                            if matches!(
+                                job.status,
+                                TransferStatus::Completed
+                                    | TransferStatus::Cancelled
+                                    | TransferStatus::Failed(_)
+                            ) =>
+                        {
+                            hub.transfer_owners.remove(&job.id);
+                            hub.transfer_prompts.remove(&job.id);
+                            None
+                        }
+                        _ => None,
+                    };
+                    let registry_update = hub.registry.apply(event);
+                    if let labonair_transfers::RegistryUpdate::Resolve(requests) = registry_update {
+                        // This is only produced by a sticky choice previously
+                        // made by a client that owned the prompt.
+                        let transfers = Arc::clone(&self.services.transfers);
+                        drop(hub);
+                        tokio::spawn(async move {
+                            for request in requests {
+                                if let Err(error) =
+                                    transfers.resolve(request.job_id, request.resolution).await
+                                {
+                                    tracing::warn!(%error, "sticky transfer resolution failed");
+                                }
+                            }
+                        });
+                        state.changed.notify_one();
+                        return;
+                    }
+                    if let Some(job_id) = &decision_job {
+                        if let Some(owner_conn) = hub.transfer_owners.get(job_id).copied() {
+                            Self::ensure_transfer_prompt(&mut hub, job_id, owner_conn);
+                        }
+                    }
+                    let defer_decision = decision_job.as_ref().is_some_and(|job_id| {
+                        if hub.transfer_owners.contains_key(job_id) {
+                            false
+                        } else if hub.pending_transfer_enqueues > 0 {
+                            hub.unannounced_transfer_decisions.insert(job_id.clone());
+                            true
+                        } else {
+                            false
+                        }
+                    });
                     drop(hub);
                     state.changed.notify_one();
+                    if let Some(job_id) = decision_job {
+                        if !defer_decision {
+                            self.announce_transfer_decision(&job_id);
+                        }
+                        return;
+                    }
                 }
             }
         }
@@ -253,9 +349,306 @@ impl SshRuntime {
 
     fn broadcast(&self, name: String, payload: Value) {
         let message = Message::BusEvent { name, payload };
-        for (_, outbox) in &lock(&self.hub).subscribers {
+        for (_, _, outbox) in &lock(&self.hub).subscribers {
             outbox.push_control(&message);
         }
+    }
+
+    fn announce_transfer_decision(&self, job_id: &str) {
+        let deliveries = {
+            let hub = lock(&self.hub);
+            let Some(snapshot) = hub
+                .registry
+                .snapshot()
+                .into_iter()
+                .find(|snapshot| snapshot.job.id == job_id)
+            else {
+                return;
+            };
+            let owner = hub.transfer_owners.get(job_id).copied();
+            let prompt_request_id = hub
+                .transfer_prompts
+                .get(job_id)
+                .filter(|prompt| Some(prompt.owner_conn) == owner)
+                .map(|prompt| prompt.request_id.as_str());
+            let (name, payload) = if let Some(conflict) = snapshot.conflict {
+                (
+                    "file_conflict",
+                    json!({
+                        "job_id": job_id,
+                        "src_path": conflict.source_path,
+                        "dest_path": conflict.destination_path,
+                        "prompt_request_id": prompt_request_id,
+                    }),
+                )
+            } else if let Some(error) = snapshot.file_error {
+                (
+                    "file_error",
+                    json!({
+                        "job_id": job_id,
+                        "path": error.path,
+                        "error": error.error,
+                        "prompt_request_id": prompt_request_id,
+                    }),
+                )
+            } else {
+                return;
+            };
+            hub.subscribers
+                .iter()
+                .map(|(conn, proto_version, outbox)| {
+                    (
+                        *conn,
+                        *proto_version,
+                        Arc::clone(outbox),
+                        name,
+                        payload.clone(),
+                        owner,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        for (conn, proto_version, outbox, name, mut payload, owner) in deliveries {
+            if proto_version < 2 && owner != Some(conn) {
+                continue;
+            }
+            if let Value::Object(fields) = &mut payload {
+                fields.insert("actionable".into(), Value::Bool(owner == Some(conn)));
+                fields.insert("recoverable".into(), Value::Bool(owner.is_none()));
+            }
+            outbox.push_control(&Message::BusEvent {
+                name: name.to_string(),
+                payload,
+            });
+        }
+    }
+
+    fn ensure_transfer_prompt(
+        hub: &mut Hub,
+        job_id: &str,
+        owner_conn: u64,
+    ) -> labonair_transfers::TransferPromptId {
+        if let Some(prompt) = hub
+            .transfer_prompts
+            .get(job_id)
+            .filter(|prompt| prompt.owner_conn == owner_conn)
+        {
+            return prompt.request_id.clone();
+        }
+        let request_id =
+            labonair_transfers::TransferPromptId::new(uuid::Uuid::new_v4().to_string());
+        hub.transfer_prompts.insert(
+            job_id.to_string(),
+            TransferPrompt {
+                owner_conn,
+                request_id: request_id.clone(),
+                in_flight: false,
+            },
+        );
+        request_id
+    }
+
+    fn begin_transfer_enqueue(&self) {
+        lock(&self.hub).pending_transfer_enqueues += 1;
+    }
+
+    fn finish_transfer_enqueue(&self, conn: u64, job_id: Option<&str>) {
+        let announce = {
+            let mut hub = lock(&self.hub);
+            if let Some(job_id) = job_id {
+                // Ownership belongs to a live event subscriber. If its
+                // connection vanished while enqueue was running, leave the
+                // parked decision available for a later explicit takeover.
+                if hub.subscribers.iter().any(|(id, _, _)| *id == conn) {
+                    hub.transfer_owners.insert(job_id.to_string(), conn);
+                }
+            }
+            hub.pending_transfer_enqueues = hub.pending_transfer_enqueues.saturating_sub(1);
+            let ready = hub
+                .unannounced_transfer_decisions
+                .iter()
+                .filter(|id| {
+                    hub.transfer_owners.contains_key(*id) || hub.pending_transfer_enqueues == 0
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            for id in &ready {
+                hub.unannounced_transfer_decisions.remove(id);
+                if let Some(owner_conn) = hub.transfer_owners.get(id).copied() {
+                    Self::ensure_transfer_prompt(&mut hub, id, owner_conn);
+                }
+            }
+            ready
+        };
+        // The worker may have parked before enqueue returned. Publish the
+        // now-authorized decision, or make an unrelated orphan recoverable.
+        for job_id in announce {
+            self.announce_transfer_decision(&job_id);
+        }
+    }
+
+    fn recover_transfer_conflict(&self, conn: u64, job_id: &str) -> Result<(), String> {
+        {
+            let mut hub = lock(&self.hub);
+            let pending = hub.registry.snapshot().into_iter().any(|snapshot| {
+                snapshot.job.id == job_id
+                    && (snapshot.conflict.is_some() || snapshot.file_error.is_some())
+            });
+            if !pending {
+                return Err("transfer has no pending conflict or file error".into());
+            }
+            if hub.pending_transfer_resolves.contains(job_id) {
+                return Err("the transfer decision is already being resolved".into());
+            }
+            if hub
+                .transfer_owners
+                .get(job_id)
+                .is_some_and(|owner| *owner != conn)
+            {
+                return Err("another connected client owns this transfer decision".into());
+            }
+            hub.transfer_owners.insert(job_id.to_string(), conn);
+            Self::ensure_transfer_prompt(&mut hub, job_id, conn);
+        }
+        self.announce_transfer_decision(job_id);
+        Ok(())
+    }
+
+    async fn resolve_transfer(
+        &self,
+        conn: u64,
+        proto_version: u32,
+        job_id: String,
+        resolution: labonair_transfers::TransferResolution,
+        prompt_request_id: Option<labonair_transfers::TransferPromptId>,
+    ) -> Result<(), String> {
+        let request_id = {
+            let mut hub = lock(&self.hub);
+            if hub.transfer_owners.get(&job_id) != Some(&conn) {
+                return Err("only the transfer decision owner may resolve this prompt".into());
+            }
+            if proto_version >= 2 && prompt_request_id.is_none() {
+                return Err("the transfer decision request ID is required".into());
+            }
+            let prompt = hub
+                .transfer_prompts
+                .get_mut(&job_id)
+                .filter(|prompt| prompt.owner_conn == conn)
+                .ok_or_else(|| "there is no pending transfer decision".to_string())?;
+            if prompt_request_id
+                .as_ref()
+                .is_some_and(|request_id| request_id != &prompt.request_id)
+            {
+                return Err(
+                    "transfer decision request is stale or belongs to another client".into(),
+                );
+            }
+            if prompt.in_flight {
+                return Err("transfer decision is already being resolved".into());
+            }
+            prompt.in_flight = true;
+            let request_id = prompt.request_id.clone();
+            hub.pending_transfer_resolves.insert(job_id.clone());
+            request_id
+        };
+        if let Err(error) = self
+            .services
+            .transfers
+            .resolve(job_id.clone(), resolution.clone())
+            .await
+        {
+            let mut hub = lock(&self.hub);
+            hub.pending_transfer_resolves.remove(&job_id);
+            if let Some(prompt) = hub.transfer_prompts.get_mut(&job_id) {
+                if prompt.owner_conn == conn && prompt.request_id == request_id {
+                    prompt.in_flight = false;
+                }
+            }
+            return Err(error);
+        }
+        let mut hub = lock(&self.hub);
+        hub.pending_transfer_resolves.remove(&job_id);
+        if hub
+            .transfer_prompts
+            .get(&job_id)
+            .is_some_and(|prompt| prompt.owner_conn == conn && prompt.request_id == request_id)
+        {
+            hub.transfer_prompts.remove(&job_id);
+        }
+        let _ = hub.registry.resolve(&job_id, resolution);
+        Ok(())
+    }
+
+    fn owner_subscriber(&self, ssh_id: &str) -> Option<(u64, Arc<Outbox>)> {
+        let hub = lock(&self.hub);
+        let conn = *hub.prompt_owners.get(ssh_id)?;
+        let outbox = hub
+            .subscribers
+            .iter()
+            .find(|(subscribed_conn, _, _)| *subscribed_conn == conn)
+            .map(|(_, _, outbox)| Arc::clone(outbox))?;
+        Some((conn, outbox))
+    }
+
+    fn owner_outbox(
+        &self,
+        ssh_id: &str,
+    ) -> Option<(u64, Arc<Outbox>, labonair_ssh::PromptRequestId)> {
+        let mut hub = lock(&self.hub);
+        let conn = *hub.prompt_owners.get(ssh_id)?;
+        let outbox = hub
+            .subscribers
+            .iter()
+            .find(|(subscribed_conn, _, _)| *subscribed_conn == conn)
+            .map(|(_, _, outbox)| Arc::clone(outbox))?;
+        let request_id = hub
+            .pending_trust
+            .entry(ssh_id.to_string())
+            .or_insert_with(|| PendingTrust {
+                owner_conn: conn,
+                request_id: labonair_ssh::PromptRequestId::new(uuid::Uuid::new_v4().to_string()),
+            });
+        if request_id.owner_conn != conn {
+            return None;
+        }
+        Some((conn, outbox, request_id.request_id.clone()))
+    }
+
+    fn trust_host(
+        &self,
+        conn: u64,
+        ssh_id: String,
+        prompt_request_id: Option<labonair_ssh::PromptRequestId>,
+        accepted: bool,
+    ) -> Result<(), String> {
+        let mut hub = lock(&self.hub);
+        if hub.prompt_owners.get(&ssh_id) != Some(&conn) {
+            return Err("only the SSH connection owner may answer this prompt".into());
+        }
+        let pending = hub
+            .pending_trust
+            .get(&ssh_id)
+            .ok_or_else(|| "there is no pending host-key prompt".to_string())?;
+        if pending.owner_conn != conn
+            || prompt_request_id
+                .as_ref()
+                .is_some_and(|request_id| request_id != &pending.request_id)
+        {
+            return Err("host-key prompt request is stale or belongs to another client".into());
+        }
+        let request_id = pending.request_id.clone();
+        hub.pending_trust.remove(&ssh_id);
+        drop(hub);
+        let connection = Arc::clone(&self.services.connection);
+        tokio::spawn(async move {
+            if let Err(error) = connection
+                .trust_host(SshSessionId::new(ssh_id), Some(request_id), accepted)
+                .await
+            {
+                tracing::warn!(%error, "host-key prompt response failed");
+            }
+        });
+        Ok(())
     }
 
     /// Reject host-key prompts: `trust_host(.., false)`. Retried briefly
@@ -267,7 +660,7 @@ impl SshRuntime {
             for attempt in 0..3 {
                 for sid in &sessions {
                     let _ = connection
-                        .trust_host(SshSessionId::new(sid.clone()), false)
+                        .trust_host(SshSessionId::new(sid.clone()), None, false)
                         .await;
                 }
                 if attempt < 2 {
@@ -279,7 +672,7 @@ impl SshRuntime {
 
     /// Replay the daemon's current state to one outbox as bus events (see
     /// [`RpcCall::SubscribeEvents`]).
-    fn replay(hub: &Hub, outbox: &Outbox, with_steps: bool) {
+    fn replay(hub: &Hub, conn: u64, proto_version: u32, outbox: &Outbox, with_steps: bool) {
         let push = |name: &str, payload: Value| {
             outbox.push_control(&Message::BusEvent {
                 name: name.to_string(),
@@ -315,19 +708,43 @@ impl SshRuntime {
                 }
             }
             if let Some(conflict) = &snapshot.conflict {
+                if proto_version < 2 && hub.transfer_owners.get(&job_id) != Some(&conn) {
+                    continue;
+                }
                 push(
                     "file_conflict",
                     json!({
                         "job_id": job_id,
                         "src_path": conflict.source_path,
                         "dest_path": conflict.destination_path,
+                        "actionable": hub.transfer_owners.get(&job_id) == Some(&conn),
+                        "recoverable": !hub.transfer_owners.contains_key(&job_id),
+                        "prompt_request_id": hub
+                            .transfer_prompts
+                            .get(&job_id)
+                            .filter(|prompt| prompt.owner_conn == conn)
+                            .map(|prompt| prompt.request_id.as_str()),
                     }),
                 );
             }
             if let Some(error) = &snapshot.file_error {
+                if proto_version < 2 && hub.transfer_owners.get(&job_id) != Some(&conn) {
+                    continue;
+                }
                 push(
                     "file_error",
-                    json!({ "job_id": job_id, "path": error.path, "error": error.error }),
+                    json!({
+                        "job_id": job_id,
+                        "path": error.path,
+                        "error": error.error,
+                        "actionable": hub.transfer_owners.get(&job_id) == Some(&conn),
+                        "recoverable": !hub.transfer_owners.contains_key(&job_id),
+                        "prompt_request_id": hub
+                            .transfer_prompts
+                            .get(&job_id)
+                            .filter(|prompt| prompt.owner_conn == conn)
+                            .map(|prompt| prompt.request_id.as_str()),
+                    }),
                 );
             }
         }
@@ -335,19 +752,22 @@ impl SshRuntime {
 
     fn replay_to_subscribers(&self) {
         let hub = lock(&self.hub);
-        for (_, outbox) in &hub.subscribers {
-            Self::replay(&hub, outbox, false);
+        for (conn, proto_version, outbox) in &hub.subscribers {
+            Self::replay(&hub, *conn, *proto_version, outbox, false);
         }
     }
 
     /// Subscribe `conn`: replay state, then stream live events. Atomic with
     /// respect to [`Self::on_event`] (both hold the hub).
-    fn subscribe(&self, conn: u64, outbox: &Arc<Outbox>) {
+    fn subscribe(&self, conn: u64, proto_version: u32, outbox: &Arc<Outbox>) {
         let mut hub = lock(&self.hub);
-        if !hub.subscribers.iter().any(|(id, _)| *id == conn) {
-            hub.subscribers.push((conn, Arc::clone(outbox)));
+        if let Some((_, version, _)) = hub.subscribers.iter_mut().find(|(id, _, _)| *id == conn) {
+            *version = proto_version;
+        } else {
+            hub.subscribers
+                .push((conn, proto_version, Arc::clone(outbox)));
         }
-        Self::replay(&hub, outbox, true);
+        Self::replay(&hub, conn, proto_version, outbox, true);
         // Finished jobs were handed to the UI; do not replay them forever.
         hub.registry.clear_completed();
         drop(hub);
@@ -358,12 +778,20 @@ impl SshRuntime {
     /// leaving rejects every pending host-key prompt.
     pub(super) fn unsubscribe(&self, conn: u64) {
         let mut hub = lock(&self.hub);
-        hub.subscribers.retain(|(id, _)| *id != conn);
-        let orphaned: Vec<String> = if hub.subscribers.is_empty() {
-            hub.pending_trust.drain().collect()
-        } else {
-            Vec::new()
-        };
+        hub.subscribers.retain(|(id, _, _)| *id != conn);
+        let orphaned = hub
+            .pending_trust
+            .iter()
+            .filter(|(_, pending)| pending.owner_conn == conn)
+            .map(|(ssh_id, _)| ssh_id.clone())
+            .collect::<Vec<_>>();
+        for ssh_id in &orphaned {
+            hub.pending_trust.remove(ssh_id);
+        }
+        hub.prompt_owners.retain(|_, owner| *owner != conn);
+        hub.transfer_owners.retain(|_, owner| *owner != conn);
+        hub.transfer_prompts
+            .retain(|_, prompt| prompt.owner_conn != conn);
         drop(hub);
         if !orphaned.is_empty() {
             self.reject_trust(orphaned);
@@ -525,7 +953,8 @@ impl State {
                 lost: Mutex::new(None),
                 connected: AtomicBool::new(false),
             })),
-            sink: Arc::new(Mutex::new(Sink::None)),
+            attachments: Arc::new(Mutex::new(Attachments::default())),
+            input_order: Mutex::new(()),
             status: Mutex::new(Status::Running),
             killed: AtomicBool::new(false),
             notify: Arc::new(tokio::sync::Notify::new()),
@@ -560,6 +989,7 @@ fn require_local_path(path: &str) -> Result<(), WireError> {
 async fn connect(
     state: &Arc<State>,
     runtime: &SshRuntime,
+    owner_conn: u64,
     params: SshConnectParams,
 ) -> Result<RpcValue, WireError> {
     if params.session_id.is_empty() || params.host_id.is_empty() {
@@ -570,6 +1000,12 @@ async fn connect(
     let previous = lock(&state.ssh_index).get(&params.session_id).copied();
     if let Some(old) = previous.and_then(|id| state.remove_session(id)) {
         super::retire(old);
+    }
+    {
+        let mut hub = lock(&runtime.hub);
+        hub.prompt_owners
+            .insert(params.session_id.clone(), owner_conn);
+        hub.pending_trust.remove(&params.session_id);
     }
     let session = state
         .create_ssh_session(runtime, &params)
@@ -667,6 +1103,7 @@ fn transfer_snapshots(runtime: &SshRuntime) -> Vec<WireTransferSnapshot> {
 pub(super) fn spawn_rpc(
     state: &Arc<State>,
     conn: u64,
+    proto_version: u32,
     outbox: &Arc<Outbox>,
     req_id: u64,
     call: RpcCall,
@@ -677,7 +1114,7 @@ pub(super) fn spawn_rpc(
         let work = tokio::spawn({
             let state = Arc::clone(&state);
             let outbox = Arc::clone(&outbox);
-            async move { dispatch(&state, conn, &outbox, call).await }
+            async move { dispatch(&state, conn, proto_version, &outbox, call).await }
         });
         let reply = match work.await {
             Ok(Ok(value)) => Message::RpcOk { req_id, value },
@@ -694,6 +1131,7 @@ pub(super) fn spawn_rpc(
 async fn dispatch(
     state: &Arc<State>,
     conn: u64,
+    proto_version: u32,
     outbox: &Arc<Outbox>,
     call: RpcCall,
 ) -> Result<RpcValue, WireError> {
@@ -712,7 +1150,7 @@ async fn dispatch(
 
     match call {
         RpcCall::SubscribeEvents => {
-            runtime.subscribe(conn, outbox);
+            runtime.subscribe(conn, proto_version, outbox);
             Ok(RpcValue::Unit)
         }
         RpcCall::UnsubscribeEvents => {
@@ -720,7 +1158,7 @@ async fn dispatch(
             Ok(RpcValue::Unit)
         }
 
-        RpcCall::SshConnect(params) => connect(state, &runtime, params).await,
+        RpcCall::SshConnect(params) => connect(state, &runtime, conn, params).await,
         RpcCall::SshDisconnect { session_id } => {
             let wire = lock(&state.ssh_index).get(&session_id).copied();
             match wire.and_then(|id| state.remove_session(id)) {
@@ -734,22 +1172,18 @@ async fn dispatch(
         }
         RpcCall::SshTrustHost {
             session_id,
+            prompt_request_id,
             accepted,
-        } => {
-            lock(&runtime.hub).pending_trust.remove(&session_id);
-            unit(
-                services
-                    .connection
-                    .trust_host(sid(session_id), accepted)
-                    .await,
-            )
-        }
+        } => runtime
+            .trust_host(conn, session_id, prompt_request_id, accepted)
+            .map(|()| RpcValue::Unit)
+            .map_err(WireError::plain),
 
         RpcCall::SshPtyWrite { session_id, data } => match hosted(state, &session_id) {
-            Some(session) => {
-                session.send_input(data.into_bytes());
-                Ok(RpcValue::Unit)
-            }
+            Some(session) => session
+                .send_external_input(data.into_bytes())
+                .map(|()| RpcValue::Unit)
+                .map_err(|message| invalid(&message)),
             None => unit(services.pty.write(sid(session_id), data).await),
         },
         RpcCall::SshPtyResize {
@@ -757,13 +1191,13 @@ async fn dispatch(
             cols,
             rows,
         } => match hosted(state, &session_id) {
-            Some(session) => {
-                session.resize(
+            Some(session) => session
+                .resize_external(
                     cols.min(u32::from(u16::MAX)) as u16,
                     rows.min(u32::from(u16::MAX)) as u16,
-                );
-                Ok(RpcValue::Unit)
-            }
+                )
+                .map(|()| RpcValue::Unit)
+                .map_err(|message| invalid(&message)),
             None => unit(services.pty.resize(sid(session_id), cols, rows).await),
         },
 
@@ -914,7 +1348,8 @@ async fn dispatch(
             if remote.is_empty() {
                 return Err(invalid("remote path is empty"));
             }
-            services
+            runtime.begin_transfer_enqueue();
+            let result = services
                 .transfers
                 .enqueue(TransferRequest {
                     session_id,
@@ -922,14 +1357,39 @@ async fn dispatch(
                     dest_path,
                     direction,
                 })
-                .await
-                .map(RpcValue::JobId)
-                .map_err(WireError::plain)
+                .await;
+            let job_id = match result {
+                Ok(job_id) => {
+                    runtime.finish_transfer_enqueue(conn, Some(&job_id));
+                    job_id
+                }
+                Err(error) => {
+                    runtime.finish_transfer_enqueue(conn, None);
+                    return Err(WireError::plain(error));
+                }
+            };
+            Ok(RpcValue::JobId(job_id))
         }
         RpcCall::TransferCancel { job_id } => unit(services.transfers.cancel(job_id).await),
-        RpcCall::TransferResolve { job_id, resolution } => {
-            unit(services.transfers.resolve(job_id, resolution.into()).await)
-        }
+        RpcCall::TransferResolve {
+            job_id,
+            resolution,
+            prompt_request_id,
+        } => unit(
+            runtime
+                .resolve_transfer(
+                    conn,
+                    proto_version,
+                    job_id,
+                    resolution.into(),
+                    prompt_request_id,
+                )
+                .await,
+        ),
+        RpcCall::TransferRecoverConflict { job_id } => runtime
+            .recover_transfer_conflict(conn, &job_id)
+            .map(|()| RpcValue::Unit)
+            .map_err(WireError::plain),
         RpcCall::TransferConfigure(config) => {
             runtime.configure_transfers(config);
             Ok(RpcValue::Unit)

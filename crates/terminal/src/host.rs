@@ -54,10 +54,15 @@ impl SessionHost for InProcessHost {
 pub enum HostedLink {
     /// Attached and streaming.
     Live,
-    /// Another window or app instance attached the session; offer Reattach.
-    Stolen,
     /// The connection to the daemon was lost; offer Reconnect.
     HostLost,
+}
+
+/// Shared-view status for one hosted terminal attachment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostedAttachmentStatus {
+    pub attached_count: u32,
+    pub controls_resize: bool,
 }
 
 /// A session living in the detached session host, as listed by the daemon.
@@ -66,12 +71,16 @@ pub struct BackgroundSession {
     pub id: u64,
     /// Tag the app set at creation (the pane's scrollback uuid).
     pub pane_tag: Option<String>,
+    /// Key under which the detached host persists this session's scrollback.
+    pub persist_key: String,
     pub label: Option<String>,
     pub cwd: Option<String>,
     pub title: Option<String>,
     pub exited: bool,
     /// Some client holds the session right now.
     pub attached: bool,
+    /// Active terminal views on the host.
+    pub attached_count: u32,
     /// Name of the foreground job when it is not the shell.
     pub foreground: Option<String>,
 }
@@ -81,13 +90,19 @@ pub trait HostedControl: Send + Sync {
     /// The daemon's id for the session (persisted for restore).
     fn host_session_id(&self) -> u64;
     fn link(&self) -> HostedLink;
+    fn attachment_status(&self) -> Option<HostedAttachmentStatus> {
+        None
+    }
+    fn request_resize_control(&self) -> Result<(), String> {
+        Err("terminal resize control is unavailable".into())
+    }
     /// Reconnect to the daemon if needed and attach again.
     fn reattach(&self) -> Result<(), String>;
     /// The foreground job other than the shell (cached, no per-call IPC).
     fn foreground(&self) -> Option<ForegroundProcess>;
-    /// The tab was closed: stop the session (acknowledge it when it exited).
+    /// An explicit global stop was requested for this hosted session.
     fn kill(&self);
-    /// The app is quitting: leave the session running in the daemon.
+    /// The local view was closed. The session remains in the detached host.
     fn detach(&self);
 }
 

@@ -249,13 +249,13 @@ pub(crate) fn bootstrap(
         });
     }
 
-    // Session restore (T14-001): load the previous snapshot up-front so the
-    // workspace can replay it instead of opening the default tabs.
-    let session_snapshot = GeneralSettings::try_get(cx)
-        .map(|s| s.session_restore())
-        .unwrap_or(false)
-        .then(crate::session::load_snapshot)
-        .flatten();
+    // Workspace startup state is loaded and claimed by the Workspace owner on
+    // a background executor. The empty compatibility snapshot prevents the
+    // constructor from opening a local default tab before that atomic claim.
+    let session_snapshot = Some(labonair_workspace::session_v3::SpacesSnapshotV3::new(
+        Vec::new(),
+        0,
+    ));
     // SSH / SFTP / transfers: the in-process services plus, when the user opts
     // in (`terminal.sessionHost = detached`), the background session host's
     // proxies. The router picks per connection and keeps each session on the
@@ -404,6 +404,7 @@ pub(crate) fn bootstrap(
             cx,
         )
     });
+    workspace.update(cx, |workspace, cx| workspace.start_shared_storage(cx));
     // Workspace emits intent for cross-surface navigation it can't present
     // itself (the project-folder picker is a native OS dialog).
     cx.subscribe_in(
@@ -865,20 +866,7 @@ pub(crate) fn bootstrap(
             if let WindowBounds::Windowed(bounds) = window.window_bounds() {
                 window_state::save(bounds);
             }
-            let session_restore = GeneralSettings::try_get(cx)
-                .map(|s| s.session_restore())
-                .unwrap_or(false);
-            if session_restore {
-                let snapshot = workspace.read(cx).session_snapshot(cx);
-                crate::session::save_snapshot(&snapshot);
-            } else {
-                crate::session::clear_snapshot();
-                labonair_terminal::scrollback::cleanup(
-                    &labonair_filesystem::paths::data_dir(),
-                    &[],
-                    None,
-                );
-            }
+            workspace.update(cx, |workspace, cx| workspace.release_shared_lease(cx));
             flush_user_settings_writes();
             true
         }

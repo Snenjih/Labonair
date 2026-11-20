@@ -111,9 +111,6 @@ pub use labonair_updater::{UpdateManifest, CURRENT_VERSION};
 pub(crate) mod background {
     pub use labonair_background::*;
 }
-pub(crate) mod session {
-    pub use labonair_workspace::session::*;
-}
 pub(crate) mod updater {
     pub use labonair_updater_ui::*;
 }

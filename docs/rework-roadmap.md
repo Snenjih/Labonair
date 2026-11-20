@@ -51,6 +51,13 @@ The transitional-edge review and expiry contract is separately tracked as
 [`R07-007-transitional-edge-review.md`](../tasks/rework/R07-007-transitional-edge-review.md)
 after R07-006; it is not permission to start a second active task.
 
+The requested local multi-instance Detached workflow is recorded as
+[`R07-008-multi-instance-shared-workspace-and-detached-sessions.md`](../tasks/rework/R07-008-multi-instance-shared-workspace-and-detached-sessions.md)
+and [ADR 0010](adr/0010-shared-workspaces-and-multi-client-detached-sessions.md).
+It follows the preceding R07 tasks, including parity inventory and product
+surface acceptance. It is a planned follow-up, not a second active task or a
+claim that current Space persistence and terminal attachments are shared.
+
 ## Phase 1 — Foundation contracts
 
 - establish UI-kit token and component boundaries;

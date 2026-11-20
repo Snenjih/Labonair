@@ -116,7 +116,7 @@ fn wait_text(handle: &SessionHandle, needle: &str) {
 }
 
 #[test]
-fn create_echo_detach_reattach_exit_and_close() {
+fn create_echo_detach_reattach_exit_and_tab_close() {
     let host = TestHost::start();
     let client = host.client();
     let daemon = DaemonHost::with_client(client.clone());
@@ -170,11 +170,20 @@ fn create_echo_detach_reattach_exit_and_close() {
         handle.status() == SessionStatus::Exited(7)
     });
 
-    // Closing the tab of an exited session acknowledges it.
+    // Closing the tab detaches only this view. The exited host record remains
+    // available to any other Space that may still reference it.
     let id = handle.id();
     drop(handle);
     registry.close(id);
-    until("session forgotten", || {
+    until("exited session detached", || {
+        client
+            .list_sessions()
+            .unwrap()
+            .iter()
+            .any(|s| s.id == host_id && s.status == WireStatus::Exited && !s.attached)
+    });
+    client.ack(host_id);
+    until("session acknowledged", || {
         !client
             .list_sessions()
             .unwrap()
@@ -184,7 +193,7 @@ fn create_echo_detach_reattach_exit_and_close() {
 }
 
 #[test]
-fn closing_a_running_tab_kills_the_session() {
+fn closing_a_running_tab_detaches_the_session() {
     let host = TestHost::start();
     let client = host.client();
     let daemon = DaemonHost::with_client(client.clone());
@@ -193,7 +202,15 @@ fn closing_a_running_tab_kills_the_session() {
     let host_id = handle.host_session_id().unwrap();
     assert_eq!(client.list_sessions().unwrap().len(), 1);
     registry.close(handle.id());
-    until("session killed", || {
+    until("session remains live and detached", || {
+        client
+            .list_sessions()
+            .unwrap()
+            .iter()
+            .any(|s| s.id == host_id && s.status == WireStatus::Running && !s.attached)
+    });
+    client.kill(host_id);
+    until("explicitly killed session", || {
         !client
             .list_sessions()
             .unwrap()
@@ -203,7 +220,7 @@ fn closing_a_running_tab_kills_the_session() {
 }
 
 #[test]
-fn a_second_client_steals_the_session_and_reattach_steals_it_back() {
+fn a_second_client_attaches_without_stealing_the_session() {
     let host = TestHost::start();
     let daemon_a = DaemonHost::with_client(host.client());
     let daemon_b = DaemonHost::with_client(host.client());
@@ -222,20 +239,25 @@ fn a_second_client_steals_the_session_and_reattach_steals_it_back() {
             .any(|s| s.id == host_id && s.attached)
     });
     let b = create(&registry_b, &daemon_b.adopting(host_id));
-    until("A to be told it was taken over", || {
-        a.hosted_link() == Some(HostedLink::Stolen)
+    until("both clients to be attached", || {
+        observer
+            .list_sessions()
+            .unwrap()
+            .iter()
+            .any(|s| s.id == host_id && s.attached_count == 2)
     });
+    assert_eq!(a.hosted_link(), Some(HostedLink::Live));
     assert_eq!(b.hosted_link(), Some(HostedLink::Live));
     b.write(b"printf 'ST%sEAL\\n' Z\n").unwrap();
     wait_text(&b, "STZEAL");
+    wait_text(&a, "STZEAL");
 
     a.reattach().unwrap();
     assert_eq!(a.hosted_link(), Some(HostedLink::Live));
-    until("B to be taken over in turn", || {
-        b.hosted_link() == Some(HostedLink::Stolen)
-    });
+    assert_eq!(b.hosted_link(), Some(HostedLink::Live));
     a.write(b"printf 'BA%sCK\\n' W\n").unwrap();
     wait_text(&a, "BAWCK");
+    wait_text(&b, "BAWCK");
 }
 
 #[test]

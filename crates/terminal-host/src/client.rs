@@ -26,9 +26,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use crate::protocol::{
-    control_frame, data_frame, read_frame_blocking, CreateOptions, DataKind, DetachReason, Frame,
-    Hello, HelloAck, Message, RpcCall, RpcValue, SessionEvent, SessionId, SessionInfo, WireColors,
-    WireError,
+    control_frame, read_frame_blocking, sequenced_input_frame, CreateOptions, DataKind,
+    DetachReason, Frame, Hello, HelloAck, Message, RpcCall, RpcValue, SessionEvent, SessionId,
+    SessionInfo, TerminalAttachmentId, WireColors, WireError,
 };
 use crate::server::HostPaths;
 
@@ -64,6 +64,9 @@ pub trait SessionSink: Send + Sync {
     /// own emulator derives the same from the byte stream, so the default is
     /// to ignore it.
     fn event(&self, _event: SessionEvent) {}
+    /// Number of active views and whether this view owns the shared PTY's
+    /// resize lease.
+    fn attachment_state(&self, _attached_count: u32, _controls_resize: bool) {}
     /// The SSH connection behind a hosted SSH session dropped; `reason` is the
     /// humanized text. The session stays in the daemon until acknowledged.
     fn connection_lost(&self, _reason: &str) {}
@@ -162,6 +165,7 @@ struct State {
     status: HostStatus,
     generation: u64,
     sinks: HashMap<SessionId, Arc<dyn SessionSink>>,
+    attachments: HashMap<SessionId, ClientAttachment>,
     creates: HashMap<u64, SyncSender<Result<SessionId, String>>>,
     lists: VecDeque<SyncSender<Vec<SessionInfo>>>,
     cached: Option<(Instant, Vec<SessionInfo>)>,
@@ -170,6 +174,46 @@ struct State {
     bus: Option<BusSink>,
     /// Re-subscribe to service events after every (re)connect.
     events_wanted: bool,
+}
+
+struct ClientAttachment {
+    id: TerminalAttachmentId,
+    cols: u16,
+    rows: u16,
+    active: bool,
+    next_sequence: u64,
+    acknowledged_sequence: u64,
+    pending: VecDeque<(u64, Vec<u8>)>,
+    pending_bytes: usize,
+}
+
+impl ClientAttachment {
+    fn new(cols: u16, rows: u16) -> Self {
+        Self {
+            id: TerminalAttachmentId::new(),
+            cols,
+            rows,
+            active: true,
+            next_sequence: 1,
+            acknowledged_sequence: 0,
+            pending: VecDeque::new(),
+            pending_bytes: 0,
+        }
+    }
+
+    fn acknowledge(&mut self, sequence: u64) {
+        self.acknowledged_sequence = self.acknowledged_sequence.max(sequence);
+        while self
+            .pending
+            .front()
+            .is_some_and(|(pending_sequence, _)| *pending_sequence <= sequence)
+        {
+            if let Some((_, bytes)) = self.pending.pop_front() {
+                self.pending_bytes = self.pending_bytes.saturating_sub(bytes.len());
+            }
+        }
+        self.next_sequence = self.next_sequence.max(sequence.saturating_add(1));
+    }
 }
 
 struct Inner {
@@ -202,6 +246,7 @@ impl HostClient {
                     status: HostStatus::Disconnected,
                     generation: 0,
                     sinks: HashMap::new(),
+                    attachments: HashMap::new(),
                     creates: HashMap::new(),
                     lists: VecDeque::new(),
                     cached: None,
@@ -272,7 +317,33 @@ impl HostClient {
         if ack.compatible && lock(&self.inner.state).events_wanted {
             self.send_subscribe();
         }
+        if ack.compatible {
+            self.resume_attachments();
+        }
         Ok(())
+    }
+
+    fn resume_attachments(&self) {
+        let attachments: Vec<_> = lock(&self.inner.state)
+            .attachments
+            .iter()
+            .filter(|(_, attachment)| attachment.active)
+            .map(|(session, attachment)| {
+                (*session, attachment.id, attachment.cols, attachment.rows)
+            })
+            .collect();
+        for (session, attachment_id, cols, rows) in attachments {
+            if let Err(error) = self.send(&Message::Attach {
+                session,
+                cols,
+                rows,
+                attachment_id: Some(attachment_id),
+            }) {
+                if let Some(sink) = sink_for(&self.inner, session) {
+                    sink.error(&error.to_string());
+                }
+            }
+        }
     }
 
     fn send_subscribe(&self) {
@@ -430,28 +501,83 @@ impl HostClient {
     }
 
     pub fn unregister(&self, session: SessionId) {
-        lock(&self.inner.state).sinks.remove(&session);
+        let mut state = lock(&self.inner.state);
+        state.sinks.remove(&session);
+        state.attachments.remove(&session);
     }
 
-    /// Attach (stealing from another client if needed). The daemon answers
-    /// with `attached`, `snapshot`, then live output on the registered sink.
+    /// Attach without replacing other clients. The daemon answers with
+    /// `attached`, a snapshot and then live output on the registered sink.
     pub fn attach(&self, session: SessionId, cols: u16, rows: u16) -> Result<(), ClientError> {
         self.require_compatible()?;
+        let attachment_id = {
+            let mut state = lock(&self.inner.state);
+            let attachment = state
+                .attachments
+                .entry(session)
+                .or_insert_with(|| ClientAttachment::new(cols, rows));
+            attachment.cols = cols;
+            attachment.rows = rows;
+            attachment.active = true;
+            attachment.id
+        };
         self.send(&Message::Attach {
             session,
             cols,
             rows,
+            attachment_id: Some(attachment_id),
         })
     }
 
     /// Stop receiving output; the session keeps running.
     pub fn detach(&self, session: SessionId) {
+        if let Some(attachment) = lock(&self.inner.state).attachments.get_mut(&session) {
+            attachment.active = false;
+        }
         let _ = self.send(&Message::Detach { session });
     }
 
-    /// User input for the session's PTY.
+    /// Queue user input for the session's PTY. Unacknowledged frames remain in
+    /// a bounded client buffer and are replayed in order after reconnect.
     pub fn input(&self, session: SessionId, bytes: &[u8]) {
-        let _ = self.send_raw(data_frame(DataKind::Input, session, bytes));
+        let frame = {
+            let mut state = lock(&self.inner.state);
+            let Some(attachment) = state
+                .attachments
+                .get_mut(&session)
+                .filter(|attachment| attachment.active)
+            else {
+                drop(state);
+                if let Some(sink) = sink_for(&self.inner, session) {
+                    sink.error("input was not sent because this view is detached");
+                }
+                return;
+            };
+            if attachment.pending_bytes.saturating_add(bytes.len()) > 1024 * 1024 {
+                drop(state);
+                if let Some(sink) = sink_for(&self.inner, session) {
+                    sink.error("input queue is full; reconnect before sending more input");
+                }
+                return;
+            }
+            let sequence = attachment.next_sequence;
+            let Some(next) = sequence.checked_add(1) else {
+                drop(state);
+                if let Some(sink) = sink_for(&self.inner, session) {
+                    sink.error("input sequence exhausted; reconnect the terminal session");
+                }
+                return;
+            };
+            attachment.next_sequence = next;
+            attachment.pending_bytes += bytes.len();
+            attachment.pending.push_back((sequence, bytes.to_vec()));
+            sequenced_input_frame(session, attachment.id, sequence, bytes)
+        };
+        if let Err(error) = self.send_raw(frame) {
+            if let Some(sink) = sink_for(&self.inner, session) {
+                sink.error(&error.to_string());
+            }
+        }
     }
 
     pub fn resize(&self, session: SessionId, cols: u16, rows: u16) {
@@ -460,6 +586,12 @@ impl HostClient {
             cols,
             rows,
         });
+    }
+
+    /// Request the explicit shared PTY resize lease for this view.
+    pub fn request_resize_control(&self, session: SessionId) -> Result<(), ClientError> {
+        self.require_compatible()?;
+        self.send(&Message::RequestResizeControl { session })
     }
 
     /// Terminate the session and forget it (closing a tab).
@@ -522,6 +654,12 @@ fn sink_for(inner: &Inner, session: SessionId) -> Option<Arc<dyn SessionSink>> {
     lock(&inner.state).sinks.get(&session).cloned()
 }
 
+fn send_inner(inner: &Inner, frame: Vec<u8>) -> Result<(), ClientError> {
+    let state = lock(&inner.state);
+    let conn = state.conn.as_ref().ok_or(ClientError::NotConnected)?;
+    conn.tx.send(frame).map_err(|_| ClientError::NotConnected)
+}
+
 fn dispatch(inner: &Inner, frame: Frame) {
     match frame {
         Frame::Data {
@@ -536,7 +674,7 @@ fn dispatch(inner: &Inner, frame: Frame) {
                 DataKind::Output => sink.output(&data),
                 DataKind::Snapshot => sink.snapshot(&data, false),
                 DataKind::Resync => sink.snapshot(&data, true),
-                DataKind::Input => {}
+                DataKind::Input | DataKind::SequencedInput => {}
             }
         }
         Frame::Control(message) => match message {
@@ -580,9 +718,82 @@ fn dispatch(inner: &Inner, frame: Frame) {
                 session,
                 cols,
                 rows,
+                attachment_id,
+                attached_count,
+                resize_controller,
+                acknowledged_input_sequence,
             } => {
+                let (local_attachment, pending) = {
+                    let mut state = lock(&inner.state);
+                    let Some(attachment) = state.attachments.get_mut(&session) else {
+                        return;
+                    };
+                    if attachment_id.is_some_and(|id| id != attachment.id) {
+                        return;
+                    }
+                    attachment.acknowledge(acknowledged_input_sequence);
+                    let pending = attachment
+                        .pending
+                        .iter()
+                        .map(|(sequence, bytes)| (*sequence, bytes.clone()))
+                        .collect::<Vec<_>>();
+                    (attachment.id, pending)
+                };
                 if let Some(sink) = sink_for(inner, session) {
                     sink.attached(cols, rows);
+                    sink.attachment_state(
+                        attached_count,
+                        resize_controller == Some(local_attachment),
+                    );
+                }
+                for (sequence, bytes) in pending {
+                    let frame = sequenced_input_frame(session, local_attachment, sequence, &bytes);
+                    if let Err(error) = send_inner(inner, frame) {
+                        if let Some(sink) = sink_for(inner, session) {
+                            sink.error(&error.to_string());
+                        }
+                        break;
+                    }
+                }
+            }
+            Message::AttachmentState {
+                session,
+                attached_count,
+                resize_controller,
+            } => {
+                let controls_resize = lock(&inner.state)
+                    .attachments
+                    .get(&session)
+                    .is_some_and(|attachment| Some(attachment.id) == resize_controller);
+                if let Some(sink) = sink_for(inner, session) {
+                    sink.attachment_state(attached_count, controls_resize);
+                }
+            }
+            Message::InputAck {
+                session,
+                attachment_id,
+                sequence,
+            } => {
+                if let Some(attachment) = lock(&inner.state).attachments.get_mut(&session) {
+                    if attachment.id == attachment_id {
+                        attachment.acknowledge(sequence);
+                    }
+                }
+            }
+            Message::InputRejected {
+                session,
+                attachment_id,
+                sequence,
+                reason,
+            } => {
+                let matches_attachment = lock(&inner.state)
+                    .attachments
+                    .get(&session)
+                    .is_some_and(|attachment| attachment.id == attachment_id);
+                if matches_attachment {
+                    if let Some(sink) = sink_for(inner, session) {
+                        sink.error(&format!("input {sequence} was rejected: {reason}"));
+                    }
                 }
             }
             Message::Event { session, event } => {

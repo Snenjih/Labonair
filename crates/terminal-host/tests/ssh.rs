@@ -26,8 +26,8 @@ use labonair_terminal_core::{TermDimensions, TerminalColors, TerminalEmulator, T
 use labonair_terminal_host::protocol::*;
 use labonair_terminal_host::server::*;
 use labonair_transfers::{
-    TransferDirection, TransferJob, TransferRequest, TransferResolution, TransferService,
-    TransferSettings, TransferStatus,
+    TransferDirection, TransferJob, TransferPromptId, TransferRequest, TransferResolution,
+    TransferService, TransferSettings, TransferStatus,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
@@ -164,6 +164,7 @@ impl SshConnectionService for Fake {
     fn trust_host<'a>(
         &'a self,
         session_id: SshSessionId,
+        _prompt_request_id: Option<labonair_ssh::PromptRequestId>,
         accepted: bool,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
@@ -481,6 +482,10 @@ impl Harness {
     }
 
     async fn client(&self) -> Client {
+        self.client_with_protocol(PROTO_VERSION).await
+    }
+
+    async fn client_with_protocol(&self, proto_version: u32) -> Client {
         let stream = UnixStream::connect(&self.socket).await.expect("connect");
         let (read, write) = stream.into_split();
         let mut client = Client {
@@ -491,9 +496,10 @@ impl Harness {
             events: Vec::new(),
             next_req: 1,
         };
-        client
-            .send(Message::Hello(Hello::current("test", None)))
-            .await;
+        let mut hello = Hello::current("test", None);
+        hello.proto_version = proto_version;
+        hello.min_compat = proto_version;
+        client.send(Message::Hello(hello)).await;
         client.wait_msg(|m| matches!(m, Message::HelloAck(_))).await;
         client
     }
@@ -599,6 +605,19 @@ impl Client {
                 return self.events.remove(i).1;
             }
             self.step().await;
+        }
+    }
+
+    async fn wait_decision(&mut self, name: &str, actionable: bool) -> serde_json::Value {
+        loop {
+            let payload = self.wait_event(name).await;
+            if payload
+                .get("actionable")
+                .and_then(serde_json::Value::as_bool)
+                == Some(actionable)
+            {
+                return payload;
+            }
         }
     }
 
@@ -723,6 +742,7 @@ async fn ssh_shell_uses_the_attach_snapshot_and_live_machinery() {
         session,
         cols: 100,
         rows: 30,
+        attachment_id: None,
     })
     .await;
     ui.wait_msg(|m| matches!(m, Message::Attached { .. })).await;
@@ -745,6 +765,7 @@ async fn ssh_shell_uses_the_attach_snapshot_and_live_machinery() {
         session,
         cols: 100,
         rows: 30,
+        attachment_id: None,
     })
     .await;
     ui.wait_msg(|m| matches!(m, Message::Attached { .. })).await;
@@ -783,6 +804,7 @@ async fn connection_loss_is_reported_and_the_session_waits_for_ack() {
         session,
         cols: 80,
         rows: 24,
+        attachment_id: None,
     })
     .await;
     ui.wait_msg(|m| matches!(m, Message::Attached { .. })).await;
@@ -821,6 +843,7 @@ async fn connection_loss_is_reported_and_the_session_waits_for_ack() {
             session,
             cols: 80,
             rows: 24,
+            attachment_id: None,
         })
         .await;
     later
@@ -845,8 +868,22 @@ async fn host_key_prompt_goes_to_the_ui_and_fails_closed_without_one() {
     let req = ui.send_rpc(connect_call("tab-1", "prompt-host")).await;
     let prompt = ui.wait_event("known_hosts_warning").await;
     assert_eq!(prompt["session_id"], "tab-1");
+    let request_id = prompt["prompt_request_id"]
+        .as_str()
+        .expect("prompt has unique request id")
+        .to_string();
+    let mut intruder = host.client().await;
+    assert!(intruder
+        .rpc(RpcCall::SshTrustHost {
+            session_id: "tab-1".into(),
+            prompt_request_id: Some(labonair_ssh::PromptRequestId::new(request_id.clone())),
+            accepted: true,
+        })
+        .await
+        .is_err());
     ui.rpc(RpcCall::SshTrustHost {
         session_id: "tab-1".into(),
+        prompt_request_id: Some(labonair_ssh::PromptRequestId::new(request_id)),
         accepted: true,
     })
     .await
@@ -870,15 +907,15 @@ async fn host_key_prompt_goes_to_the_ui_and_fails_closed_without_one() {
         .unwrap()
         .contains(&("tab-2".to_string(), false)));
 
-    // A prompt stays open while any UI is subscribed, and is rejected when
-    // the last one goes away.
+    // A prompt belongs to the connection that started the SSH request. A
+    // different subscribed UI does not receive it or inherit its authority.
     ui.rpc(RpcCall::SubscribeEvents).await.unwrap();
     let mut doomed = host.ui_client().await;
     doomed.send_rpc(connect_call("tab-3", "prompt-host")).await;
     doomed.wait_event("known_hosts_warning").await;
     drop(doomed);
     sleep(Duration::from_millis(300)).await;
-    assert!(!fake
+    assert!(fake
         .trust_calls
         .lock()
         .unwrap()
@@ -945,7 +982,7 @@ async fn transfers_run_unattended_park_on_conflicts_and_hold_the_daemon_open() {
     else {
         panic!("job id");
     };
-    ui.wait_event("file_conflict").await;
+    let _original_prompt = ui.wait_decision("file_conflict", true).await;
 
     // The UI goes away. The job is parked, nothing resolves it, and the
     // daemon (idle timeout 300 ms) stays up because the job is not finished.
@@ -964,20 +1001,50 @@ async fn transfers_run_unattended_park_on_conflicts_and_hold_the_daemon_open() {
     assert_eq!(progress["id"], job.as_str());
     let conflict = ui.wait_event("file_conflict").await;
     assert_eq!(conflict["job_id"], job.as_str());
+    assert_eq!(conflict["actionable"], false);
+    assert_eq!(conflict["recoverable"], true);
     let Ok(RpcValue::Transfers(snapshots)) = ui.rpc(RpcCall::ListTransfers).await else {
         panic!("snapshots");
     };
     assert!(snapshots[0].conflict.is_some());
     assert_eq!(snapshots[0].job.status, TransferStatus::Paused);
 
+    // The parked decision needs an explicit takeover after its original
+    // owner disconnects.
+    ui.rpc(RpcCall::TransferRecoverConflict {
+        job_id: job.clone(),
+    })
+    .await
+    .unwrap();
+    let prompt = ui.wait_decision("file_conflict", true).await;
+    assert_ne!(
+        _original_prompt.get("prompt_request_id"),
+        prompt.get("prompt_request_id")
+    );
+
     // Only an explicit decision resumes it; then it finishes and the daemon
     // may idle out.
     ui.rpc(RpcCall::TransferResolve {
         job_id: job.clone(),
         resolution: WireResolution::Skip,
+        prompt_request_id: prompt
+            .get("prompt_request_id")
+            .and_then(serde_json::Value::as_str)
+            .map(|id| TransferPromptId::new(id.to_string())),
     })
     .await
     .unwrap();
+    assert!(ui
+        .rpc(RpcCall::TransferResolve {
+            job_id: job.clone(),
+            resolution: WireResolution::Skip,
+            prompt_request_id: prompt
+                .get("prompt_request_id")
+                .and_then(serde_json::Value::as_str)
+                .map(|id| TransferPromptId::new(id.to_string())),
+        })
+        .await
+        .is_err());
     assert_eq!(
         fake.resolutions.lock().unwrap().as_slice(),
         &[(job, TransferResolution::Skip)]
@@ -986,6 +1053,126 @@ async fn transfers_run_unattended_park_on_conflicts_and_hold_the_daemon_open() {
     fake.finish.notify_one();
     let reason = timeout(WAIT, host.task).await.expect("idle exit").unwrap();
     assert_eq!(reason, ExitReason::Idle);
+}
+
+#[tokio::test]
+async fn only_the_transfer_owner_can_resolve_until_disconnect_and_takeover() {
+    let fake = Fake::new();
+    let host = Harness::start(Some(fake.services())).await;
+    let mut owner = host.ui_client().await;
+    let mut observer = host.ui_client().await;
+    let Ok(RpcValue::JobId(job)) = owner
+        .rpc(RpcCall::TransferEnqueue {
+            session_id: "tab-1".into(),
+            src_path: "/tmp/conflict-file".into(),
+            dest_path: "/remote/x".into(),
+            direction: TransferDirection::Upload,
+        })
+        .await
+    else {
+        panic!("job id")
+    };
+    let _owner_prompt = owner.wait_decision("file_conflict", true).await;
+    let observer_event = observer.wait_decision("file_conflict", false).await;
+    assert_eq!(observer_event["job_id"], job);
+    assert_eq!(observer_event["recoverable"], false);
+
+    assert!(observer
+        .rpc(RpcCall::TransferResolve {
+            job_id: job.clone(),
+            resolution: WireResolution::Skip,
+            prompt_request_id: None,
+        })
+        .await
+        .is_err());
+    assert!(observer
+        .rpc(RpcCall::TransferRecoverConflict {
+            job_id: job.clone(),
+        })
+        .await
+        .is_err());
+
+    drop(owner);
+    observer
+        .rpc(RpcCall::TransferRecoverConflict {
+            job_id: job.clone(),
+        })
+        .await
+        .unwrap();
+    let prompt = observer.wait_decision("file_conflict", true).await;
+    assert_ne!(
+        _owner_prompt.get("prompt_request_id"),
+        prompt.get("prompt_request_id")
+    );
+    observer
+        .rpc(RpcCall::TransferResolve {
+            job_id: job.clone(),
+            resolution: WireResolution::Skip,
+            prompt_request_id: prompt
+                .get("prompt_request_id")
+                .and_then(serde_json::Value::as_str)
+                .map(|id| TransferPromptId::new(id.to_string())),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        fake.resolutions.lock().unwrap().as_slice(),
+        &[(job, TransferResolution::Skip)]
+    );
+    fake.finish.notify_waiters();
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn v1_transfer_clients_only_receive_their_own_conflict_prompt() {
+    let fake = Fake::new();
+    let host = Harness::start(Some(fake.services())).await;
+    let mut owner = host.client_with_protocol(1).await;
+    let mut observer = host.client_with_protocol(1).await;
+    owner.rpc(RpcCall::SubscribeEvents).await.unwrap();
+    observer.rpc(RpcCall::SubscribeEvents).await.unwrap();
+
+    let Ok(RpcValue::JobId(job)) = owner
+        .rpc(RpcCall::TransferEnqueue {
+            session_id: "tab-1".into(),
+            src_path: "/tmp/conflict-file".into(),
+            dest_path: "/remote/x".into(),
+            direction: TransferDirection::Upload,
+        })
+        .await
+    else {
+        panic!("job id")
+    };
+    let prompt = owner.wait_event("file_conflict").await;
+    assert_eq!(prompt["job_id"], job);
+    assert!(prompt["prompt_request_id"].is_string());
+    assert!(timeout(
+        Duration::from_millis(100),
+        observer.wait_event("file_conflict")
+    )
+    .await
+    .is_err());
+
+    // A v1 response may omit the new token, but is still fenced to the
+    // originating connection and consumed once by the host.
+    owner
+        .rpc(RpcCall::TransferResolve {
+            job_id: job.clone(),
+            resolution: WireResolution::Skip,
+            prompt_request_id: None,
+        })
+        .await
+        .unwrap();
+    assert!(owner
+        .rpc(RpcCall::TransferResolve {
+            job_id: job,
+            resolution: WireResolution::Skip,
+            prompt_request_id: None,
+        })
+        .await
+        .is_err());
+    fake.finish.notify_waiters();
+    host.shutdown().await;
 }
 
 #[tokio::test]
@@ -1205,6 +1392,22 @@ async fn bus_event(
     .unwrap_or_else(|_| panic!("no {name} event"))
 }
 
+async fn bus_actionable_decision(
+    rx: &mut tokio::sync::broadcast::Receiver<labonair_events::RawEvent>,
+    name: &str,
+) -> serde_json::Value {
+    timeout(WAIT, async {
+        loop {
+            let event = rx.recv().await.expect("bus open");
+            if event.name == name && event.payload["actionable"] == true {
+                return event.payload;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("no actionable {name} event"))
+}
+
 async fn eventually_text(sink: &Collect, needle: &str) {
     let result = timeout(WAIT, async {
         while !sink.0.lock().unwrap().contains(needle) {
@@ -1238,7 +1441,7 @@ async fn proxy_connects_through_the_trust_prompt_streams_output_and_disconnects(
         "size of /x"
     );
     daemon
-        .trust_host(SshSessionId::new("tab-1"), true)
+        .trust_host(SshSessionId::new("tab-1"), None, true)
         .await
         .unwrap();
     connect.await.unwrap().expect("connect");
@@ -1300,7 +1503,7 @@ async fn a_rejected_host_key_fails_the_connect_with_a_typed_error() {
     };
     bus_event(&mut events, "known_hosts_warning").await;
     daemon
-        .trust_host(SshSessionId::new("tab-1"), false)
+        .trust_host(SshSessionId::new("tab-1"), None, false)
         .await
         .unwrap();
     let err = connect.await.unwrap().unwrap_err();
@@ -1376,11 +1579,21 @@ async fn a_transfer_keeps_running_while_the_app_is_away_and_its_conflict_is_repl
     };
     assert_eq!(jobs[0].job.id, job);
     assert!(jobs[0].conflict.is_some());
-    let _ = &mut events2;
-
-    TransferService::resolve(&again, job.clone(), TransferResolution::Skip)
+    TransferService::recover_conflict(&again, job.clone())
         .await
         .unwrap();
+    let prompt = bus_actionable_decision(&mut events2, "file_conflict").await;
+    TransferService::resolve_prompt(
+        &again,
+        job.clone(),
+        TransferResolution::Skip,
+        prompt
+            .get("prompt_request_id")
+            .and_then(serde_json::Value::as_str)
+            .map(|id| TransferPromptId::new(id.to_string())),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         fake.resolutions.lock().unwrap().as_slice(),
         &[(job, TransferResolution::Skip)]
@@ -1395,7 +1608,8 @@ async fn routed_services_keep_app_and_daemon_sessions_apart_and_fall_back_on_fai
     let local = Fake::new();
     local.jobs.store(10, Ordering::SeqCst);
     let host = Harness::start(Some(remote.services())).await;
-    let (daemon, _bus) = proxy(&host).await;
+    let (daemon, bus) = proxy(&host).await;
+    let mut transfer_events = bus.subscribe();
 
     let detached = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let daemon_ok = Arc::new(std::sync::atomic::AtomicBool::new(true));
@@ -1479,10 +1693,18 @@ async fn routed_services_keep_app_and_daemon_sessions_apart_and_fall_back_on_fai
         direction: TransferDirection::Upload,
     };
     let app_job = routed.enqueue(request_for("tab-app")).await.unwrap();
-    let det_job = routed.enqueue(request_for("tab-det")).await.unwrap();
+    let mut detached_request = request_for("tab-det");
+    detached_request.src_path = "/tmp/conflict-a".into();
+    let det_job = routed.enqueue(detached_request).await.unwrap();
     assert_eq!((app_job.as_str(), det_job.as_str()), ("job-11", "job-1"));
+    let conflict = bus_actionable_decision(&mut transfer_events, "file_conflict").await;
+    let prompt_request_id = conflict
+        .get("prompt_request_id")
+        .and_then(serde_json::Value::as_str)
+        .map(|id| TransferPromptId::new(id.to_string()));
+    assert!(prompt_request_id.is_some());
     routed
-        .resolve(det_job.clone(), TransferResolution::Skip)
+        .resolve_prompt(det_job.clone(), TransferResolution::Skip, prompt_request_id)
         .await
         .unwrap();
     routed

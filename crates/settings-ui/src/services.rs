@@ -49,6 +49,7 @@ pub struct BackgroundHostSession {
     /// Foreground job when it is not the shell.
     pub foreground: Option<String>,
     pub attached: bool,
+    pub attached_count: u32,
     pub exited: bool,
 }
 

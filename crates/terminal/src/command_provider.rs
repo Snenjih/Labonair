@@ -174,9 +174,17 @@ fn terminal_subtitle(session: &crate::BackgroundSession, open_here: bool) -> Str
     let state = if session.exited {
         "exited"
     } else if open_here {
-        "open in a tab"
+        if session.attached_count > 1 {
+            "shared by multiple views"
+        } else {
+            "open in a tab"
+        }
     } else if session.attached {
-        "open in another window"
+        if session.attached_count > 1 {
+            "shared by multiple views"
+        } else {
+            "open in another window"
+        }
     } else {
         "detached"
     };
@@ -251,11 +259,13 @@ mod terminals_submenu_tests {
         BackgroundSession {
             id,
             pane_tag: None,
+            persist_key: format!("persist-{id}"),
             label: Some("Ciel".to_string()),
             cwd: Some("/work/Ciel".to_string()),
             title: None,
             exited,
             attached,
+            attached_count: u32::from(attached),
             foreground: Some("sleep".to_string()),
         }
     }

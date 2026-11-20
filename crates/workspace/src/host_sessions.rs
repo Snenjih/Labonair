@@ -7,7 +7,7 @@
 
 use gpui::{App, Context, Window};
 use labonair_notifications::{notification_center, Notification};
-use labonair_settings::{GeneralSettings, Settings as _};
+use labonair_settings::content::terminal::SessionHostMode;
 use labonair_terminal::{BackgroundSession, DaemonHost};
 
 use crate::host_restore;
@@ -98,9 +98,12 @@ impl Workspace {
             .panes
             .iter()
             .find(|(_, entry)| entry.view.read(cx).handle().host_session_id() == Some(id))
-            .map(|(pane, _)| *pane);
+            .map(|(pane, entry)| (*pane, entry.session_id));
         match (pane, running_host(cx)) {
-            (Some(pane), _) => self.close_pane_id(pane, window, cx),
+            (Some((pane, session_id)), _) => {
+                self.registry.kill(session_id);
+                self.close_pane_id(pane, window, cx);
+            }
             (None, Some(host)) => host.kill_session(id),
             (None, None) => {}
         }
@@ -216,11 +219,14 @@ impl Workspace {
     /// normal window close, stop the background host with all its sessions,
     /// then quit. App-bound sessions end with the process as usual.
     pub(crate) fn quit_and_stop_all_sessions(&self, cx: &mut App) {
-        if GeneralSettings::try_get(cx)
-            .map(|s| s.session_restore())
-            .unwrap_or(false)
-        {
-            crate::session::save_snapshot(&self.session_snapshot(cx));
+        if terminal_settings(cx).session_host() == SessionHostMode::Detached {
+            let capture = self.session_capture(cx);
+            let data_dir = labonair_filesystem::paths::data_dir();
+            cx.background_executor()
+                .spawn(async move {
+                    super::persist_scrollback_captures(&data_dir, capture.scrollbacks);
+                })
+                .detach();
         }
         if let Some(host) = running_host(cx) {
             host.shutdown();

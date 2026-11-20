@@ -21,6 +21,7 @@ use labonair_ssh::{
     SshExecOutput, SshHostedAccess, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
     SshSessionId, SshTunnelService,
 };
+use labonair_transfers::TransferPromptId;
 use labonair_transfers::{TransferRequest, TransferResolution, TransferService};
 
 use super::DaemonServices;
@@ -230,6 +231,7 @@ impl SshConnectionService for RoutedServices {
     fn trust_host<'a>(
         &'a self,
         session_id: SshSessionId,
+        prompt_request_id: Option<labonair_ssh::PromptRequestId>,
         accepted: bool,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
@@ -238,10 +240,14 @@ impl SshConnectionService for RoutedServices {
                     self.inner
                         .local
                         .connection
-                        .trust_host(session_id, accepted)
+                        .trust_host(session_id, prompt_request_id, accepted)
                         .await
                 }
-                Route::Daemon(daemon) => daemon.trust_host(session_id, accepted).await,
+                Route::Daemon(daemon) => {
+                    daemon
+                        .trust_host(session_id, prompt_request_id, accepted)
+                        .await
+                }
             }
         })
     }
@@ -572,12 +578,40 @@ impl TransferService for RoutedServices {
         job_id: String,
         resolution: TransferResolution,
     ) -> labonair_transfers::BoxFuture<'a, Result<(), String>> {
+        self.resolve_prompt(job_id, resolution, None)
+    }
+
+    fn resolve_prompt<'a>(
+        &'a self,
+        job_id: String,
+        resolution: TransferResolution,
+        prompt_request_id: Option<TransferPromptId>,
+    ) -> labonair_transfers::BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             match self.route_job(&job_id) {
-                Route::Local => self.inner.local.transfers.resolve(job_id, resolution).await,
-                Route::Daemon(daemon) => {
-                    TransferService::resolve(&daemon, job_id, resolution).await
+                Route::Local => {
+                    self.inner
+                        .local
+                        .transfers
+                        .resolve_prompt(job_id, resolution, prompt_request_id)
+                        .await
                 }
+                Route::Daemon(daemon) => {
+                    TransferService::resolve_prompt(&daemon, job_id, resolution, prompt_request_id)
+                        .await
+                }
+            }
+        })
+    }
+
+    fn recover_conflict<'a>(
+        &'a self,
+        job_id: String,
+    ) -> labonair_transfers::BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            match self.route_job(&job_id) {
+                Route::Local => Ok(()),
+                Route::Daemon(daemon) => TransferService::recover_conflict(&daemon, job_id).await,
             }
         })
     }

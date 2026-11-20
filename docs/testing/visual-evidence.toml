@@ -25,8 +25,8 @@ next_action = "Capture open, disabled, submenu, and keyboard-navigation states f
 
 [[surface]]
 id = "workspace.active"
-state_status = { home = "Pending", "project workspace" = "Pending", standalone = "Pending", "empty pane" = "Pending", loading = "Pending", error = "Pending", "split panes" = "Pending" }
-next_action = "Capture home, project, standalone, empty, loading, error, and split-pane states."
+state_status = { home = "Pending", "project workspace" = "Pending", standalone = "Pending", "empty pane" = "Pending", loading = "Pending", error = "Pending", "split panes" = "Pending", "shared Space join" = "Pending" }
+next_action = "Capture home, project, standalone, empty, loading, error, split-pane, and occupied-Space join states."
 
 [[surface]]
 id = "workspace.docks"
@@ -65,5 +65,5 @@ next_action = "Capture settings navigation, filtering, validation, and write-fai
 
 [[surface]]
 id = "workspace.standalone-terminal"
-state_status = { ready = "Pending", loading = "Pending", empty = "Pending", "process exit" = "Pending", "connection failure" = "Pending", "narrow window" = "Pending" }
-next_action = "Capture local terminal readiness, process exit, failure, and narrow-layout states."
+state_status = { ready = "Pending", loading = "Pending", empty = "Pending", "process exit" = "Pending", "connection failure" = "Pending", "narrow window" = "Pending", "shared terminal controller" = "Pending", "shared terminal non-controller" = "Pending" }
+next_action = "Capture local terminal readiness, process exit, failure, narrow layout, and both views of one shared Detached terminal."

@@ -69,6 +69,8 @@ pub mod search_overlay;
 pub mod session;
 pub mod session_io;
 pub mod session_v3;
+mod shared_session;
+mod shared_workspace;
 pub mod spaces;
 pub mod spaces_ui;
 pub mod ssh_connection;
@@ -519,9 +521,18 @@ fn loading_btn(
 
 /// A blocking prompt raised mid-connect by the SSH backend.
 enum SshPrompt {
-    Trust { ssh_id: String },
-    Password { ssh_id: String, buffer: String },
-    Passphrase { ssh_id: String, buffer: String },
+    Trust {
+        ssh_id: String,
+        prompt_request_id: Option<labonair_ssh::PromptRequestId>,
+    },
+    Password {
+        ssh_id: String,
+        buffer: String,
+    },
+    Passphrase {
+        ssh_id: String,
+        buffer: String,
+    },
 }
 
 impl SshPrompt {
@@ -700,6 +711,28 @@ pub struct Workspace {
     /// the ones `TabStore` currently reports — their sessions/views stay
     /// alive in `layouts`/`panes`/`editors`/etc. unchanged.
     pub(crate) spaces: Entity<SpaceStore>,
+    /// Workspace owner persistence and the current short-lived Space lease.
+    shared_storage: Option<Arc<labonair_workspace_storage::WorkspaceStorage>>,
+    shared_lease: Option<labonair_workspace_storage::WorkspaceLease>,
+    shared_instance_id: labonair_workspace_storage::WorkspaceInstanceId,
+    shared_revision: u64,
+    shared_base: Option<labonair_workspace_storage::StoredSpace>,
+    shared_pane_ids: HashMap<(u64, PaneId), labonair_workspace_storage::PaneId>,
+    shared_unopened_tabs:
+        HashMap<labonair_workspace_storage::SpaceId, Vec<labonair_workspace_storage::StoredTab>>,
+    shared_ready: bool,
+    shared_restore_enabled: bool,
+    shared_release_started: bool,
+    shared_transition_pending: bool,
+    pending_shared_bootstrap: Option<shared_workspace::BootstrapState>,
+    pending_shared_error: Option<String>,
+    pending_shared_space: Option<(
+        labonair_workspace_storage::StoredSpace,
+        Vec<labonair_workspace_storage::SpaceSummary>,
+        bool,
+        bool,
+    )>,
+    pending_shared_join: Option<shared_workspace::JoinState>,
     /// Anchor position of the open Spaces popover, if any (mirrors
     /// `new_tab_menu`).
     pub(crate) spaces_menu: MenuSlot<gpui::Point<gpui::Pixels>>,
@@ -955,6 +988,35 @@ pub struct Workspace {
 impl EventEmitter<WorkspaceEvent> for Workspace {}
 
 impl Workspace {
+    /// Start Workspace-owned multi-process persistence without blocking the
+    /// GPUI foreground thread. The first render remains empty until the
+    /// atomic Space claim and migration complete.
+    pub fn start_shared_storage(&mut self, cx: &mut Context<Self>) {
+        if self.shared_ready || self.pending_shared_bootstrap.is_some() {
+            return;
+        }
+        let restore_enabled = GeneralSettings::try_get(cx)
+            .map(|settings| settings.session_restore())
+            .unwrap_or(false);
+        self.shared_restore_enabled = restore_enabled;
+        let data_dir = labonair_filesystem::paths::data_dir();
+        let instance_id = self.shared_instance_id;
+        let bootstrap = cx.background_executor().spawn(async move {
+            shared_workspace::bootstrap(data_dir, instance_id, restore_enabled)
+        });
+        cx.spawn(async move |this, cx| {
+            let result = bootstrap.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(state) => this.pending_shared_bootstrap = Some(state),
+                    Err(error) => this.pending_shared_error = Some(error),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         registry: Arc<TerminalRegistry>,
@@ -1099,6 +1161,21 @@ impl Workspace {
             registry,
             tabs,
             spaces,
+            shared_storage: None,
+            shared_lease: None,
+            shared_instance_id: labonair_workspace_storage::WorkspaceInstanceId::new(),
+            shared_revision: 0,
+            shared_base: None,
+            shared_pane_ids: HashMap::new(),
+            shared_unopened_tabs: HashMap::new(),
+            shared_ready: false,
+            shared_restore_enabled: false,
+            shared_release_started: false,
+            shared_transition_pending: false,
+            pending_shared_bootstrap: None,
+            pending_shared_error: None,
+            pending_shared_space: None,
+            pending_shared_join: None,
             spaces_menu: MenuSlot::new(),
             space_actions_menu: MenuSlot::new(),
             collapsed_spaces: std::collections::HashSet::new(),
@@ -1225,6 +1302,7 @@ impl Workspace {
                     let id = this.spaces.update(cx, |s, cx| {
                         s.restore_entry(
                             index == 0,
+                            labonair_workspace_storage::SpaceId::new(),
                             entry.name.clone(),
                             entry.session.identity.clone(),
                             cx,
@@ -1290,9 +1368,7 @@ impl Workspace {
     /// Snapshot every Space, each with its persistable tabs + every workspace
     /// tab's split-pane tree (T20-008 Spaces).
     pub fn session_snapshot(&self, cx: &App) -> crate::session_v3::SpacesSnapshotV3 {
-        let capture = self.session_capture(cx);
-        persist_scrollback_captures(&labonair_filesystem::paths::data_dir(), capture.scrollbacks);
-        capture.snapshot
+        self.session_capture(cx).snapshot
     }
 
     fn session_capture(&self, cx: &App) -> SessionCapture {
@@ -1304,22 +1380,72 @@ impl Workspace {
         }
     }
 
-    /// Scrollback-file UUIDs of every currently-open local pane.
-    fn known_scrollback_ids(&self) -> Vec<String> {
-        self.panes
-            .values()
-            .map(|e| e.scrollback_id.clone())
-            .collect()
-    }
-
     /// Remove orphaned / stale persisted scrollback files (T14-002).
     pub fn cleanup_scrollback(&self, cx: &App) {
+        // A process-local pane list is not a safe cleanup authority once
+        // multiple Workspace instances share persisted session references.
+        // Generation-fenced cleanup is implemented by shared Workspace
+        // storage; until it is ready, retain files rather than deleting a
+        // different process's scrollback.
+        if !self.shared_ready {
+            return;
+        }
         let retention = terminal_settings(cx).scrollback_retention_secs();
-        labonair_terminal::scrollback::cleanup(
-            &labonair_filesystem::paths::data_dir(),
-            &self.known_scrollback_ids(),
-            retention,
-        );
+        let Some(storage) = self.shared_storage.clone() else {
+            return;
+        };
+        let data_dir = labonair_filesystem::paths::data_dir();
+        let detached = terminal_settings(cx).session_host() == SessionHostMode::Detached;
+        let scrollback_lines = terminal_settings(cx).detached_scrollback_lines();
+        cx.background_executor()
+            .spawn(async move {
+                let live_host_keys = if detached {
+                    let sessions = match DaemonHost::connect(&data_dir, scrollback_lines, false)
+                        .and_then(|host| host.list_sessions())
+                    {
+                        Ok(sessions) => sessions,
+                        Err(error) => {
+                            tracing::debug!(%error, "skip scrollback cleanup while Detached host is unavailable");
+                            return;
+                        }
+                    };
+                    sessions
+                        .into_iter()
+                        .flat_map(|session| {
+                            session
+                                .pane_tag
+                                .into_iter()
+                                .chain(std::iter::once(session.persist_key))
+                        })
+                        .collect::<std::collections::HashSet<_>>()
+                } else {
+                    std::collections::HashSet::new()
+                };
+                let now = shared_workspace::now_seconds();
+                for key in labonair_terminal::scrollback::stale_keys(&data_dir, retention) {
+                    let permit = match storage.issue_gc_permit(
+                        &key,
+                        &live_host_keys,
+                        now,
+                        Duration::from_secs(30),
+                    ) {
+                        Ok(Some(permit)) => permit,
+                        Ok(None) => continue,
+                        Err(error) => {
+                            tracing::warn!(%error, "cannot check Workspace scrollback references");
+                            return;
+                        }
+                    };
+                    if labonair_terminal::scrollback::delete(&data_dir, &key) {
+                        if let Err(error) = storage.confirm_gc(&permit) {
+                            tracing::warn!(%error, scrollback_key = %key, "cannot confirm scrollback cleanup");
+                        }
+                    } else if let Err(error) = storage.release_gc_permit(&permit) {
+                        tracing::warn!(%error, scrollback_key = %key, "cannot release failed scrollback cleanup permit");
+                    }
+                }
+            })
+            .detach();
     }
 
     /// Persist the snapshot once the current update is done, when new panes
@@ -1338,19 +1464,16 @@ impl Workspace {
     /// Persist the snapshot now if the `sessionRestore` preference is on;
     /// otherwise remove any stale snapshot. Returns nothing — best effort.
     fn maybe_save_session(&self, cx: &App) {
-        if GeneralSettings::try_get(cx)
-            .map(|s| s.session_restore())
-            .unwrap_or(false)
-        {
-            let capture = self.session_capture(cx);
-            let data_dir = labonair_filesystem::paths::data_dir();
-            cx.background_executor()
-                .spawn(async move {
-                    crate::session::save_snapshot(&capture.snapshot);
-                    persist_scrollback_captures(&data_dir, capture.scrollbacks);
-                })
-                .detach();
+        if !self.shared_ready || terminal_settings(cx).session_host() != SessionHostMode::Detached {
+            return;
         }
+        let capture = self.session_capture(cx);
+        let data_dir = labonair_filesystem::paths::data_dir();
+        cx.background_executor()
+            .spawn(async move {
+                persist_scrollback_captures(&data_dir, capture.scrollbacks);
+            })
+            .detach();
     }
 
     /// The tab store (for later phases / command palette wiring).
@@ -1535,6 +1658,16 @@ impl Workspace {
         if target == self.spaces.read(cx).active_id() {
             return;
         }
+        let Some(target_space) = self.spaces.read(cx).get(target).cloned() else {
+            return;
+        };
+        let current_shared = self.shared_lease.as_ref().map(|lease| lease.space_id);
+        if self.shared_ready
+            && (!target_space.loaded || current_shared != Some(target_space.shared_id))
+        {
+            self.request_shared_space_join(target, cx);
+            return;
+        }
         self.apply_space_switch(target, cx);
     }
 
@@ -1612,7 +1745,11 @@ impl Workspace {
                 cx,
             )
         });
-        self.switch_space(id, cx);
+        if self.shared_ready {
+            self.request_shared_space_create(id, cx);
+        } else {
+            self.switch_space(id, cx);
+        }
         id
     }
 
@@ -1632,7 +1769,11 @@ impl Workspace {
         let id = self.spaces.update(cx, |s, cx| {
             s.create(name, context::WorkspaceIdentity::project(root.clone()), cx)
         });
-        self.switch_space(id, cx);
+        if self.shared_ready {
+            self.request_shared_space_create(id, cx);
+        } else {
+            self.switch_space(id, cx);
+        }
         self.record_recent_project(root);
         id
     }
@@ -5342,12 +5483,6 @@ impl Workspace {
     fn retire_pane(&mut self, pane_id: PaneId) {
         if let Some(entry) = self.panes.remove(&pane_id) {
             self.registry.close(entry.session_id);
-            // Drop this pane's persisted scrollback — a closed pane is never
-            // restored (T14-002).
-            labonair_terminal::scrollback::delete(
-                &labonair_filesystem::paths::data_dir(),
-                &entry.scrollback_id,
-            );
         }
     }
 
@@ -5373,6 +5508,8 @@ impl Workspace {
     /// session, view, document binding and connection.
     fn retire_tab(&mut self, tab: &Tab, cx: &mut Context<Self>) {
         self.revoke_tab_grant(tab.id, cx);
+        self.shared_pane_ids
+            .retain(|(local_tab, _), _| *local_tab != tab.id);
         self.zoom.clear(tab.id);
         let panes = self
             .layouts
@@ -6262,6 +6399,7 @@ impl Workspace {
             }
             SshConnectionEvent::KnownHostsWarning {
                 session_id,
+                prompt_request_id,
                 fingerprint,
                 host,
                 is_mismatch,
@@ -6270,7 +6408,10 @@ impl Workspace {
                     s.set_trust(&session_id, fingerprint.clone(), is_mismatch, cx)
                 });
                 let _ = (host, fingerprint, is_mismatch);
-                self.ssh_prompt = Some(SshPrompt::Trust { ssh_id: session_id });
+                self.ssh_prompt = Some(SshPrompt::Trust {
+                    ssh_id: session_id,
+                    prompt_request_id,
+                });
             }
             SshConnectionEvent::AuthRequired {
                 session_id,
@@ -6478,12 +6619,17 @@ impl Workspace {
             return;
         };
         match prompt {
-            SshPrompt::Trust { ssh_id, .. } => {
+            SshPrompt::Trust {
+                ssh_id,
+                prompt_request_id,
+            } => {
                 self.ssh_connection
                     .update(cx, |s, cx| s.resume(&ssh_id, cx));
                 let ssh = self.ssh.clone();
                 self.tokio.spawn(async move {
-                    let _ = ssh.trust_host(SshSessionId::new(ssh_id), true).await;
+                    let _ = ssh
+                        .trust_host(SshSessionId::new(ssh_id), prompt_request_id, true)
+                        .await;
                 });
             }
             SshPrompt::Password { ssh_id, buffer, .. } => {
@@ -6498,13 +6644,18 @@ impl Workspace {
 
     fn cancel_prompt(&mut self, cx: &mut Context<Self>) {
         match self.ssh_prompt.take() {
-            Some(SshPrompt::Trust { ssh_id, .. }) => {
+            Some(SshPrompt::Trust {
+                ssh_id,
+                prompt_request_id,
+            }) => {
                 self.ssh_connection.update(cx, |s, cx| {
                     s.set_error(&ssh_id, "Host key was not trusted.", cx)
                 });
                 let ssh = self.ssh.clone();
                 self.tokio.spawn(async move {
-                    let _ = ssh.trust_host(SshSessionId::new(ssh_id), false).await;
+                    let _ = ssh
+                        .trust_host(SshSessionId::new(ssh_id), prompt_request_id, false)
+                        .await;
                 });
             }
             Some(SshPrompt::Password { ssh_id, .. } | SshPrompt::Passphrase { ssh_id, .. }) => {
@@ -7487,6 +7638,7 @@ impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "workspace").entered();
+        self.apply_pending_shared_state(window, cx);
         self.drain_editor_git_actions(cx);
         // T19-003: keep `labonair-settings`'s active project root in sync
         // with the explicit workspace identity (cheap no-op unless it

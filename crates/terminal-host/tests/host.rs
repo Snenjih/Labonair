@@ -5,11 +5,13 @@
 //! socket, driven by a tiny client that keeps its own emulator (the way the
 //! app will).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use labonair_terminal_core::{
     scrollback, TermDimensions, TerminalColors, TerminalEmulator, TerminalEvent,
@@ -116,6 +118,7 @@ struct Client {
     screen: Screen,
     msgs: Vec<Message>,
     resyncs: usize,
+    attachment_ids: HashMap<SessionId, TerminalAttachmentId>,
 }
 
 impl Client {
@@ -138,6 +141,7 @@ impl Client {
             screen: Screen::new(80, 24),
             msgs: Vec::new(),
             resyncs: 0,
+            attachment_ids: HashMap::new(),
         }
     }
 
@@ -229,15 +233,43 @@ impl Client {
         }
     }
 
-    async fn attach(&mut self, session: SessionId, cols: u16, rows: u16) {
+    async fn attach(&mut self, session: SessionId, cols: u16, rows: u16) -> Message {
+        let attachment_id = *self.attachment_ids.entry(session).or_default();
         self.send(Message::Attach {
             session,
             cols,
             rows,
+            attachment_id: Some(attachment_id),
         })
         .await;
         self.wait_msg(|m| matches!(m, Message::Attached { .. }))
+            .await
+    }
+
+    async fn sequenced_input(
+        &mut self,
+        session: SessionId,
+        attachment_id: TerminalAttachmentId,
+        sequence: u64,
+        text: &str,
+    ) {
+        let bytes = sequenced_input_frame(session, attachment_id, sequence, text.as_bytes());
+        self.write.write_all(&bytes).await.unwrap();
+        let ack = self
+            .wait_msg(|message| {
+                matches!(
+                    message,
+                    Message::InputAck {
+                        session: got_session,
+                        attachment_id: got_attachment,
+                        sequence: got_sequence,
+                    } if *got_session == session
+                        && *got_attachment == attachment_id
+                        && *got_sequence >= sequence
+                )
+            })
             .await;
+        assert!(matches!(ack, Message::InputAck { .. }));
     }
 
     async fn list(&mut self) -> Vec<SessionInfo> {
@@ -311,8 +343,13 @@ async fn output_while_detached_shows_up_in_the_next_snapshot() {
     let mut client = host.client().await;
     let id = client.create(sh()).await;
     client.attach(id, 80, 24).await;
-    client.input(id, "(sleep 1; echo LATE-OUTPUT) &\n").await;
-    client.wait_text("[1]").await;
+    client
+        .input(
+            id,
+            "echo BACKGROUND-STARTED; (sleep 1; echo LATE-OUTPUT) &\n",
+        )
+        .await;
+    client.wait_text("BACKGROUND-STARTED").await;
     client.send(Message::Detach { session: id }).await;
     sleep(Duration::from_millis(1800)).await;
     assert!(!client.list().await[0].attached);
@@ -351,39 +388,223 @@ async fn alt_screen_program_survives_reattach() {
 }
 
 #[tokio::test]
-async fn second_attach_steals_the_session() {
+async fn multiple_clients_share_output_and_resize_has_one_controller() {
     let host = Harness::start().await;
     let mut a = host.client().await;
     let id = a.create(sh()).await;
-    a.attach(id, 80, 24).await;
+    let Message::Attached {
+        attachment_id: Some(a_attachment),
+        resize_controller: Some(a_controller),
+        ..
+    } = a.attach(id, 80, 24).await
+    else {
+        panic!("first attachment response");
+    };
+    assert_eq!(a_attachment, a_controller);
     let mut b = host.client().await;
-    b.attach(id, 80, 24).await;
+    let Message::Attached {
+        attachment_id: Some(b_attachment),
+        attached_count: 2,
+        resize_controller: Some(controller),
+        ..
+    } = b.attach(id, 80, 24).await
+    else {
+        panic!("second attachment response");
+    };
+    assert_eq!(
+        controller, a_attachment,
+        "first attachment keeps resize control"
+    );
 
-    let detached = a.wait_msg(|m| matches!(m, Message::Detached { .. })).await;
-    assert!(matches!(
-        detached,
-        Message::Detached {
-            reason: DetachReason::Stolen,
-            ..
-        }
-    ));
-    // The stolen client's input is ignored, the new owner's is not.
     a.input(id, "echo from-a\n").await;
     b.input(id, "echo from-b\n").await;
+    a.wait_text("from-a").await;
+    b.wait_text("from-a").await;
+    a.wait_text("from-b").await;
     b.wait_text("from-b").await;
-    assert!(!b.screen.text().contains("\nfrom-a"), "{}", b.screen.text());
+
+    b.send(Message::Resize {
+        session: id,
+        cols: 100,
+        rows: 30,
+    })
+    .await;
+    assert!(matches!(
+        b.wait_msg(
+            |message| matches!(message, Message::Error { session: Some(got), .. } if *got == id)
+        )
+        .await,
+        Message::Error { .. }
+    ));
+    b.send(Message::RequestResizeControl { session: id }).await;
+    assert!(matches!(
+        b.wait_msg(|message| matches!(message, Message::AttachmentState { session, resize_controller: Some(controller), .. } if *session == id && *controller == b_attachment)).await,
+        Message::AttachmentState { .. }
+    ));
+    b.send(Message::Resize {
+        session: id,
+        cols: 100,
+        rows: 30,
+    })
+    .await;
+    let sessions = b.list().await;
+    assert_eq!(sessions[0].attached_count, 2);
+    assert_eq!(sessions[0].resize_controller, Some(b_attachment));
+    assert_eq!((sessions[0].cols, sessions[0].rows), (100, 30));
+
+    a.send(Message::Detach { session: id }).await;
+    b.input(id, "echo after-a-left\n").await;
+    b.wait_text("after-a-left").await;
+    assert_eq!(b.list().await[0].attached_count, 1);
+    host.shutdown().await;
+}
+
+/// Child-process target for `separate_process_clients_share_one_host_session`.
+/// Running the integration binary normally has no `LH_PROCESS_*` variables,
+/// so this helper exits immediately as an ordinary test.
+#[tokio::test]
+async fn subprocess_attachment_client_helper() {
+    let (Some(socket), Some(session), Some(ready), Some(observed)) = (
+        std::env::var_os("LH_PROCESS_SOCKET"),
+        std::env::var("LH_PROCESS_SESSION")
+            .ok()
+            .and_then(|value| value.parse::<SessionId>().ok()),
+        std::env::var_os("LH_PROCESS_READY"),
+        std::env::var_os("LH_PROCESS_OBSERVED"),
+    ) else {
+        return;
+    };
+    let mut client = Client::connect(&PathBuf::from(socket)).await;
+    client.attach(session, 80, 24).await;
+    std::fs::write(ready, b"attached").expect("write ready marker");
+    client.wait_text("PROCESS-BOUNDARY-OUTPUT").await;
+    std::fs::write(observed, b"received").expect("write output marker");
+}
+
+struct ChildProcesses(Vec<Child>);
+
+impl Drop for ChildProcesses {
+    fn drop(&mut self) {
+        for child in &mut self.0 {
+            if child.try_wait().ok().flatten().is_none() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn separate_process_clients_share_one_host_session() {
+    let host = Harness::start().await;
+    let mut owner = host.client().await;
+    let session = owner.create(sh()).await;
+    owner.attach(session, 80, 24).await;
+
+    let helper = std::env::current_exe().expect("integration test executable");
+    let mut children = ChildProcesses(Vec::new());
+    let mut ready_paths = Vec::new();
+    let mut observed_paths = Vec::new();
+    for index in 0..2 {
+        let ready = host.dir.join(format!("client-{index}.ready"));
+        let observed = host.dir.join(format!("client-{index}.observed"));
+        let child = Command::new(&helper)
+            .arg("--exact")
+            .arg("subprocess_attachment_client_helper")
+            .arg("--nocapture")
+            .env("LH_PROCESS_SOCKET", &host.socket)
+            .env("LH_PROCESS_SESSION", session.to_string())
+            .env("LH_PROCESS_READY", &ready)
+            .env("LH_PROCESS_OBSERVED", &observed)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn attachment process");
+        children.0.push(child);
+        ready_paths.push(ready);
+        observed_paths.push(observed);
+    }
+
+    let deadline = Instant::now() + WAIT;
+    while ready_paths.iter().any(|path| !path.exists()) {
+        assert!(Instant::now() < deadline, "child clients did not attach");
+        assert!(
+            children
+                .0
+                .iter_mut()
+                .all(|child| child.try_wait().expect("check child status").is_none()),
+            "an attachment child exited before signaling readiness"
+        );
+        sleep(Duration::from_millis(20)).await;
+    }
+    let sessions = owner.list().await;
+    assert_eq!(sessions[0].attached_count, 3);
+
+    owner.input(session, "echo PROCESS-BOUNDARY-OUTPUT\n").await;
+    owner.wait_text("PROCESS-BOUNDARY-OUTPUT").await;
+    while observed_paths.iter().any(|path| !path.exists()) {
+        assert!(
+            Instant::now() < deadline,
+            "child clients did not receive output"
+        );
+        sleep(Duration::from_millis(20)).await;
+    }
+    for child in &mut children.0 {
+        let status = timeout(WAIT, async {
+            loop {
+                if let Some(status) = child.try_wait().expect("check child status") {
+                    break status;
+                }
+                sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("child client exits");
+        assert!(
+            status.success(),
+            "child attachment process failed: {status}"
+        );
+    }
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn sequenced_input_retries_are_acknowledged_without_duplicate_writes() {
+    let host = Harness::start().await;
+    let mut client = host.client().await;
+    let id = client.create(sh()).await;
+    let Message::Attached {
+        attachment_id: Some(attachment_id),
+        ..
+    } = client.attach(id, 80, 24).await
+    else {
+        panic!("attachment response");
+    };
+    client.input(id, "stty -echo\n").await;
+    sleep(Duration::from_millis(50)).await;
+    client
+        .sequenced_input(id, attachment_id, 1, "printf 'ONCE-MARKER\\n'\n")
+        .await;
+    client.wait_text("ONCE-MARKER").await;
+    client
+        .sequenced_input(id, attachment_id, 1, "printf 'ONCE-MARKER\\n'\n")
+        .await;
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(client.screen.text().matches("ONCE-MARKER").count(), 1);
     host.shutdown().await;
 }
 
 #[tokio::test]
 async fn slow_client_overflows_into_a_resync_that_matches_the_truth() {
-    let host = Harness::start_with(|cfg| cfg.queue_limit = 64 * 1024).await;
+    let host = Harness::start_with(|cfg| cfg.queue_limit = 1).await;
     let mut client = host.client().await;
     let id = client.create(sh()).await;
     client.attach(id, 80, 24).await;
+    client.input(id, "stty -echo\n").await;
+    sleep(Duration::from_millis(50)).await;
     client.input(id, "seq 1 400000; echo DONE-MARKER\n").await;
-    // Do not read: the socket and the 64 KiB queue fill up, the PTY reader
-    // keeps going regardless.
+    // Do not read: output cannot accumulate in this deliberately tiny queue,
+    // while the PTY reader continues independently.
     sleep(Duration::from_millis(2500)).await;
 
     let result = timeout(WAIT, async {

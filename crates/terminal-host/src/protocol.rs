@@ -21,14 +21,36 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 /// Protocol version this build speaks.
-pub const PROTO_VERSION: u32 = 1;
+pub const PROTO_VERSION: u32 = 2;
 /// Oldest peer version this build still understands.
 pub const MIN_COMPAT: u32 = 1;
+/// Version floor required by this app build. The daemon keeps `MIN_COMPAT`
+/// at v1 so existing apps can continue using a v2 host safely.
+pub const CLIENT_MIN_COMPAT: u32 = 2;
 /// Largest accepted frame payload. Bigger frames are a protocol error.
 pub const MAX_FRAME_LEN: usize = 32 * 1024 * 1024;
 
 /// Wire id of a hosted session (unique within one daemon lifetime).
 pub type SessionId = u64;
+
+/// Opaque identity for one view attached to a hosted terminal session.
+///
+/// It is stable across socket reconnects so the host can deduplicate input
+/// frames that were accepted just before a connection failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct TerminalAttachmentId(pub [u8; 16]);
+
+impl TerminalAttachmentId {
+    pub fn new() -> Self {
+        Self(*uuid::Uuid::new_v4().as_bytes())
+    }
+}
+
+impl Default for TerminalAttachmentId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 const CONTROL_TAG: u8 = 0x80;
 const DATA_HEADER_LEN: usize = 1 + 8 + 4;
@@ -49,6 +71,9 @@ pub enum DataKind {
     /// reset the local emulator, feed this snapshot, then continue with live
     /// [`DataKind::Output`].
     Resync = 0x04,
+    /// Client -> daemon: sequenced input, prefixed by a 16-byte attachment id
+    /// and a little-endian u64 sequence number.
+    SequencedInput = 0x05,
 }
 
 impl DataKind {
@@ -58,6 +83,7 @@ impl DataKind {
             0x02 => Self::Input,
             0x03 => Self::Snapshot,
             0x04 => Self::Resync,
+            0x05 => Self::SequencedInput,
             _ => return None,
         })
     }
@@ -121,6 +147,38 @@ pub fn data_frame(kind: DataKind, session: SessionId, data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(DATA_HEADER_LEN + data.len());
     encode_data(kind, session, data, &mut out);
     out
+}
+
+/// Build a v2 input frame. `sequence` starts at one and is contiguous per
+/// attachment. The payload after the header is opaque terminal input.
+pub fn sequenced_input_frame(
+    session: SessionId,
+    attachment: TerminalAttachmentId,
+    sequence: u64,
+    input: &[u8],
+) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(24 + input.len());
+    payload.extend_from_slice(&attachment.0);
+    payload.extend_from_slice(&sequence.to_le_bytes());
+    payload.extend_from_slice(input);
+    data_frame(DataKind::SequencedInput, session, &payload)
+}
+
+/// Decode the v2 input payload. Rejects truncated attachment/sequence
+/// headers before exposing any bytes to the PTY.
+pub fn decode_sequenced_input(payload: &[u8]) -> Option<(TerminalAttachmentId, u64, &[u8])> {
+    if payload.len() < 24 {
+        return None;
+    }
+    let mut attachment = [0; 16];
+    attachment.copy_from_slice(&payload[..16]);
+    let mut sequence = [0; 8];
+    sequence.copy_from_slice(&payload[16..24]);
+    Some((
+        TerminalAttachmentId(attachment),
+        u64::from_le_bytes(sequence),
+        &payload[24..],
+    ))
 }
 
 /// Append a control frame to `out`.
@@ -305,13 +363,14 @@ pub enum Message {
         #[serde(default)]
         colors: Option<WireColors>,
     },
-    /// Attach (stealing it from another client if needed). The daemon resizes
-    /// to `cols`x`rows`, then answers [`Message::Attached`], a
-    /// [`DataKind::Snapshot`] frame, and continues with live output.
+    /// Attach without replacing other clients. V2 clients provide a stable
+    /// `attachment_id` to resume input acknowledgement after reconnect.
     Attach {
         session: SessionId,
         cols: u16,
         rows: u16,
+        #[serde(default)]
+        attachment_id: Option<TerminalAttachmentId>,
     },
     /// Stop receiving output; the session keeps running.
     Detach {
@@ -321,6 +380,10 @@ pub enum Message {
         session: SessionId,
         cols: u16,
         rows: u16,
+    },
+    /// Ask to become the one view allowed to resize the shared PTY.
+    RequestResizeControl {
+        session: SessionId,
     },
     /// Terminate the session and forget it (closing a tab).
     Kill {
@@ -344,6 +407,34 @@ pub enum Message {
         session: SessionId,
         cols: u16,
         rows: u16,
+        #[serde(default)]
+        attachment_id: Option<TerminalAttachmentId>,
+        #[serde(default)]
+        attached_count: u32,
+        #[serde(default)]
+        resize_controller: Option<TerminalAttachmentId>,
+        #[serde(default)]
+        acknowledged_input_sequence: u64,
+    },
+    /// The active view count or resize controller changed.
+    AttachmentState {
+        session: SessionId,
+        attached_count: u32,
+        resize_controller: Option<TerminalAttachmentId>,
+    },
+    /// Cumulative acknowledgement that input entered the ordered PTY queue.
+    InputAck {
+        session: SessionId,
+        attachment_id: TerminalAttachmentId,
+        sequence: u64,
+    },
+    /// Input was not accepted; the client must retain it and surface the
+    /// reason rather than silently discarding it.
+    InputRejected {
+        session: SessionId,
+        attachment_id: TerminalAttachmentId,
+        sequence: u64,
+        reason: String,
     },
     Sessions {
         sessions: Vec<SessionInfo>,
@@ -433,7 +524,7 @@ impl Hello {
     pub fn current(build_id: impl Into<String>, scrollback_lines: Option<u32>) -> Self {
         Self {
             proto_version: PROTO_VERSION,
-            min_compat: MIN_COMPAT,
+            min_compat: CLIENT_MIN_COMPAT,
             build_id: build_id.into(),
             scrollback_lines,
         }
@@ -566,6 +657,13 @@ pub struct SessionInfo {
     pub exit_code: Option<i32>,
     /// A client is currently attached.
     pub attached: bool,
+    /// Number of currently attached views. Defaults to the legacy boolean for
+    /// protocol-v1 hosts.
+    #[serde(default)]
+    pub attached_count: u32,
+    /// Opaque attachment that currently owns PTY resize control.
+    #[serde(default)]
+    pub resize_controller: Option<TerminalAttachmentId>,
     pub cols: u16,
     pub rows: u16,
     /// Name of the foreground job when it is not the shell (resume hook).
@@ -594,7 +692,7 @@ pub enum SessionEvent {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum DetachReason {
-    /// Another client attached the session.
+    /// Legacy protocol-v1 reason; protocol-v2 no longer steals attachments.
     Stolen,
     /// The daemon is shutting down.
     Shutdown,
@@ -842,6 +940,8 @@ pub enum RpcCall {
     /// Answer to a `known_hosts_warning` event.
     SshTrustHost {
         session_id: String,
+        #[serde(default)]
+        prompt_request_id: Option<labonair_ssh::PromptRequestId>,
         accepted: bool,
     },
 
@@ -955,6 +1055,12 @@ pub enum RpcCall {
     TransferResolve {
         job_id: String,
         resolution: WireResolution,
+        #[serde(default)]
+        prompt_request_id: Option<labonair_transfers::TransferPromptId>,
+    },
+    /// Claim a parked decision after its current owner disconnected.
+    TransferRecoverConflict {
+        job_id: String,
     },
     TransferConfigure(TransferConfig),
     ListTransfers,
@@ -1081,6 +1187,32 @@ mod tests {
                 session: 3,
                 cols: 100,
                 rows: 30,
+                attachment_id: Some(TerminalAttachmentId([7; 16])),
+            },
+            Message::Attached {
+                session: 3,
+                cols: 100,
+                rows: 30,
+                attachment_id: Some(TerminalAttachmentId([7; 16])),
+                attached_count: 2,
+                resize_controller: Some(TerminalAttachmentId([7; 16])),
+                acknowledged_input_sequence: 4,
+            },
+            Message::AttachmentState {
+                session: 3,
+                attached_count: 2,
+                resize_controller: Some(TerminalAttachmentId([7; 16])),
+            },
+            Message::InputAck {
+                session: 3,
+                attachment_id: TerminalAttachmentId([7; 16]),
+                sequence: 4,
+            },
+            Message::InputRejected {
+                session: 3,
+                attachment_id: TerminalAttachmentId([7; 16]),
+                sequence: 5,
+                reason: "sequence gap".into(),
             },
             Message::Sessions {
                 sessions: vec![SessionInfo {
@@ -1092,6 +1224,8 @@ mod tests {
                     status: SessionStatus::Exited,
                     exit_code: Some(3),
                     attached: false,
+                    attached_count: 0,
+                    resize_controller: None,
                     cols: 80,
                     rows: 24,
                     foreground: None,
@@ -1116,6 +1250,7 @@ mod tests {
                 call: RpcCall::TransferResolve {
                     job_id: "j".into(),
                     resolution: WireResolution::Rename { name: "b".into() },
+                    prompt_request_id: None,
                 },
             },
             Message::Rpc {
@@ -1216,6 +1351,7 @@ mod tests {
             DataKind::Input,
             DataKind::Snapshot,
             DataKind::Resync,
+            DataKind::SequencedInput,
         ] {
             frames.push(Frame::Data {
                 kind,
@@ -1249,6 +1385,60 @@ mod tests {
         assert_eq!(&buf[1..9], &0x0102u64.to_le_bytes());
         assert_eq!(&buf[9..13], &2u32.to_le_bytes());
         assert_eq!(&buf[13..], b"hi");
+    }
+
+    #[test]
+    fn sequenced_input_round_trips_opaque_identity_and_bytes() {
+        let attachment = TerminalAttachmentId([0xa5; 16]);
+        let frame = sequenced_input_frame(19, attachment, 42, &[0, 0xff, b'\n']);
+        let decoded = read_frame_blocking(&mut &frame[..]).expect("valid frame");
+        assert_eq!(
+            decoded,
+            Some(Frame::Data {
+                kind: DataKind::SequencedInput,
+                session: 19,
+                data: [
+                    attachment.0.as_slice(),
+                    &42_u64.to_le_bytes(),
+                    &[0, 0xff, b'\n']
+                ]
+                .concat(),
+            })
+        );
+        let Some(Frame::Data { data, .. }) = decoded else {
+            panic!("sequenced data frame");
+        };
+        assert_eq!(
+            decode_sequenced_input(&data),
+            Some((attachment, 42, &[0, 0xff, b'\n'][..]))
+        );
+        assert!(decode_sequenced_input(&data[..23]).is_none());
+    }
+
+    #[test]
+    fn v1_attached_and_session_shapes_use_v2_defaults() {
+        let attached: Message =
+            serde_json::from_str(r#"{"type":"attached","session":9,"cols":80,"rows":24}"#)
+                .expect("v1 attach reply remains readable");
+        assert_eq!(
+            attached,
+            Message::Attached {
+                session: 9,
+                cols: 80,
+                rows: 24,
+                attachment_id: None,
+                attached_count: 0,
+                resize_controller: None,
+                acknowledged_input_sequence: 0,
+            }
+        );
+
+        let session: SessionInfo = serde_json::from_str(
+            r#"{"id":9,"pane_tag":null,"label":null,"cwd":null,"title":null,"status":"running","exit_code":null,"attached":true,"cols":80,"rows":24,"foreground":null,"persist_key":"k"}"#,
+        )
+        .expect("v1 session list remains readable");
+        assert!(session.attached);
+        assert_eq!(session.attached_count, 0);
     }
 
     #[test]

@@ -192,6 +192,8 @@ struct ConnectLogPayload {
 #[derive(Deserialize)]
 struct KnownHostsWarningPayload {
     session_id: String,
+    #[serde(default)]
+    prompt_request_id: Option<labonair_ssh::PromptRequestId>,
     fingerprint: String,
     host: String,
     is_mismatch: bool,
@@ -224,6 +226,7 @@ fn decode_connection_event(raw: &RawEvent) -> Option<SshConnectionEvent> {
                 .ok()
                 .map(|payload| SshConnectionEvent::KnownHostsWarning {
                     session_id: payload.session_id,
+                    prompt_request_id: payload.prompt_request_id,
                     fingerprint: payload.fingerprint,
                     host: payload.host,
                     is_mismatch: payload.is_mismatch,
@@ -379,6 +382,7 @@ impl SshConnectionService for SshConnectionServiceAdapter {
     fn trust_host<'a>(
         &'a self,
         session_id: SshSessionId,
+        _prompt_request_id: Option<labonair_ssh::PromptRequestId>,
         accepted: bool,
     ) -> BoxFuture<'a, Result<(), String>> {
         let trust = self.trust.clone();

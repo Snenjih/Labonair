@@ -4906,6 +4906,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -5078,11 +5079,22 @@ dependencies = [
  "labonair-theme",
  "labonair-transfers",
  "labonair-ui-kit",
+ "labonair-workspace-storage",
  "resvg",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "labonair-workspace-storage"
+version = "1.0.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
  "uuid",
 ]
 

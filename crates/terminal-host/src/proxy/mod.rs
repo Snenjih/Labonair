@@ -40,7 +40,7 @@ use labonair_ssh::{
     SshExecOutput, SshHostedAccess, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
     SshSessionId, SshTunnelService,
 };
-use labonair_transfers::{TransferRequest, TransferResolution, TransferService};
+use labonair_transfers::{TransferPromptId, TransferRequest, TransferResolution, TransferService};
 
 use self::hosted::HostedSsh;
 use crate::client::{HostClient, SessionSink};
@@ -412,11 +412,13 @@ impl SshConnectionService for DaemonServices {
     fn trust_host<'a>(
         &'a self,
         session_id: SshSessionId,
+        prompt_request_id: Option<labonair_ssh::PromptRequestId>,
         accepted: bool,
     ) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             self.unit(RpcCall::SshTrustHost {
                 session_id: session_id.as_str().to_string(),
+                prompt_request_id,
                 accepted,
             })
             .await
@@ -744,13 +746,34 @@ impl TransferService for DaemonServices {
         job_id: String,
         resolution: TransferResolution,
     ) -> labonair_transfers::BoxFuture<'a, Result<(), String>> {
+        self.resolve_prompt(job_id, resolution, None)
+    }
+
+    fn resolve_prompt<'a>(
+        &'a self,
+        job_id: String,
+        resolution: TransferResolution,
+        prompt_request_id: Option<TransferPromptId>,
+    ) -> labonair_transfers::BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
             self.unit(RpcCall::TransferResolve {
                 job_id,
                 resolution: resolution.into(),
+                prompt_request_id,
             })
             .await
             .map_err(plain)
+        })
+    }
+
+    fn recover_conflict<'a>(
+        &'a self,
+        job_id: String,
+    ) -> labonair_transfers::BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.unit(RpcCall::TransferRecoverConflict { job_id })
+                .await
+                .map_err(plain)
         })
     }
 }

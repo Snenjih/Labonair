@@ -33,28 +33,29 @@ The active sequence is:
 24. `R07-005-background-presentation-boundary.md` — Planned (structural migration landed early; visual evidence folds into R07-001)
 25. `R07-006-documentation-knowledge-system.md` — Planned (blocked behind R07 acceptance)
 26. `R07-007-transitional-edge-review.md` — Planned (blocked behind R07-006)
-27. `R08-001-transfers-ui-workspace-decoupling.md` — Done
-28. `R08-002-remove-no-op-command-affordances.md` — Done
-29. `R08-003-panel-snippets-workspace-decoupling.md` — Done
-30. `R08-004-popover-trigger-bounds-anchoring.md` — Done
-31. `R08-005-theme-management-out-of-settings-ui.md` — Done
-32. `R08-006-appcomposition-accessors.md` — Done
-33. `R08-007-remove-legacy-shortcutid-model.md` — Done
-34. `R08-008-ui-kit-theme-token-extraction.md` — Done
-35. `R08-009-remove-notification-callback-adapter.md` — Done
-36. `R08-010-actionable-notifications.md` — Planned (no current consumer; crosswalk during parity inventory)
-37. `R08-011-defer-dormant-theme-import.md` — Done
-38. `R08-012-workspace-hosts-ui-decoupling.md` — Done
-39. `R09-001-editor-e0-text-model-contract.md` — Planned
-40. `R09-002-editor-e1-file-lifecycle.md` — Planned
-41. `R09-003-editor-e2-editing-and-splits.md` — Planned
-42. `R09-004-editor-e3-display-search-navigation.md` — Planned
-43. `R09-005-editor-e4-local-language-services.md` — Planned
-44. `R09-006-editor-e5-git-gutter-review-bridge.md` — Planned
-45. `R09-007-editor-e6-persistence-polish-and-p2.md` — Planned
-46. `R10-001-ciel-design-system-adoption.md` — Planned (user-directed; foundation landed, view sweep open)
-47. `R10-002-ui-overhaul-panes-tabs-settings.md` — Planned (user-directed; wave-orchestrated, tracked via its checklist)
-48. `R11-001-onboarding-module.md` — Planned (user-directed; new `labonair-onboarding` crate, ADR 0008)
+27. `R07-008-multi-instance-shared-workspace-and-detached-sessions.md` — Planned (user-directed; blocked behind the preceding R07 queue)
+28. `R08-001-transfers-ui-workspace-decoupling.md` — Done
+29. `R08-002-remove-no-op-command-affordances.md` — Done
+30. `R08-003-panel-snippets-workspace-decoupling.md` — Done
+31. `R08-004-popover-trigger-bounds-anchoring.md` — Done
+32. `R08-005-theme-management-out-of-settings-ui.md` — Done
+33. `R08-006-appcomposition-accessors.md` — Done
+34. `R08-007-remove-legacy-shortcutid-model.md` — Done
+35. `R08-008-ui-kit-theme-token-extraction.md` — Done
+36. `R08-009-remove-notification-callback-adapter.md` — Done
+37. `R08-010-actionable-notifications.md` — Planned (no current consumer; crosswalk during parity inventory)
+38. `R08-011-defer-dormant-theme-import.md` — Done
+39. `R08-012-workspace-hosts-ui-decoupling.md` — Done
+40. `R09-001-editor-e0-text-model-contract.md` — Planned
+41. `R09-002-editor-e1-file-lifecycle.md` — Planned
+42. `R09-003-editor-e2-editing-and-splits.md` — Planned
+43. `R09-004-editor-e3-display-search-navigation.md` — Planned
+44. `R09-005-editor-e4-local-language-services.md` — Planned
+45. `R09-006-editor-e5-git-gutter-review-bridge.md` — Planned
+46. `R09-007-editor-e6-persistence-polish-and-p2.md` — Planned
+47. `R10-001-ciel-design-system-adoption.md` — Planned (user-directed; foundation landed, view sweep open)
+48. `R10-002-ui-overhaul-panes-tabs-settings.md` — Planned (user-directed; wave-orchestrated, tracked via its checklist)
+49. `R11-001-onboarding-module.md` — Planned (user-directed; new `labonair-onboarding` crate, ADR 0008)
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette
@@ -91,6 +92,14 @@ parallel active queue and must not be started before the earlier R07 tasks.
 R07-007 is the planned architecture-policy follow-up for explicit
 transitional-edge review and expiry semantics. It is blocked behind R07-006
 and must not become a second active task.
+
+R07-008 records the user-directed multi-instance Detached Host workflow. It
+keeps Workspace ownership of Spaces, tabs, panes, revisions, and leases;
+Terminal ownership of host sessions and multi-client attachment; and the
+existing Spaces popover as the explicit join surface. It is planned behind
+R07-000, R07-001, R07-006, R07-007, and every earlier queue item. Its accepted
+target contract is in [ADR 0010](../../docs/adr/0010-shared-workspaces-and-multi-client-detached-sessions.md);
+the current source still has single-client session attachment.
 
 R07-000 records the selected local Zed commit and macOS-first acceptance
 platform, builds the complete reference-to-Labonair crosswalk, and reconciles

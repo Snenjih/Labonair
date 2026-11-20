@@ -72,11 +72,13 @@ mod tests {
         BackgroundSession {
             id,
             pane_tag: tag.map(str::to_string),
+            persist_key: format!("persist-{id}"),
             label: None,
             cwd: None,
             title: None,
             exited: false,
             attached,
+            attached_count: u32::from(attached),
             foreground: None,
         }
     }

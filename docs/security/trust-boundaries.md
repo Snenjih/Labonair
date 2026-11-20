@@ -50,5 +50,26 @@ user decision
   failures through the notification center, provide retry or recovery, and
   return an unpersisted path to Restricted Mode when it is reopened.
 
+## Detached Host clients and decision prompts
+
+- The Detached Host remains local to one OS user. Its private data directory,
+  Unix socket permissions, and peer-UID check are the trust boundary; the
+  multi-instance protocol does not add TCP or remote pairing.
+- Shared Workspace leases fence revisions and releases by Workspace instance
+  ID and lease generation. A stale or expired lease cannot mutate a Space or
+  release a later owner's claim.
+- Host-key and transfer decisions are bound to the socket connection that
+  started the operation. V2 responses must carry the current one-use prompt
+  ID; the host rejects stale and wrong-owner responses and serializes
+  concurrent answers. V1 transfer responses may omit the ID but remain
+  connection-fenced and one-use. Other v1 clients do not receive another
+  client's conflict prompt.
+- A parked transfer decision may be claimed by another v2 client only after
+  the original connection releases its owner lease. The host issues a new
+  prompt ID on takeover and exposes only read-only state to the other clients.
+- Workspace persistence stores no credentials or secret material. Detached
+  SSH secrets stay in memory in the host and are not written to SQLite or
+  event logs.
+
 An implementation change crossing one of these boundaries requires an owner,
 typed contract, negative-test decision, and scorecard evidence update.

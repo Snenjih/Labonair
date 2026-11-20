@@ -3,7 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-11-13
 * **Deciders:** project owner and implementation team
-* **Related:** [`0008-onboarding-module.md`](0008-onboarding-module.md), [`../capabilities.md`](../capabilities.md), [`../architecture.md`](../architecture.md), [`../security/`](../security/)
+* **Related:** [`0008-onboarding-module.md`](0008-onboarding-module.md), [`0010-shared-workspaces-and-multi-client-detached-sessions.md`](0010-shared-workspaces-and-multi-client-detached-sessions.md), [`../capabilities.md`](../capabilities.md), [`../architecture.md`](../architecture.md), [`../security/`](../security/)
 
 ## Context
 
@@ -61,11 +61,12 @@ UI-free traits `SshConnectionService`, `SshPtyService`, `SshRemoteCommandService
    restart.
 7. **Credentials and trust.** The app resolves keychain secrets and sends them
    in the connect request; the daemon keeps them in RAM only and never opens
-   the keychain or writes them to disk. Host-key trust prompts are events to
-   the attached client; with no client attached the connection fails closed.
-   A transfer conflict with no UI attached parks the job in awaiting
-   resolution; it never auto-overwrites. TCP loss still ends an SSH
-   connection (status "connection lost").
+   the keychain or writes them to disk. Host-key and authentication prompts
+   are routed to the connection that initiated SSH connect; with no live owner
+   the connection fails closed. A transfer conflict is actionable only for
+   its enqueue owner; with no owner the job stays parked for explicit takeover
+   and never auto-overwrites. See ADR 0010 for prompt IDs and recovery. TCP
+   loss still ends an SSH connection (status "connection lost").
 8. **Restore and resume.** The session snapshot stores `host_session_id` and
    `host_kind` per pane. Restore order: attach if alive in the daemon, else
    scrollback replay, then the resume hook. The daemon keeps its own registry
@@ -75,13 +76,18 @@ UI-free traits `SshConnectionService`, `SshPtyService`, `SshRemoteCommandService
    through `terminal.resumeCommands` (defaults such as `claude` ->
    `claude --continue`), sent as `SessionOptions.startup_command`, governed by
    `terminal.resumeOnRestore: off | ask | auto` (default `ask`).
-9. **Lifecycle.** Closing a tab kills the session; quitting the app in
-   detached mode only detaches; the palette command "Quit and stop all
+9. **Lifecycle.** App-bound tab close stops its local session. Closing a
+   detached terminal view only detaches that client; a shared Workspace tab
+   close removes the shared reference. A hosted session is ended through an
+   explicit global kill or its existing exit/acknowledgement lifecycle, as
+   specified by [ADR 0010](0010-shared-workspaces-and-multi-client-detached-sessions.md).
+   Quitting the app only detaches; the palette command "Quit and stop all
    sessions" stops everything; `confirm_quit_with_active_sessions` is skipped
    for detached sessions. An exited shell stays `Exited(code)` until
    acknowledged, at most 24 h. The daemon exits after 60 s without sessions,
-   jobs, or clients. A second app instance attaching the same session steals it
-   (`Detached(Stolen)`). Single instance via `flock` on `host.lock`.
+   jobs, or clients. Multiple app clients may attach to the same session;
+   `Detached(Stolen)` is retained only for legacy protocol behavior. The host
+   daemon remains single-instance via `flock` on `host.lock`.
 10. **OS integration.** macOS: the app spawns the daemon (`setsid`, stdio to a
     log), not launchd, so TCC attribution stays with the app; the helper is
     copied to a versioned path in the data dir. Socket directory `0700`,
@@ -97,10 +103,13 @@ UI-free traits `SshConnectionService`, `SshPtyService`, `SshRemoteCommandService
     a step `onboarding.sessions` (ADR 0008) that writes the mode through the
     normal settings path.
 
-Explicitly out of scope: PTY fd migration between app and daemon, multi-client
-mirroring, a socket auth token (the peer-uid check and file modes are the
-boundary), MCP/agent control while the app is closed, macOS notifications from
-the daemon, and Windows.
+At the time this ADR was accepted, multi-client mirroring was out of scope.
+That exclusion is superseded by [ADR 0010](0010-shared-workspaces-and-multi-client-detached-sessions.md),
+which accepts multiple local app clients and shared Workspace Spaces. The
+remaining out-of-scope items are PTY fd migration between app and daemon, a
+socket auth token (the peer-uid check and file modes are the boundary),
+MCP/agent control while the app is closed, macOS notifications from the
+daemon, and Windows.
 
 ## Consequences
 
@@ -136,9 +145,12 @@ the daemon, and Windows.
   `Contents/MacOS`. In development `cargo run -p labonair` does not build it: run
   `cargo build -p labonair-terminal-host` once (the notification on a missing helper
   says so and the pane falls back to an app-bound session).
-* **Lifecycle in the registry.** `TerminalRegistry::close` kills a hosted session
-  (acknowledges it when it already exited); `close_all` and dropping a handle only
-  detach. `has_running_shells` ignores hosted sessions.
+* **Lifecycle in the registry.** This note describes the pre-ADR-0010
+  behavior: hosted `close` killed the session while `close_all` and dropping a
+  handle detached. Current behavior is that `TerminalRegistry::close` removes
+  the local view and detaches a hosted session; `TerminalRegistry::kill` is the
+  explicit global stop. `close_all` and dropping a handle detach. See ADR 0010.
+  `has_running_shells` ignores hosted sessions.
 * **Restore.** Pane snapshots carry `hostSessionId` and `hostKind` (`app` is the
   default and is not written). A pane attaches the daemon session that carries
   its scrollback uuid as `pane_tag` (unique per pane; ids restart with every
@@ -153,8 +165,8 @@ the daemon, and Windows.
 * **See / Manage Terminals.** The palette command `terminal::Manage` opens a
   `Terminals` page listing every session of the host (`cwd . foreground job .
   state`). Enter switches to the tab that shows the session, or attaches a
-  detached one as a new tab; Shift+Enter closes it (through its pane when this
-  window shows it, else in the host). The list is fetched off the UI thread
+  detached one as a new tab; closing through its pane detaches that view.
+  Global stop remains an explicit kill action. The list is fetched off the UI thread
   when the palette opens.
 * **Settings status block.** Settings > Terminal > "Background host" shows the
   host state, its sessions (Kill each), "Stop all sessions" and, for an
@@ -198,12 +210,15 @@ the daemon, and Windows.
   `file_conflict`, `file_error`), so the app proxy re-emits them on a local bus
   and the existing `SshEventSourceAdapter` / `TransferEventSourceAdapter` work
   unchanged. They are sent only to connections that called `SubscribeEvents`,
-  which first replays the current state (live SSH sessions, transfer jobs with
-  steps and pending prompts) and then streams live events.
+  which first replays the current state (live SSH sessions and transfer jobs
+  with steps and pending decision state) and then streams live events.
+  Host-key prompts and v2 actionable transfer prompts are connection-owned;
+  other v2 subscribers receive read-only transfer state.
 * **SSH PTY.** `SshConnect` creates a hosted session (`Source::Ssh`: shadow
   emulator fed by the transport's output sink; input and resizes go to
-  `SshPtyService`). It uses the same `Attach`/`Snapshot`/`Resync`/steal/`Ack`
-  machinery as a local terminal and appears in `ListSessions`. Input bytes are
+  `SshPtyService`). It uses the same multi-client
+  `Attach`/`Snapshot`/`Resync`/`Detach`/`Ack` machinery as a local terminal and
+  appears in `ListSessions`. Input bytes are
   converted to UTF-8 text because `SshPtyService::write` takes a `String`.
 * **Credentials.** `SshConnectParams` carries `password`, `passphrase` and an
   `SshHostSnapshot` (host row, jump host, credential rows, resolved secrets).
@@ -212,14 +227,17 @@ the daemon, and Windows.
   store and nothing is written to disk. `Debug` of every carrier redacts
   secrets. Tunnels need the same snapshot (`SshTunnelStart.host`). The daemon
   uses the `SSH_AUTH_SOCK` it inherited when it was spawned.
-* **Fail closed.** `known_hosts_warning` with no subscribed connection, or the
-  last subscriber leaving with a prompt open, calls `trust_host(.., false)`.
-  Tunnels and jump hops never prompt (they fail fast in the transport).
+* **Fail closed.** A host-key prompt with no live owner, or an owner
+  disconnecting with a prompt open, calls `trust_host(.., false)` even if
+  another event subscriber remains. Tunnels and jump hops never prompt (they
+  fail fast in the transport).
 * **Transfers.** The worker lives in the daemon; the daemon keeps a
   `TransferRegistry` for replay and `jobs_active` (queued, running, paused or
   parked jobs keep the daemon alive; its auto-resolve answers are ignored).
   While no client is subscribed a configured `overwrite` default is downgraded
-  to `ask`, so a conflict parks the job until `TransferResolve`. Local paths in
+  to `ask`. A conflict is routed only to its enqueue owner and parks until that
+  owner, or a later explicit takeover, resolves it with a one-use request ID.
+  Local paths in
   `TransferEnqueue` and `Ssh{Save,Cleanup}RemoteEdit` must be absolute (or
   `~`-prefixed). History is in memory only, as in the app; finished jobs are
   dropped from the daemon once replayed to a subscriber.
@@ -256,8 +274,9 @@ the daemon, and Windows.
   banners as a local hosted pane); the connect call still goes through
   `SshConnectionService`. The pane tag is the SSH session id. `ConnectionLost`
   prints the humanized reason into the pane and uses the existing
-  "connection lost" state; closing the tab kills the session (acknowledges a
-  lost one); quitting only detaches, and hosted SSH panes do not trigger the
+  "connection lost" state; closing the tab detaches that view, while explicit
+  kill ends the shared session (acknowledging a lost one); quitting only
+  detaches, and hosted SSH panes do not trigger the
   quit confirmation. Pane snapshots store `scrollbackId = <ssh id>`,
   `hostSessionId`, `hostKind: detached`; restore matches `ListSshSessions`
   (wire id, pane tag, host id) and adopts the session instead of connecting

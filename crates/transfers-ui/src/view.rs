@@ -145,6 +145,8 @@ fn completion_event(update: &RegistryUpdate) -> Option<TransferUiEvent> {
 pub struct TransfersView {
     service: Arc<dyn TransferService>,
     registry: TransferRegistry,
+    /// Parked decisions whose owner has disconnected and may be claimed.
+    recoverable_jobs: HashSet<String>,
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
     expanded_logs: HashSet<String>,
@@ -181,6 +183,7 @@ impl TransfersView {
         let this = Self {
             service,
             registry: TransferRegistry::default(),
+            recoverable_jobs: HashSet::new(),
             tokio,
             theme,
             expanded_logs: HashSet::new(),
@@ -215,7 +218,13 @@ impl TransfersView {
                 for request in requests {
                     let service = service.clone();
                     tokio.spawn(async move {
-                        let _ = service.resolve(request.job_id, request.resolution).await;
+                        let _ = service
+                            .resolve_prompt(
+                                request.job_id,
+                                request.resolution,
+                                request.prompt_request_id,
+                            )
+                            .await;
                     });
                 }
             }
@@ -228,8 +237,43 @@ impl TransfersView {
 
     pub fn apply(&mut self, event: TransferEvent, cx: &mut Context<Self>) -> RegistryUpdate {
         let modal = match &event {
-            TransferEvent::Conflict { job_id, .. } => Some((job_id.clone(), false)),
-            TransferEvent::FileError { job_id, .. } => Some((job_id.clone(), true)),
+            TransferEvent::Conflict {
+                job_id,
+                actionable,
+                recoverable,
+                ..
+            } => {
+                if *recoverable {
+                    self.recoverable_jobs.insert(job_id.clone());
+                } else {
+                    self.recoverable_jobs.remove(job_id);
+                }
+                actionable.then(|| (job_id.clone(), false))
+            }
+            TransferEvent::FileError {
+                job_id,
+                actionable,
+                recoverable,
+                ..
+            } => {
+                if *recoverable {
+                    self.recoverable_jobs.insert(job_id.clone());
+                } else {
+                    self.recoverable_jobs.remove(job_id);
+                }
+                actionable.then(|| (job_id.clone(), true))
+            }
+            TransferEvent::Progress(job)
+                if matches!(
+                    job.status,
+                    TransferStatus::Completed
+                        | TransferStatus::Cancelled
+                        | TransferStatus::Failed(_)
+                ) =>
+            {
+                self.recoverable_jobs.remove(&job.id);
+                None
+            }
             _ => None,
         };
         let was_empty = self.registry.snapshot().is_empty();
@@ -323,6 +367,16 @@ impl TransfersView {
         cx.notify();
     }
 
+    fn take_over_conflict(&mut self, id: String, cx: &mut Context<Self>) {
+        let service = self.service.clone();
+        self.tokio.spawn(async move {
+            if let Err(error) = service.recover_conflict(id).await {
+                tracing::warn!(%error, "could not take over transfer decision");
+            }
+        });
+        cx.notify();
+    }
+
     pub fn clear_completed(&mut self, cx: &mut Context<Self>) {
         self.registry.clear_completed();
         let kept: HashSet<String> = self
@@ -354,7 +408,13 @@ impl TransfersView {
         let tokio = self.tokio.clone();
         tokio.spawn(async move {
             for request in requests {
-                let _ = service.resolve(request.job_id, request.resolution).await;
+                let _ = service
+                    .resolve_prompt(
+                        request.job_id,
+                        request.resolution,
+                        request.prompt_request_id,
+                    )
+                    .await;
             }
         });
     }
@@ -608,6 +668,8 @@ impl TransfersView {
         let has_steps = !record.steps.is_empty();
         let log_open = self.expanded_logs.contains(&job.id);
         let active = is_active(&job.status);
+        let pending_decision = record.conflict.is_some() || record.file_error.is_some();
+        let can_take_over = pending_decision && self.recoverable_jobs.contains(&job.id);
         // T20-003: migrated to the shared `ListItem` primitive — the status
         // dot is the shared `Indicator`, and the log-toggle/cancel actions
         // are shared `button()`s collected into `ListItem::trailing`. The
@@ -644,6 +706,21 @@ impl TransfersView {
                 .child("\u{2715}")
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     this.cancel(id_cancel.clone(), cx)
+                })),
+            );
+        }
+        if can_take_over {
+            let id_takeover = job.id.clone();
+            trailing = trailing.child(
+                button(
+                    SharedString::from(format!("transfer-takeover-{}", id_takeover)),
+                    c.palette,
+                    ButtonVariant::Outlined,
+                    ButtonSize::Xs,
+                )
+                .child("Take over")
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.take_over_conflict(id_takeover.clone(), cx)
                 })),
             );
         }

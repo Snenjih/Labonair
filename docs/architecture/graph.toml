@@ -466,6 +466,12 @@ owner = "workspace"
 role = "capability"
 layer = "product"
 
+[[crate]]
+name = "labonair-workspace-storage"
+owner = "workspace"
+role = "service"
+layer = "product"
+
 [allowed_edges]
 "labonair" = ["labonair-shell", "labonair-terminal", "labonair-theme"]
 "labonair-activity" = []
@@ -529,4 +535,5 @@ layer = "product"
 "labonair-ui-kit" = ["labonair-gpui-ext", "labonair-theme-tokens"]
 "labonair-updater" = ["labonair-filesystem"]
 "labonair-updater-ui" = ["labonair-activity-ui", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-notifications", "labonair-panel", "labonair-theme", "labonair-ui-kit", "labonair-updater"]
-"labonair-workspace" = ["labonair-activity-ui", "labonair-ai", "labonair-background-host", "labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-editor-ui", "labonair-explorer-host", "labonair-filesystem", "labonair-git", "labonair-gpui-ext", "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui", "labonair-keymap", "labonair-keymap-ui", "labonair-mcp-core", "labonair-notifications", "labonair-panel", "labonair-panel-git-graph", "labonair-settings", "labonair-settings-json", "labonair-sftp", "labonair-ssh", "labonair-terminal", "labonair-theme", "labonair-transfers", "labonair-ui-kit"]
+"labonair-workspace" = ["labonair-activity-ui", "labonair-ai", "labonair-background-host", "labonair-command-palette", "labonair-command-palette-core", "labonair-command-palette-runtime", "labonair-editor", "labonair-editor-ui", "labonair-explorer-host", "labonair-filesystem", "labonair-git", "labonair-gpui-ext", "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui", "labonair-keymap", "labonair-keymap-ui", "labonair-mcp-core", "labonair-notifications", "labonair-panel", "labonair-panel-git-graph", "labonair-settings", "labonair-settings-json", "labonair-sftp", "labonair-ssh", "labonair-terminal", "labonair-theme", "labonair-transfers", "labonair-ui-kit", "labonair-workspace-storage"]
+"labonair-workspace-storage" = []

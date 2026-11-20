@@ -140,6 +140,7 @@ Source: [`../product/surfaces.toml`](../product/surfaces.toml),
 | `loading` | Trigger a real asynchronous project/session restore using a local fixture. | Loading indicator and disabled/actionable controls reflect actual in-flight work. |
 | `error` | Use a disposable invalid/inaccessible project fixture. | The error is actionable or routed to Notifications; no raw path/secret is leaked. |
 | `split panes` | Invoke `SplitRight` and `SplitDown` on a disposable workspace. | Split handles, focus, resizing, and close behavior preserve the layout tree. |
+| `shared Space join` | Launch two native app instances against one disposable profile. In the second instance, open the Spaces picker and join the Space occupied by the first. | The picker shows the participant count and explicit Join action; after joining, both windows identify the same Space. |
 
 ### `workspace.docks` — Registered Docks and Panels
 
@@ -250,6 +251,8 @@ Source: [`../../crates/workspace/src/views/terminal.rs`](../../crates/workspace/
 | `process exit` | Run a disposable command such as `exit` in a fixture shell. | Exit state, restart/close actions, and retained output are truthful. |
 | `connection failure` | Use a synthetic invalid SSH/connection fixture without credentials. | Failure is redacted and actionable; no real network secret is used. |
 | `narrow window` | Resize the native window while the terminal is ready. | Grid, prompt, statusbar, and tab controls resize without clipping or input loss. |
+| `shared terminal controller` | With two native app instances joined to the same Space, open one Detached terminal tab and capture the view that currently owns resize control. | The terminal identifies multiple views, shows this view's resize control, and displays the shared session output. |
+| `shared terminal non-controller` | Keep the same two-instance session and capture the other app window. | The terminal shows the same tab and output, identifies the other view as resize controller, and remains usable without resizing the PTY. |
 
 ## Recording contract
 

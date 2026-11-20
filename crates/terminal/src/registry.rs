@@ -28,9 +28,8 @@
 //! * [`SessionHandle::restart`] when the user clicks that screen — a fresh shell
 //!   is spawned in place with the same options, keeping the same [`SessionId`]
 //!   and therefore the same tab.
-//! * [`TerminalRegistry::close`] when the tab is closed — sends `SIGHUP`, then
-//!   drops the session (hard `SIGKILL` + thread join in `Drop`), so it always
-//!   returns promptly even with a hung foreground job.
+//! * [`TerminalRegistry::close`] when a tab view is closed — local PTYs are
+//!   terminated, while Detached host sessions only detach this view.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -106,12 +105,21 @@ impl SessionBackend {
         }
     }
 
-    /// Closing the session's tab: hang up a local shell, stop a hosted one.
+    /// Explicitly terminate a session, including the host-wide hosted session.
     fn terminate(&self) {
         match self {
             SessionBackend::Local(s) => s.terminate(),
             SessionBackend::Remote(_) => {}
             SessionBackend::Hosted(s) => s.control.kill(),
+        }
+    }
+
+    /// Closing one Workspace view must not stop a Detached session shared by
+    /// another process or Space.
+    fn close_view(&self) {
+        match self {
+            SessionBackend::Hosted(s) => s.control.detach(),
+            other => other.terminate(),
         }
     }
 
@@ -307,8 +315,24 @@ impl SessionHandle {
         }
     }
 
-    /// Reattach a hosted session after [`HostedLink::Stolen`] or
-    /// [`HostedLink::HostLost`].
+    /// Number of views attached to this hosted session and whether this view
+    /// owns its resize-control lease.
+    pub fn hosted_attachment_status(&self) -> Option<crate::HostedAttachmentStatus> {
+        match &*self.slot.session.lock().unwrap() {
+            SessionBackend::Hosted(s) => s.control.attachment_status(),
+            _ => None,
+        }
+    }
+
+    /// Ask the host to make this view the sole owner of PTY resize control.
+    pub fn request_host_resize_control(&self) -> Result<(), String> {
+        match &*self.slot.session.lock().unwrap() {
+            SessionBackend::Hosted(s) => s.control.request_resize_control(),
+            _ => Err("terminal is not hosted".into()),
+        }
+    }
+
+    /// Reattach a hosted session after [`HostedLink::HostLost`].
     pub fn reattach(&self) -> Result<(), String> {
         let control = match &*self.slot.session.lock().unwrap() {
             SessionBackend::Hosted(s) => Arc::clone(&s.control),
@@ -465,14 +489,22 @@ impl TerminalRegistry {
         self.sessions.read().unwrap().is_empty()
     }
 
-    /// Terminate and unregister a session. `SIGHUP` first, then the session is
-    /// dropped (hard `SIGKILL` + reader-thread join in `Drop`). Returns
-    /// promptly even if a foreground job is wedged. No-op for unknown ids.
+    /// Close one tab view and unregister its process-local session. Local
+    /// PTYs are terminated; a Detached host session is only detached.
     pub fn close(&self, id: SessionId) {
         let slot = self.sessions.write().unwrap().remove(&id);
         if let Some(slot) = slot {
-            slot.session.lock().unwrap().terminate();
+            slot.session.lock().unwrap().close_view();
             // `slot` (and the inner `TerminalSession`) drops here.
+        }
+    }
+
+    /// Explicitly kill and unregister a hosted session. Ordinary tab closure
+    /// must use [`Self::close`] so other attached processes keep running.
+    pub fn kill(&self, id: SessionId) {
+        let slot = self.sessions.write().unwrap().remove(&id);
+        if let Some(slot) = slot {
+            slot.session.lock().unwrap().terminate();
         }
     }
 
@@ -715,14 +747,14 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_tab_kills_a_hosted_session_but_quitting_only_detaches() {
+    fn closing_a_view_detaches_but_explicit_kill_stops_a_hosted_session() {
         use std::sync::atomic::Ordering::SeqCst;
 
         let control = Arc::new(CountingControl::default());
         let host = FakeHostedHost(control.clone());
         let reg = TerminalRegistry::new();
 
-        // Close tab: kill.
+        // Closing one tab view must not stop the shared daemon session.
         let id = reg
             .create_with_host(&host, colors(), dims(), sh(None))
             .unwrap();
@@ -733,7 +765,16 @@ mod tests {
         reg.close(id);
         assert_eq!(
             (control.kills.load(SeqCst), control.detaches.load(SeqCst)),
-            (1, 0)
+            (0, 1)
+        );
+
+        let killed = reg
+            .create_with_host(&host, colors(), dims(), sh(None))
+            .unwrap();
+        reg.kill(killed);
+        assert_eq!(
+            (control.kills.load(SeqCst), control.detaches.load(SeqCst)),
+            (1, 1)
         );
 
         // Quit with a hosted and an app-bound session side by side: the hosted
@@ -748,7 +789,7 @@ mod tests {
         assert!(reg.handle(hosted).is_none() && reg.handle(local).is_none());
         assert_eq!(
             (control.kills.load(SeqCst), control.detaches.load(SeqCst)),
-            (1, 1)
+            (1, 2)
         );
     }
 

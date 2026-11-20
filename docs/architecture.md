@@ -119,7 +119,7 @@ boundary.
 | Command palette | `labonair-command-palette-core` | `labonair-command-palette`, `labonair-command-palette-runtime` | UI-free command registry contract; the UI sibling owns search/navigation and submenu presentation, while the runtime sibling carries owner-provided GPUI handlers. |
 | Notifications | `labonair-notifications-core` | `labonair-notifications` | Notification registry/state and its GPUI statusbar presentation. |
 | Themes | `labonair-theme` | `labonair-theme-ui` | Built-in color and icon-theme registries, preview, and selection. `labonair-theme-ui` owns the settings→`ThemeStore` application policy, Settings-link registration, and the palette preview/activate handler so `labonair-theme` keeps no `labonair-settings` dependency. |
-| Workspace | `labonair-workspace` | none; panel crates are separate capabilities | Workspace identity, tabs, panes, focus, layout, and session orchestration. |
+| Workspace | `labonair-workspace` | `labonair-workspace-storage`; panel crates are separate capabilities | Workspace identity, durable Space/Tab/Pane IDs, leases, revisioned shared structure, layout, and session orchestration. The storage sibling is GPUI-free and owns `workspace.db` transactions and migrations. |
 | Backgrounds | `labonair-background` | owner UI is in `labonair-background` | Background-image settings, file catalog, persistence, decoding, and rendering; the owner UI depends on `labonair-ui-kit` for shared sliders, buttons, text fields, and segmented controls. Appearance links to this surface without duplicating its state. |
 
 ### Product modules
@@ -192,8 +192,10 @@ Workspace chrome state is persisted by `labonair-workspace` in the dedicated
 size, zoom, and the primary dock edge are runtime layout state; they are not
 `SettingsContent` values and must not be project settings. The workspace owner
 imports legacy `workspace.sidebar*` and `workspace.dockLayout` values once,
-then removes those keys from `config.json`. Session/tab contents remain owned
-by the workspace session snapshot and are not folded into this layout file.
+then removes those keys from `config.json`. In Detached mode, the Workspace
+owner stores shared Space, tab, pane, lease, revision, and change-log state in
+`workspace.db` through `labonair-workspace-storage`; the former session JSON is
+an import source rather than a concurrent writer. See [ADR 0010](adr/0010-shared-workspaces-and-multi-client-detached-sessions.md).
 
 **Pane model (R10-002, ADR 0005).** A workspace
 tab is a pane group: a `WorkspaceLayout` whose leaves are `PaneId`s of any

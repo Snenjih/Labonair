@@ -121,10 +121,46 @@ fn load_in(dir: &Path, session_id: &str, max_bytes: Option<usize>) -> Option<Str
 }
 
 /// Delete one session's persisted scrollback.
-pub fn delete(data_dir: &Path, session_id: &str) {
+pub fn delete(data_dir: &Path, session_id: &str) -> bool {
     if let Ok(path) = scrollback_path_in(&scrollback_dir(data_dir), session_id) {
-        let _ = std::fs::remove_file(path);
+        return match std::fs::remove_file(path) {
+            Ok(()) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+            Err(_) => false,
+        };
     }
+    false
+}
+
+/// Return scrollback keys eligible for owner-approved cleanup. The Workspace
+/// owner still checks shared tab references and live Detached host sessions
+/// before it issues a generation-fenced delete permit.
+pub fn stale_keys(data_dir: &Path, max_age_secs: Option<u64>) -> Vec<String> {
+    let dir = scrollback_dir(data_dir);
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let age_limit = max_age_secs
+        .filter(|seconds| *seconds > 0)
+        .map(Duration::from_secs);
+    let now = std::time::SystemTime::now();
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let stem = name.to_string_lossy().strip_suffix(".ansi.gz")?.to_string();
+            if !valid_session_id(&stem) {
+                return None;
+            }
+            if let Some(age_limit) = age_limit {
+                let modified = entry.metadata().ok()?.modified().ok()?;
+                if now.duration_since(modified).ok()? < age_limit {
+                    return None;
+                }
+            }
+            Some(stem)
+        })
+        .collect()
 }
 
 /// Remove orphaned files, stale temporary files, and expired known sessions.

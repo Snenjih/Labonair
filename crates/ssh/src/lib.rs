@@ -52,6 +52,21 @@ pub trait SshEventSink: Send + Sync {
 
 pub type SharedSshEventSink = Arc<dyn SshEventSink>;
 
+/// Unforgeable-in-practice, single-use identity for an actionable SSH prompt.
+/// The Detached Host creates IDs; app-mode transports may leave them absent.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PromptRequestId(String);
+
+impl PromptRequestId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Connection-lifecycle events consumed by the SSH surface.
 ///
 /// These events are deliberately separate from PTY output: the connection
@@ -65,6 +80,7 @@ pub enum SshConnectionEvent {
     },
     KnownHostsWarning {
         session_id: String,
+        prompt_request_id: Option<PromptRequestId>,
         fingerprint: String,
         host: String,
         is_mismatch: bool,
@@ -131,6 +147,7 @@ pub trait SshConnectionService: Send + Sync {
     fn trust_host<'a>(
         &'a self,
         session_id: SshSessionId,
+        prompt_request_id: Option<PromptRequestId>,
         accepted: bool,
     ) -> BoxFuture<'a, Result<(), String>>;
 }

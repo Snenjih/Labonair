@@ -48,9 +48,9 @@ use tokio::sync::{watch, Notify};
 use tokio::task::JoinSet;
 
 use crate::protocol::{
-    control_frame, data_frame, read_frame, CreateOptions, DataKind, DetachReason, Frame, Hello,
-    HelloAck, Message, SessionEvent, SessionId, SessionInfo, SessionStatus, WireColors, MIN_COMPAT,
-    PROTO_VERSION,
+    control_frame, data_frame, decode_sequenced_input, read_frame, CreateOptions, DataKind,
+    DetachReason, Frame, Hello, HelloAck, Message, SessionEvent, SessionId, SessionInfo,
+    SessionStatus, TerminalAttachmentId, WireColors, MIN_COMPAT, PROTO_VERSION,
 };
 
 mod ssh_host;
@@ -428,25 +428,40 @@ async fn writer_loop(write_half: OwnedWriteHalf, outbox: Arc<Outbox>, state: Arc
 // ── Session ──────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
-struct SinkTarget {
+struct AttachmentTarget {
     conn: u64,
+    id: TerminalAttachmentId,
+    proto_version: u32,
     outbox: Arc<Outbox>,
+    overflowed: bool,
 }
 
-enum Sink {
-    None,
-    Live(SinkTarget),
-    /// Queue overflowed: live output is dropped until the writer resyncs.
-    Overflowed(SinkTarget),
-}
-
-impl Sink {
-    fn target(&self) -> Option<&SinkTarget> {
-        match self {
-            Sink::None => None,
-            Sink::Live(t) | Sink::Overflowed(t) => Some(t),
+impl AttachmentTarget {
+    fn push_control(&self, message: &Message) {
+        // Protocol v1 clients cannot decode these new enum variants. The
+        // fields added to `Attached` are optional, so that response remains
+        // safe for older serde clients.
+        if self.proto_version < 2
+            && matches!(
+                message,
+                Message::AttachmentState { .. }
+                    | Message::InputAck { .. }
+                    | Message::InputRejected { .. }
+            )
+        {
+            return;
         }
+        self.outbox.push_control(message);
     }
+}
+
+#[derive(Default)]
+struct Attachments {
+    clients: HashMap<TerminalAttachmentId, AttachmentTarget>,
+    /// Highest contiguous input frame accepted for each attachment. Retained
+    /// after disconnect so reconnect retries can be deduplicated.
+    input_sequences: HashMap<TerminalAttachmentId, u64>,
+    resize_controller: Option<TerminalAttachmentId>,
 }
 
 enum Status {
@@ -491,7 +506,8 @@ struct Session {
     persist_key: String,
     scrollback_lines: usize,
     source: Source,
-    sink: Arc<Mutex<Sink>>,
+    attachments: Arc<Mutex<Attachments>>,
+    input_order: Mutex<()>,
     status: Mutex<Status>,
     killed: AtomicBool,
     notify: Arc<Notify>,
@@ -499,12 +515,15 @@ struct Session {
 
 /// Mirror raw output to the attached client's queue. Runs under the emulator
 /// lock, on the thread that feeds the emulator: copy and queue, never wait.
-fn mirror_output(sink: &Mutex<Sink>, id: SessionId, bytes: &[u8]) {
-    let mut sink = lock(sink);
-    let Sink::Live(target) = &*sink else { return };
-    let target = target.clone();
-    if !target.outbox.push_output(id, bytes) {
-        *sink = Sink::Overflowed(target);
+fn mirror_output(attachments: &Mutex<Attachments>, id: SessionId, bytes: &[u8]) {
+    let mut attachments = lock(attachments);
+    for target in attachments.clients.values_mut() {
+        if target.overflowed {
+            continue;
+        }
+        if !target.outbox.push_output(id, bytes) {
+            target.overflowed = true;
+        }
     }
 }
 
@@ -529,14 +548,23 @@ impl Session {
     }
 
     fn attached_to(&self, conn: u64) -> bool {
-        lock(&self.sink)
-            .target()
-            .is_some_and(|target| target.conn == conn)
+        lock(&self.attachments)
+            .clients
+            .values()
+            .any(|target| target.conn == conn)
+    }
+
+    fn attached_count_except(&self, conn: u64) -> usize {
+        lock(&self.attachments)
+            .clients
+            .values()
+            .filter(|target| target.conn != conn)
+            .count()
     }
 
     fn send_control(&self, message: &Message) {
-        if let Some(target) = lock(&self.sink).target() {
-            target.outbox.push_control(message);
+        for target in lock(&self.attachments).clients.values() {
+            target.push_control(message);
         }
     }
 
@@ -546,27 +574,54 @@ impl Session {
         self: &Arc<Self>,
         conn: u64,
         outbox: &Arc<Outbox>,
+        attachment_id: TerminalAttachmentId,
+        proto_version: u32,
         cols: u16,
         rows: u16,
     ) -> Result<(), String> {
-        let dims = TermDimensions::new(usize::from(cols.max(1)), usize::from(rows.max(1)));
+        let admission = lock(&self.input_order);
+        let requested_dims =
+            TermDimensions::new(usize::from(cols.max(1)), usize::from(rows.max(1)));
         self.with_emulator(|emulator, resize_pty| {
-            emulator.resize(dims);
-            resize_pty(dims);
-            let snapshot = emulator.snapshot(&self.snapshot_opts());
-            let mut sink = lock(&self.sink);
-            if let Some(old) = sink.target() {
-                if old.conn != conn {
-                    old.outbox.push_control(&Message::Detached {
-                        session: self.id,
-                        reason: DetachReason::Stolen,
-                    });
+            let (count, controller, acknowledged_input_sequence) = {
+                let mut attachments = lock(&self.attachments);
+                if attachments.resize_controller.is_none() {
+                    attachments.resize_controller = Some(attachment_id);
                 }
-            }
+                if attachments.resize_controller == Some(attachment_id) {
+                    emulator.resize(requested_dims);
+                    resize_pty(requested_dims);
+                }
+                attachments.clients.insert(
+                    attachment_id,
+                    AttachmentTarget {
+                        conn,
+                        id: attachment_id,
+                        proto_version,
+                        outbox: Arc::clone(outbox),
+                        overflowed: false,
+                    },
+                );
+                (
+                    attachments.clients.len() as u32,
+                    attachments.resize_controller,
+                    attachments
+                        .input_sequences
+                        .get(&attachment_id)
+                        .copied()
+                        .unwrap_or(0),
+                )
+            };
+            let actual_dims = emulator.dimensions();
+            let snapshot = emulator.snapshot(&self.snapshot_opts());
             outbox.push_control(&Message::Attached {
                 session: self.id,
-                cols,
-                rows,
+                cols: u16::try_from(actual_dims.columns).unwrap_or(u16::MAX),
+                rows: u16::try_from(actual_dims.screen_lines).unwrap_or(u16::MAX),
+                attachment_id: Some(attachment_id),
+                attached_count: count,
+                resize_controller: controller,
+                acknowledged_input_sequence,
             });
             outbox.push_data(DataKind::Snapshot, self.id, &snapshot);
             if let Some(reason) = self.lost_reason() {
@@ -580,12 +635,18 @@ impl Session {
                     exit_code: code,
                 });
             }
-            *sink = Sink::Live(SinkTarget {
-                conn,
-                outbox: Arc::clone(outbox),
-            });
+            let state = Message::AttachmentState {
+                session: self.id,
+                attached_count: count,
+                resize_controller: controller,
+            };
+            for target in lock(&self.attachments).clients.values() {
+                target.push_control(&state);
+            }
         })?;
-        if !self.is_exited() {
+        drop(admission);
+        if lock(&self.attachments).resize_controller == Some(attachment_id) && !self.is_exited() {
+            let dims = self.with_emulator(|emulator, _| emulator.dimensions())?;
             self.wiggle(dims);
         }
         Ok(())
@@ -612,32 +673,147 @@ impl Session {
     /// dropped live output and the live stream restarts atomically.
     fn resync(&self, outbox: &Arc<Outbox>) {
         let _ = self.with_emulator(|emulator, _| {
-            let mut sink = lock(&self.sink);
-            let target = match &*sink {
-                Sink::Overflowed(target) if Arc::ptr_eq(&target.outbox, outbox) => target.clone(),
-                _ => return,
+            let mut attachments = lock(&self.attachments);
+            let Some(target) = attachments
+                .clients
+                .values_mut()
+                .find(|target| target.overflowed && Arc::ptr_eq(&target.outbox, outbox))
+            else {
+                return;
             };
             let snapshot = emulator.snapshot(&self.snapshot_opts());
             target
                 .outbox
                 .push_data(DataKind::Resync, self.id, &snapshot);
-            *sink = Sink::Live(target);
+            target.overflowed = false;
         });
     }
 
     fn detach(&self, conn: u64) {
-        let mut sink = lock(&self.sink);
-        if sink.target().is_some_and(|target| target.conn == conn) {
-            *sink = Sink::None;
+        let _admission = lock(&self.input_order);
+        let state = {
+            let mut attachments = lock(&self.attachments);
+            let original_count = attachments.clients.len();
+            attachments.clients.retain(|_, target| target.conn != conn);
+            if original_count == attachments.clients.len() {
+                return;
+            }
+            if attachments
+                .resize_controller
+                .is_some_and(|id| !attachments.clients.contains_key(&id))
+            {
+                attachments.resize_controller = attachments.clients.keys().min().copied();
+            }
+            Message::AttachmentState {
+                session: self.id,
+                attached_count: attachments.clients.len() as u32,
+                resize_controller: attachments.resize_controller,
+            }
+        };
+        for target in lock(&self.attachments).clients.values() {
+            target.push_control(&state);
         }
     }
 
-    fn resize(&self, cols: u16, rows: u16) {
+    fn resize(&self, conn: u64, cols: u16, rows: u16) -> Result<(), String> {
+        let _admission = lock(&self.input_order);
+        let attachments = lock(&self.attachments);
+        let controls_resize = attachments.resize_controller.is_some_and(|id| {
+            attachments
+                .clients
+                .get(&id)
+                .is_some_and(|target| target.conn == conn)
+        });
+        drop(attachments);
+        if !controls_resize {
+            return Err("this view does not hold terminal resize control".into());
+        }
+        self.apply_resize(cols, rows)
+    }
+
+    fn resize_external(&self, cols: u16, rows: u16) -> Result<(), String> {
+        if !lock(&self.attachments).clients.is_empty() {
+            return Err("attached terminal views own the shared resize control".into());
+        }
+        self.apply_resize(cols, rows)
+    }
+
+    fn apply_resize(&self, cols: u16, rows: u16) -> Result<(), String> {
         let dims = TermDimensions::new(usize::from(cols.max(1)), usize::from(rows.max(1)));
-        let _ = self.with_emulator(|emulator, resize_pty| {
+        self.with_emulator(|emulator, resize_pty| {
             emulator.resize(dims);
             resize_pty(dims);
-        });
+        })?;
+        Ok(())
+    }
+
+    fn request_resize_control(&self, conn: u64) -> Result<(), String> {
+        let _admission = lock(&self.input_order);
+        let state = {
+            let mut attachments = lock(&self.attachments);
+            let id = attachments
+                .clients
+                .values()
+                .find(|target| target.conn == conn)
+                .map(|target| target.id)
+                .ok_or_else(|| "client is not attached to this session".to_string())?;
+            attachments.resize_controller = Some(id);
+            Message::AttachmentState {
+                session: self.id,
+                attached_count: attachments.clients.len() as u32,
+                resize_controller: attachments.resize_controller,
+            }
+        };
+        for target in lock(&self.attachments).clients.values() {
+            target.push_control(&state);
+        }
+        Ok(())
+    }
+
+    fn send_legacy_input(&self, conn: u64, data: Vec<u8>) -> Result<(), String> {
+        let _admission = lock(&self.input_order);
+        if !self.attached_to(conn) {
+            return Err("client is not attached to this session".into());
+        }
+        self.send_input(data)
+    }
+
+    fn send_external_input(&self, data: Vec<u8>) -> Result<(), String> {
+        let _admission = lock(&self.input_order);
+        self.send_input(data)
+    }
+
+    fn send_sequenced_input(
+        &self,
+        conn: u64,
+        attachment_id: TerminalAttachmentId,
+        sequence: u64,
+        data: Vec<u8>,
+    ) -> Result<u64, String> {
+        let _admission = lock(&self.input_order);
+        let mut attachments = lock(&self.attachments);
+        if attachments
+            .clients
+            .get(&attachment_id)
+            .is_none_or(|target| target.conn != conn)
+        {
+            return Err("client is not attached with this input identity".into());
+        }
+        let last = attachments
+            .input_sequences
+            .get(&attachment_id)
+            .copied()
+            .unwrap_or(0);
+        if sequence <= last {
+            return Ok(last);
+        }
+        let expected = last.saturating_add(1);
+        if sequence != expected {
+            return Err(format!("input sequence gap: expected {expected}"));
+        }
+        self.send_input(data)?;
+        attachments.input_sequences.insert(attachment_id, sequence);
+        Ok(sequence)
     }
 
     /// Run `f` under the shadow emulator's lock. `resize_pty` resizes the
@@ -682,14 +858,13 @@ impl Session {
     }
 
     /// Queue user input for the byte source.
-    fn send_input(&self, data: Vec<u8>) {
+    fn send_input(&self, data: Vec<u8>) -> Result<(), String> {
         match &self.source {
-            Source::Local { input, .. } => {
-                let _ = input.send(data);
-            }
-            Source::Ssh(ssh) => {
-                let _ = ssh.cmd.send(SshCmd::Write(data));
-            }
+            Source::Local { input, .. } => input.send(data).map_err(|error| error.to_string()),
+            Source::Ssh(ssh) => ssh
+                .cmd
+                .send(SshCmd::Write(data))
+                .map_err(|error| error.to_string()),
         }
     }
 
@@ -710,7 +885,7 @@ impl Session {
         let mut emulator = lock(&ssh.emulator);
         let mut events = emulator.feed(bytes);
         let _ = catch_unwind(AssertUnwindSafe(|| {
-            mirror_output(&self.sink, self.id, bytes)
+            mirror_output(&self.attachments, self.id, bytes)
         }));
         // DA/DSR answers of the shadow emulator go back to the remote shell.
         let replies = emulator.take_pty_output();
@@ -779,6 +954,13 @@ impl Session {
             Status::Running => (SessionStatus::Running, None),
             Status::Exited { code, .. } => (SessionStatus::Exited, code),
         };
+        let (attached_count, resize_controller) = {
+            let attachments = lock(&self.attachments);
+            (
+                attachments.clients.len() as u32,
+                attachments.resize_controller,
+            )
+        };
         SessionInfo {
             id: self.id,
             pane_tag: self.pane_tag.clone(),
@@ -787,7 +969,9 @@ impl Session {
             title,
             status,
             exit_code,
-            attached: lock(&self.sink).target().is_some(),
+            attached: attached_count > 0,
+            attached_count,
+            resize_controller,
             cols,
             rows,
             foreground,
@@ -1003,12 +1187,14 @@ impl State {
             .as_ref()
             .map_or_else(TerminalColors::xterm_default, Into::into);
 
-        let sink = Arc::new(Mutex::new(Sink::None));
-        let tap_sink = Arc::clone(&sink);
+        let attachments = Arc::new(Mutex::new(Attachments::default()));
+        let tap_attachments = Arc::clone(&attachments);
         let tap: OutputTap = Box::new(move |_emulator, bytes| {
             // Runs on the PTY reader thread under the emulator lock: copy and
             // queue, never wait. A panic here must not kill the reader.
-            let _ = catch_unwind(AssertUnwindSafe(|| mirror_output(&tap_sink, id, bytes)));
+            let _ = catch_unwind(AssertUnwindSafe(|| {
+                mirror_output(&tap_attachments, id, bytes)
+            }));
         });
         let notify = Arc::new(Notify::new());
         let term = TerminalSession::spawn_with_tap(
@@ -1040,7 +1226,8 @@ impl State {
                 term: Mutex::new(term),
                 input,
             },
-            sink,
+            attachments,
+            input_order: Mutex::new(()),
             status: Mutex::new(Status::Running),
             killed: AtomicBool::new(false),
             notify,
@@ -1092,6 +1279,7 @@ struct Conn {
     state: Arc<State>,
     outbox: Arc<Outbox>,
     compatible: bool,
+    proto_version: u32,
     attached: HashSet<SessionId>,
 }
 
@@ -1105,6 +1293,7 @@ impl Conn {
     }
 
     fn hello(&mut self, hello: Hello) {
+        self.proto_version = hello.proto_version;
         self.compatible = hello.proto_version >= MIN_COMPAT && PROTO_VERSION >= hello.min_compat;
         if let Some(lines) = hello.scrollback_lines {
             self.state
@@ -1132,12 +1321,45 @@ impl Conn {
                 if !self.compatible {
                     return;
                 }
-                if let Some(s) = self
-                    .state
-                    .session(session)
-                    .filter(|s| s.attached_to(self.id))
-                {
-                    s.send_input(data);
+                if let Some(s) = self.state.session(session) {
+                    if let Err(message) = s.send_legacy_input(self.id, data) {
+                        self.error(None, Some(session), message);
+                    }
+                }
+            }
+            Frame::Data {
+                kind: DataKind::SequencedInput,
+                session,
+                data,
+            } => {
+                if !self.compatible || self.proto_version < 2 {
+                    return;
+                }
+                let Some((attachment_id, sequence, input)) = decode_sequenced_input(&data) else {
+                    self.error(None, Some(session), "truncated sequenced input frame");
+                    return;
+                };
+                let Some(s) = self.state.session(session) else {
+                    self.outbox.push_control(&Message::InputRejected {
+                        session,
+                        attachment_id,
+                        sequence,
+                        reason: "no such session".into(),
+                    });
+                    return;
+                };
+                match s.send_sequenced_input(self.id, attachment_id, sequence, input.to_vec()) {
+                    Ok(acknowledged) => self.outbox.push_control(&Message::InputAck {
+                        session,
+                        attachment_id,
+                        sequence: acknowledged,
+                    }),
+                    Err(reason) => self.outbox.push_control(&Message::InputRejected {
+                        session,
+                        attachment_id,
+                        sequence,
+                        reason,
+                    }),
                 }
             }
             Frame::Data { .. } => {}
@@ -1174,9 +1396,17 @@ impl Conn {
                 session,
                 cols,
                 rows,
+                attachment_id,
             } => match self.state.session(session) {
                 None => self.error(None, Some(session), "no such session"),
-                Some(s) => match s.attach(self.id, &self.outbox, cols, rows) {
+                Some(s) => match s.attach(
+                    self.id,
+                    &self.outbox,
+                    attachment_id.unwrap_or_else(TerminalAttachmentId::new),
+                    self.proto_version,
+                    cols,
+                    rows,
+                ) {
                     Ok(()) => {
                         self.attached.insert(session);
                     }
@@ -1194,18 +1424,36 @@ impl Conn {
                 cols,
                 rows,
             } => {
-                if let Some(s) = self
-                    .state
-                    .session(session)
-                    .filter(|s| s.attached_to(self.id))
-                {
-                    s.resize(cols, rows);
+                if let Some(s) = self.state.session(session) {
+                    if let Err(message) = s.resize(self.id, cols, rows) {
+                        self.error(None, Some(session), message);
+                    }
                 }
             }
-            Message::Kill { session } => match self.state.remove_session(session) {
-                Some(s) => retire(s),
-                None => self.error(None, Some(session), "no such session"),
-            },
+            Message::RequestResizeControl { session } => {
+                if let Some(s) = self.state.session(session) {
+                    if let Err(message) = s.request_resize_control(self.id) {
+                        self.error(None, Some(session), message);
+                    }
+                }
+            }
+            Message::Kill { session } => {
+                if let Some(s) = self.state.session(session) {
+                    if self.proto_version < 2 && s.attached_count_except(self.id) > 0 {
+                        s.detach(self.id);
+                        self.attached.remove(&session);
+                        self.error(
+                            None,
+                            Some(session),
+                            "session remains live because another view is attached",
+                        );
+                    } else if let Some(s) = self.state.remove_session(session) {
+                        retire(s);
+                    }
+                } else {
+                    self.error(None, Some(session), "no such session");
+                }
+            }
             Message::Ack { session } => match self.state.session(session) {
                 Some(s) if s.is_exited() => {
                     if let Some(s) = self.state.remove_session(session) {
@@ -1232,9 +1480,14 @@ impl Conn {
                 }
                 .stop(ExitReason::Shutdown);
             }
-            Message::Rpc { req_id, call } => {
-                ssh_host::spawn_rpc(&self.state, self.id, &self.outbox, req_id, call)
-            }
+            Message::Rpc { req_id, call } => ssh_host::spawn_rpc(
+                &self.state,
+                self.id,
+                self.proto_version,
+                &self.outbox,
+                req_id,
+                call,
+            ),
             Message::Hello(_) => self.error(None, None, "duplicate hello"),
             // Daemon -> client messages and future variants: not ours to act on.
             _ => {}
@@ -1263,6 +1516,7 @@ async fn serve_connection(state: Arc<State>, stream: UnixStream) {
         state: Arc::clone(&state),
         outbox: Arc::clone(&outbox),
         compatible: false,
+        proto_version: 0,
         attached: HashSet::new(),
     };
     let mut closing_rx = state.closing_tx.subscribe();

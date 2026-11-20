@@ -18,6 +18,7 @@ members = [
     "crates/explorer-host",
     "crates/background-host",
     "crates/workspace",
+    "crates/workspace-storage",
     "crates/settings-ui",
     "crates/settings",
     "crates/settings-json",

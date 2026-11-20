@@ -41,10 +41,10 @@ use gpui::{
 };
 use labonair_terminal::{
     batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
-    HostedLink, Key, KeyInput, ModeState, Modifiers, MouseButton as TermMouseButton,
-    MouseEventKind, MouseInput, NamedKey, RenderableScreen, Rgb, Scroll, SessionHandle,
-    SessionStatus, StyledRun, TermDimensions, TerminalColors, TerminalColorsExt, TerminalEvent,
-    WheelAction, WheelInput,
+    HostedAttachmentStatus, HostedLink, Key, KeyInput, ModeState, Modifiers,
+    MouseButton as TermMouseButton, MouseEventKind, MouseInput, NamedKey, RenderableScreen, Rgb,
+    Scroll, SessionHandle, SessionStatus, StyledRun, TermDimensions, TerminalColors,
+    TerminalColorsExt, TerminalEvent, WheelAction, WheelInput,
 };
 
 use crate::theme::ThemeStore;
@@ -317,20 +317,14 @@ impl TerminalView {
     }
 
     /// Inline notice for a hosted session that lost its link to the
-    /// background host (taken over by another window, or host gone).
+    /// background host.
     fn render_host_link_banner(
         &self,
-        link: HostedLink,
+        _link: HostedLink,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let palette = Palette::from_theme(self.theme.read(cx));
-        let (message, action) = match link {
-            HostedLink::Stolen => (
-                "Session taken over by another window or app instance",
-                "Reattach",
-            ),
-            _ => ("Background host disconnected", "Reconnect"),
-        };
+        let (message, action) = ("Background host disconnected", "Reconnect");
         div()
             .absolute()
             .top_0()
@@ -365,6 +359,60 @@ impl TerminalView {
                     ),
             )
             .into_any_element()
+    }
+
+    fn render_shared_host_status(
+        &self,
+        status: HostedAttachmentStatus,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let palette = Palette::from_theme(self.theme.read(cx));
+        let message = if status.controls_resize {
+            format!(
+                "Shared by {} views · this view controls terminal size",
+                status.attached_count
+            )
+        } else {
+            format!(
+                "Shared by {} views · another view controls terminal size",
+                status.attached_count
+            )
+        };
+        let status = div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .p(palette.space(8.0))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                banner(Severity::Info, palette)
+                    .child(div().flex_1().child(SharedString::from(message)))
+                    .when(!status.controls_resize, |banner| {
+                        banner.child(
+                            button(
+                                "term-request-resize-control",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Take resize control")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, window, cx| {
+                                    let result = this.handle.request_host_resize_control();
+                                    labonair_notifications::notify_err(
+                                        "Could not take terminal resize control",
+                                        result,
+                                        cx,
+                                    );
+                                    window.focus(&this.focus_handle);
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                    }),
+            );
+        status.into_any_element()
     }
 
     /// The session this view renders.
@@ -1033,6 +1081,12 @@ impl Render for TerminalView {
                     .hosted_link()
                     .filter(|link| *link != HostedLink::Live)
                     .map(|link| self.render_host_link_banner(link, cx)),
+            )
+            .children(
+                self.handle
+                    .hosted_attachment_status()
+                    .filter(|status| status.attached_count > 1)
+                    .map(|status| self.render_shared_host_status(status, cx)),
             )
             .children(self.menu.map(|pos| self.render_menu(pos, cx)))
             .into_any_element()

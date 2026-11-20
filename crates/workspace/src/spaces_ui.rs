@@ -47,6 +47,11 @@ impl Workspace {
         let id = space.id;
         let active = self.spaces.read(cx).active_id() == id && highlight_active;
         let collapsed = self.collapsed_spaces.contains(&id);
+        let visible_tab_count = if space.loaded {
+            tab_count
+        } else {
+            space.shared_tab_count as usize
+        };
 
         let name_slot: gpui::AnyElement =
             match self.space_rename.as_ref().filter(|(rid, _)| *rid == id) {
@@ -126,12 +131,30 @@ impl Workspace {
             .flex()
             .items_center()
             .gap_1()
+            .when(!space.loaded, |d| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .text_size(px(10.0))
+                        .text_color(c.accent)
+                        .child("Join"),
+                )
+            })
+            .when(space.loaded && space.participants > 1, |d| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .text_size(px(10.0))
+                        .text_color(c.muted)
+                        .child(format!("{} open", space.participants)),
+                )
+            })
             .child(
                 div()
                     .flex_none()
                     .text_size(px(11.0))
                     .text_color(c.muted)
-                    .child(tab_count.to_string()),
+                    .child(visible_tab_count.to_string()),
             )
             .child(more);
 
@@ -516,6 +539,29 @@ impl Workspace {
     ) -> gpui::AnyElement {
         let c = Palette::from_theme(self.theme.read(cx));
         let view = cx.entity();
+        let loaded = self
+            .spaces
+            .read(cx)
+            .get(id)
+            .is_some_and(|space| space.loaded);
+        if !loaded {
+            let items = vec![MenuItem::new("space-join", "Join shared Space")
+                .icon(IconName::FolderOpen)
+                .on_click({
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.close_space_actions_menu(cx);
+                            this.close_spaces_menu(cx);
+                            this.switch_space(id, cx);
+                        })
+                    }
+                })];
+            let dismiss = move |_w: &mut Window, cx: &mut App| {
+                view.update(cx, |this, cx| this.close_space_actions_menu(cx));
+            };
+            return context_menu_with_exit(anchor, c, closing, dismiss, items);
+        }
         let mut items = vec![
             MenuItem::new("space-new-tab", "New Tab")
                 .icon(IconName::PlusBold)

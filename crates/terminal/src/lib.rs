@@ -43,7 +43,8 @@ pub use engine::{
     DEFAULT_SCROLLBACK_LINES,
 };
 pub use host::{
-    BackgroundSession, HostedControl, HostedLink, HostedSession, InProcessHost, SessionHost,
+    BackgroundSession, HostedAttachmentStatus, HostedControl, HostedLink, HostedSession,
+    InProcessHost, SessionHost,
 };
 pub use input::{
     key_to_bytes, mouse_report, paste_payload, wheel_action, Key, KeyInput, Modifiers, MouseButton,

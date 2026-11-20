@@ -101,7 +101,11 @@ fn session_row(session: &BackgroundHostSession) -> HostSessionRow {
     let state = if session.exited {
         "exited"
     } else if session.attached {
-        "attached"
+        if session.attached_count > 1 {
+            "shared by multiple views"
+        } else {
+            "attached"
+        }
     } else {
         "detached"
     };
@@ -311,6 +315,7 @@ mod tests {
             cwd: None,
             foreground: None,
             attached: false,
+            attached_count: 0,
             exited: false,
         }
     }
@@ -352,10 +357,11 @@ mod tests {
             cwd: Some("/work/app".into()),
             foreground: Some("cargo".into()),
             attached: true,
+            attached_count: 3,
             ..session(7)
         });
         assert_eq!(row.title, "build");
-        assert_eq!(row.detail, "/work/app · cargo · attached");
+        assert_eq!(row.detail, "/work/app · cargo · shared by multiple views");
 
         let row = session_row(&BackgroundHostSession {
             cwd: Some("/work/app/".into()),

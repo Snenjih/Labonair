@@ -8,8 +8,8 @@
 //! (routed to the daemon, see `labonair_terminal_host::proxy`); this host only
 //! creates the pane's side: a local emulator fed by the daemon's attach
 //! snapshot and live bytes, input and resizes towards the daemon, and the
-//! lifecycle: closing the tab ends the session (acknowledging a lost one),
-//! quitting the app only detaches. Steal and host-lost notices use the same
+//! lifecycle: closing the tab detaches that view, while an explicit stop ends
+//! the session for every participant. Quitting the app also detaches. Host-lost notices use the same
 //! [`HostedLink`] states as a local hosted pane.
 
 #[cfg(unix)]
@@ -233,8 +233,9 @@ mod imp {
 
         fn detached(&self, reason: DetachReason) {
             match reason {
-                DetachReason::Stolen => self.0.set_link(HostedLink::Stolen),
-                DetachReason::Shutdown => self.0.set_link(HostedLink::HostLost),
+                DetachReason::Stolen | DetachReason::Shutdown => {
+                    self.0.set_link(HostedLink::HostLost)
+                }
                 _ => {}
             }
         }

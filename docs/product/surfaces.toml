@@ -48,10 +48,10 @@ context = "project, standalone, remote"
 command_ids = ["NewTerminalTab", "NewEditorTab", "CloseTab", "SplitRight", "SplitDown", "Find", "OpenFile", "FocusNextPane"]
 settings = ["workspace identity, layout, recent projects, focus and presentation values"]
 notifications = ["Workspace operation and transition failures use Notifications"]
-visual_states = ["home", "project workspace", "standalone", "empty pane", "loading", "error", "split panes"]
-source_files = ["crates/workspace/src/workspace.rs", "crates/workspace/src/tabs.rs", "crates/workspace/src/pane.rs"]
-tests = ["crates/workspace/src/workspace.rs", "crates/workspace/src/layout.rs"]
-evidence = ["Pending: native workspace state matrix"]
+visual_states = ["home", "project workspace", "standalone", "empty pane", "loading", "error", "split panes", "shared Space join"]
+source_files = ["crates/workspace/src/workspace.rs", "crates/workspace/src/tabs.rs", "crates/workspace/src/pane.rs", "crates/workspace/src/spaces_ui.rs", "crates/workspace/src/shared_workspace.rs"]
+tests = ["crates/workspace/src/workspace.rs", "crates/workspace/src/layout.rs", "crates/workspace-storage/tests/multiprocess.rs"]
+evidence = ["Pending: native workspace matrix including shared Space join"]
 status = "partial"
 
 [[surface]]
@@ -192,8 +192,8 @@ context = "standalone, terminal, ssh-terminal"
 command_ids = ["NewTerminalTab", "ClearTerminal", "NewSshTab"]
 settings = ["terminal values and keymap contexts"]
 notifications = ["Process/session failures use Notifications"]
-visual_states = ["ready", "loading", "empty", "process exit", "connection failure", "narrow window"]
+visual_states = ["ready", "loading", "empty", "process exit", "connection failure", "narrow window", "shared terminal controller", "shared terminal non-controller"]
 source_files = ["crates/workspace/src/views/terminal.rs", "crates/terminal/src", "crates/shell/src/bootstrap.rs"]
-tests = ["crates/terminal/src", "crates/workspace/src/views/terminal.rs"]
-evidence = ["Pending: native terminal matrix"]
+tests = ["crates/terminal/src", "crates/workspace/src/views/terminal.rs", "crates/terminal-host/tests/host.rs", "crates/terminal/tests/daemon_host.rs"]
+evidence = ["Pending: native terminal matrix including multi-instance attachments"]
 status = "partial"

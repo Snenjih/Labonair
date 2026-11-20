@@ -148,6 +148,8 @@ pub struct TabData {
 pub struct Tab {
     /// Process-unique id, never reused.
     pub id: u64,
+    /// Stable Workspace-owned identity persisted across application processes.
+    pub shared_id: labonair_workspace_storage::TabId,
     pub kind: TabKind,
     /// Fallback title. Real label comes from [`Tab::label`].
     pub title: String,
@@ -298,6 +300,7 @@ impl TabStore {
         let id = crate::pane::next_id();
         self.tabs.push(Tab {
             id,
+            shared_id: labonair_workspace_storage::TabId::new(),
             kind,
             title: kind.default_title().to_string(),
             custom_title: None,
@@ -312,6 +315,14 @@ impl TabStore {
         self.set_active(id, cx);
         cx.notify();
         id
+    }
+
+    pub fn set_shared_id(&mut self, id: u64, shared_id: labonair_workspace_storage::TabId) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return false;
+        };
+        tab.shared_id = shared_id;
+        true
     }
 
     /// Open a workspace tab backed by `session_id`, inheriting `cwd`.
@@ -467,6 +478,53 @@ impl TabStore {
         }
         let tab = self.tabs.remove(from);
         self.tabs.insert(to, tab);
+        cx.notify();
+    }
+
+    /// Reorder only one Space's tabs to match the shared Workspace sequence,
+    /// leaving every other Space's local tab order untouched.
+    pub fn reorder_shared_space(
+        &mut self,
+        space_id: SpaceId,
+        ordered: &[labonair_workspace_storage::TabId],
+        cx: &mut Context<Self>,
+    ) {
+        let positions = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tab)| (tab.space_id == space_id).then_some(index))
+            .collect::<Vec<_>>();
+        if positions.len() < 2 {
+            return;
+        }
+        let current_ids = positions
+            .iter()
+            .map(|index| self.tabs[*index].shared_id)
+            .collect::<Vec<_>>();
+        let mut final_ids = ordered
+            .iter()
+            .copied()
+            .filter(|id| current_ids.contains(id))
+            .collect::<Vec<_>>();
+        let already_ordered = final_ids.clone();
+        final_ids.extend(
+            current_ids
+                .into_iter()
+                .filter(|id| !already_ordered.contains(id)),
+        );
+        let by_shared = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.space_id == space_id)
+            .cloned()
+            .map(|tab| (tab.shared_id, tab))
+            .collect::<std::collections::HashMap<_, _>>();
+        for (position, shared_id) in positions.into_iter().zip(final_ids) {
+            if let Some(tab) = by_shared.get(&shared_id) {
+                self.tabs[position] = tab.clone();
+            }
+        }
         cx.notify();
     }
 

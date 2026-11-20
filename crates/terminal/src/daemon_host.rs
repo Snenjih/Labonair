@@ -24,7 +24,7 @@ pub use imp::{DaemonHost, HostState};
 #[cfg(unix)]
 mod imp {
     use std::collections::BTreeMap;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
     use std::time::{Duration, Instant};
 
@@ -36,7 +36,9 @@ mod imp {
     use tokio::sync::Notify;
 
     use super::{BackgroundSession, Path};
-    use crate::host::{HostedControl, HostedLink, HostedSession, SessionHost};
+    use crate::host::{
+        HostedAttachmentStatus, HostedControl, HostedLink, HostedSession, SessionHost,
+    };
     use crate::registry::SessionBackend;
     use crate::session::{ForegroundProcess, RemoteFeed, RemoteSession};
     use crate::{SessionOptions, TermDimensions, TerminalColors};
@@ -183,11 +185,13 @@ mod imp {
         BackgroundSession {
             id: info.id,
             pane_tag: info.pane_tag.clone(),
+            persist_key: info.persist_key.clone(),
             label: info.label.clone(),
             cwd: info.cwd.clone(),
             title: info.title.clone(),
             exited: info.status == SessionStatus::Exited,
             attached: info.attached,
+            attached_count: info.attached_count.max(u32::from(info.attached)),
             foreground: info.foreground.clone(),
         }
     }
@@ -277,6 +281,8 @@ mod imp {
                 dims: Mutex::new((cols, rows)),
                 attach_dims: Mutex::new((cols, rows)),
                 foreground: Mutex::new(ForegroundCache::default()),
+                attached_count: AtomicU32::new(0),
+                controls_resize: AtomicBool::new(false),
                 exited: AtomicBool::new(false),
                 finished: AtomicBool::new(false),
             });
@@ -310,6 +316,8 @@ mod imp {
         /// Size the daemon attached us at (what the snapshot was rendered for).
         attach_dims: Mutex<(u16, u16)>,
         foreground: Mutex<ForegroundCache>,
+        attached_count: AtomicU32,
+        controls_resize: AtomicBool,
         exited: AtomicBool,
         /// Killed or detached: nothing more to tell the daemon.
         finished: AtomicBool,
@@ -332,6 +340,16 @@ mod imp {
                 .feed
                 .resize_emulator(TermDimensions::new(cols.into(), rows.into()));
             self.0.set_link(HostedLink::Live);
+        }
+
+        fn attachment_state(&self, attached_count: u32, controls_resize: bool) {
+            self.0
+                .attached_count
+                .store(attached_count, Ordering::SeqCst);
+            self.0
+                .controls_resize
+                .store(controls_resize, Ordering::SeqCst);
+            self.0.feed.notify_changed();
         }
 
         fn snapshot(&self, data: &[u8], resync: bool) {
@@ -361,8 +379,9 @@ mod imp {
 
         fn detached(&self, reason: DetachReason) {
             match reason {
-                DetachReason::Stolen => self.0.set_link(HostedLink::Stolen),
-                DetachReason::Shutdown => self.0.set_link(HostedLink::HostLost),
+                DetachReason::Stolen | DetachReason::Shutdown => {
+                    self.0.set_link(HostedLink::HostLost)
+                }
                 _ => {}
             }
         }
@@ -388,6 +407,20 @@ mod imp {
 
         fn link(&self) -> HostedLink {
             *lock(&self.0.link)
+        }
+
+        fn attachment_status(&self) -> Option<HostedAttachmentStatus> {
+            Some(HostedAttachmentStatus {
+                attached_count: self.0.attached_count.load(Ordering::SeqCst),
+                controls_resize: self.0.controls_resize.load(Ordering::SeqCst),
+            })
+        }
+
+        fn request_resize_control(&self) -> Result<(), String> {
+            self.0
+                .client
+                .request_resize_control(self.0.id)
+                .map_err(|error| error.to_string())
         }
 
         fn reattach(&self) -> Result<(), String> {
