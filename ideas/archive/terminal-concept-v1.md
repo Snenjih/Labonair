@@ -1,23 +1,15 @@
-# Terminal Concept — Verbesserungen & Feature-Porting aus Zed
 
 > **Superseded — historical reference only.** Terminal work now follows the
 > current product contract, module rules, and active rework queue under
 > `docs/` and `tasks/rework/`. This proposal is retained for research only and
 > must not be treated as an implementation plan.
 
-> **Status:** Konzept / Entwurf
-> **Autor:** Niklas + Claude Code
-> **Erstellt:** 2026-09-04
-> **Grundlage:** Analyse von Labonair-rust `crates/terminal/` + `crates/workspace/src/views/terminal.rs` vs. Zed `crates/terminal/` + `crates/terminal_view/`
-
-Dieses Dokument sammelt **alle** terminalbezogenen Verbesserungen, Feature-Ports aus Zed und offene Designfragen. Es dient als Planungsgrundlage fuer zukuenftige Tasks (nach Erreichen der Feature-Paritaet).
 
 ---
 
 ## Inhaltsverzeichnis
 
 1. [Aktueller Stand Labonair](#1-aktueller-stand-labonair)
-2. [Vergleich mit Zed — Luecken-Uebersicht](#2-vergleich-mit-zed--luecken-uebersicht)
 3. [A. Rendering & Performance](#a-rendering--performance)
 4. [B. Selektion & Copy/Paste](#b-selektion--copypaste)
 5. [C. Suche](#c-suche)
@@ -71,26 +63,6 @@ Dieses Dokument sammelt **alle** terminalbezogenen Verbesserungen, Feature-Ports
 
 ---
 
-## 2. Vergleich mit Zed — Luecken-Uebersicht
-
-| Kategorie | Labonair | Zed | Differenz |
-|-----------|----------|-----|-----------|
-| **Rendering** | `div()`-Komposition | `TerminalElement` paint() | Performance-Luecke |
-| **Viewport-Clipping** | Fehlt | Content-Mask + Intersection | Unnoetige Elemente |
-| **Block-Elemente** | Nicht unterstuetzt | Quarter/Half/Full-Block | Unicode kaputt |
-| **Cursor-Blink** | Statisch | Animation Timer | Kein Feedback |
-| **Min. Kontrast** | Fehlt | `ensure_minimum_contrast()` | Schlecht lesbar |
-| **Selektion** | Nur Simple | Simple + Semantic + Lines | Doppelklick fehlt |
-| **Scrollback-Suche** | Nur Screen-find | Regex, Next/Prev, Highlight | Suche unmoeglich |
-| **Hyperlinks** | Fehlt | Ctrl+Click, URL+Path | Komplett weg |
-| **Scrollbar** | Fehlt (nur Mausrad) | Integrierte Scrollbar | Kein Feedback |
-| **Split-Pane** | Fehlt | Rechts/Links/Oben/Unten | Kein Layout |
-| **Vi-Mode** | Fehlt | Komplett | Power-User Feature |
-| **Task-Terminal** | Fehlt | Status, Rerun, Auto-Hide | Kein Feedback |
-| **Tab-Rename** | Fehlt | Doppelklick Inline | Kein Name |
-| **Focus-In/Out** | Fehlt | ESC Sequenzen | TUI kann nicht tracken |
-| **IME** | Fehlt | Marked Text | Kein CJK |
-| **Foreground-Prozess** | Fehlt | Skriptname im Titel | Immer "bash" |
 
 ---
 
@@ -780,16 +752,6 @@ Play/Check/XCircle je nach Task-State.
 
 ---
 
-## Nicht portieren (Zed-spezifisch)
-
-| Feature | Grund |
-|---------|-------|
-| Display-Only Terminal (kein PTY) | Nur fuer Zed Agent noetig |
-| Embedded-Mode mit MAX_EMBEDDED_LINES | Agent-spezifisch |
-| Block-Below-Cursor custom element | Agent-Panel-spezifisch |
-| Pane-Serialisierung via SQLite KVP | Zed-haengiges Persistence-System |
-| `terminal_path_like_target.rs` | Zed-spezifisches Tab/Pane-Dragging |
-| Breadcrumb-Trail im Toolbar | Zed-spezifisches UI-Konzept |
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+`🔄 In Progress`
 
 ## Owner
 
@@ -12,7 +12,6 @@
 
 ## Dependencies
 
-- `R07-000-zed-parity-baseline-and-inventory`
 - `R06-001-backend-adapter-eradication`
 
 ## Goal
@@ -26,11 +25,10 @@ to introduce new features.
 - In scope: full capability matrix audit, repository layout, registry
   ownership, Settings boundary, notifications, command/keymap flows, hosts,
   themes, transfers, standalone/project workflows, and visual consistency.
-- Out of scope for this bounded acceptance task: implementing the expanded
-  clean-room Zed parity target. The current product decision and its complete
-  feature crosswalk are recorded in
-  [`../../docs/zed-parity.md`](../../docs/zed-parity.md) and specified first
-  in R07-000. This bounded acceptance audit follows that specification work.
+- Out of scope for this bounded acceptance task: expanding product scope or
+  adding capabilities. The product decision and feature scope are defined by
+  [`../../docs/product.md`](../../docs/product.md) and the owner-backed
+  capability and workflow contracts.
 
 ## Contracts and ownership
 
@@ -159,8 +157,8 @@ a separate product decision after the core workflow is stable.
       diagnostic capture exists in the audit log, but it is not a durable
       registry artifact; the complete visual matrix remains open until all
       states are inspected and recorded under the current evidence contract.
-- [ ] Source Control visual parity follow-up: the panel now uses a clean-room
-      Zed-inspired flat tab strip, trailing staging controls, visible selected
+- [ ] Source Control visual follow-up: the panel now uses a compact flat tab
+      strip, trailing staging controls, visible selected
       rows, repository push controls, and an editor-like commit composer. The
       native screenshot comparison remains pending until the capture runner
       can identify the rendered Rust window.
@@ -201,8 +199,8 @@ but the complete native visual-state matrix is not yet verified.
 ## Baseline gate repair — 2026-09-12
 
 The repository-gate findings from the previous verification run were repaired
-with formatting-only changes and minimal local lint fixes. No R09/editor code,
-reference source, ADR, or editor comparison report was changed by this repair.
+with formatting-only changes and minimal local lint fixes. No R09/editor code
+or ADR was changed by this repair.
 
 ### Formatting evidence
 

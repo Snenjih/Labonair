@@ -992,7 +992,6 @@ fn create_msaa_texture_if_needed(
 /// A set of parameters that can be set using a corresponding environment variable.
 struct RenderingParameters {
     // Env var: ZED_PATH_SAMPLE_COUNT
-    // workaround for https://github.com/zed-industries/zed/issues/26143
     path_sample_count: u32,
 
     // Env var: ZED_FONTS_GAMMA

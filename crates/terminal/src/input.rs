@@ -8,8 +8,7 @@
 //! [`ModeState`] snapshot from the engine and returns the raw bytes to write to
 //! the PTY. The GPUI → plain conversion lives in `labonair-ui`.
 //!
-//! The escape sequences follow xterm / DEC conventions (the same ones
-//! `alacritty_terminal` and Zed emit):
+//! Input uses xterm / DEC escape-sequence conventions:
 //!
 //! * cursor & edit keys respect DECCKM (application cursor mode);
 //! * modifiers use the standard `CSI 1 ; <mod> <final>` / `CSI <n> ; <mod> ~`

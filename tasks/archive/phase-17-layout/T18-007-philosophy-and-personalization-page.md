@@ -22,9 +22,6 @@ Panel-Sichtbarkeit — als überblickbares GUI.
 - `tasks/archive/ROADMAP.md` — Abschnitt „## Vision" + „## Erfolgskriterien".
 - `CLAUDE.md` (Repo-Root) — „# Labonair-rust — CLAUDE.md" Kopf,
   „## Critical Rules".
-- Settings-UI: `labonair-settings-ui` (nach T16-007). Die generische
-  Feld-Rendering-Infrastruktur wird erst in T19-004 Zed-Style; hier reicht
-  eine hand-gebaute Pane (wie die heutigen Sonder-Panes Theme/Shortcuts/MCP).
 - Daten: `statusBarItemPlacements` (T18-005), Panel-Sichtbarkeits-Blob (neu —
   `panelToggleVisibility` o.ä., in `labonair-settings.json`).
 
@@ -85,9 +82,6 @@ Panel-Sichtbarkeit — als überblickbares GUI.
       `cargo test --workspace`.
 
 ## Notizen
-- Die Pane ist bewusst hand-gebaut (wie Theme-/Shortcuts-Pane). In T19-004
-  wird der generische Teil des Settings-UI Zed-Style — die Personalisierungs-
-  Pane bleibt eine Custom-Pane (`SettingsPageItem::Custom`).
 - „Zurücksetzen" nur für den Personalisierungs-Bereich, nicht global.
 
 ## Warnungen

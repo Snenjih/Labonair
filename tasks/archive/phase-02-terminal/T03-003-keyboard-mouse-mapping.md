@@ -15,7 +15,6 @@ Die vollständige Übersetzung von GPUI-Tastatur- und Mausereignissen in Termina
 ## Kontext
 Eine Terminal-Eingabe ist nicht einfach "der gedrückte Buchstabe". Ein Terminal entwickelt Escape-Sequenzen, die Sonderzeichen (z.B. Pfeiltasten, Entf, Strg+Kombinationen, F1–F12, Home/End), und dabei muss der aktuelle Terminal-Modus entropy (z.B. ob Application Cursor Mode, Application Keypad, Insert-Modus, Bracketed Paste aktiv sind) berücksichtigt werden.
 
-In der Tauri/React-Version erledigte xterm.js genau diese Übersetzung im Frontend. In der Rust-Version übernimmt die Terminal-Engine (auf `alacritty_terminal`-Basis) bereits einen Teil der Modus-Logik, aber die rohe GPUI-Tastatur-/Mausereignis-→-Escape-Übersetzung muss selbst implementiert werden. Hier greift man auf das gleiche Muster zurück, das Zed nutzt (eine eigene Zuordnungsebene zwischen GPUI-Eingabe und alacritty).
 
 Zusätzlich muss die Browser-/Native-Kompatibilität für erweiterte Protokolle hergestellt werden: Kitty-Keyboard, Bracketed Paste, Modified Cursor Keys, etc.
 
@@ -74,7 +73,6 @@ Zusätzlich muss die Browser-/Native-Kompatibilität für erweiterte Protokolle 
 
 ## Notizen
 
-- Nutze die alacritty-Terminal-Modi, aber übernimm die rohe GPUI→Sequenz-Zuordnung selbst. Zed hat diesen Ansatz — als Inspiration, nicht als Kopiervorlage.
 - Vergiss nicht, dass viele Shells (zsh, bash) das VT-Keypad und die erweiterten Protokolle nur dann aktivieren, wenn der Terminal sie meldet (Terminal-Capabilities/DA1-Antworten). Bringe die Terminal-Engine in den Zustand, die passenden Antworten auf Sende-abfragen zu liefern.
 
 ## Warnungen

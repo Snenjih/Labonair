@@ -93,9 +93,8 @@ pub fn register_palette_action_handlers(
         .expect("source-control palette action handler must have a unique owner");
 }
 
-// Unified-diff parsing moved to `labonair-editor` in the Zed-parity Phase 4
-// redesign so the panel and the workspace Project Diff item share one
-// implementation. Re-exported for the (pre-existing) public API surface.
+// The panel and workspace Project Diff surface share one implementation.
+// Re-exported for the pre-existing public API surface.
 pub use labonair_editor::unified::{
     build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk, FileDiff,
 };
@@ -325,8 +324,8 @@ enum Section {
     Untracked,
 }
 
-/// Top-level panel information mode (Zed-parity Phase 4, §9.5 "Panel
-/// navigation"). Two *real* modes — a commit log is not a decoration.
+/// Top-level panel information mode. These are two real modes; a commit log
+/// is not a decoration.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub(crate) enum PanelMode {
     #[default]
@@ -334,8 +333,8 @@ pub(crate) enum PanelMode {
     History,
 }
 
-/// What a commit click will actually do, derived from repository + staging
-/// state (Zed-parity Phase 4, §12.5). Drives the adaptive commit-button label.
+/// What a commit click will do, derived from repository and staging state.
+/// This determines the commit button label.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum CommitMode {
     /// Commit exactly what is staged.
@@ -356,9 +355,8 @@ impl CommitMode {
     }
 }
 
-/// A repository-wide async operation currently in flight. Carries enough
-/// identity to show progress / disable the affected action without freezing
-/// the whole panel (Zed-parity Phase 4, §12.5 / Critical Rule 5).
+/// A repository-wide async operation currently in flight. Its identity is used
+/// to show progress and disable the affected action without freezing the panel.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub(crate) enum RepoOperation {
     #[default]
@@ -387,8 +385,7 @@ impl RepoOperation {
     }
 }
 
-/// Why the commit action is unavailable — surfaced in the button tooltip and
-/// accessibility description (Zed-parity Phase 4, §12.5).
+/// Why the commit action is unavailable, shown in the button tooltip.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum DisabledReason {
     NoMessage,
@@ -455,8 +452,8 @@ pub(crate) fn derive_disabled_reason(
     None
 }
 
-/// One line of the flattened Source-Control presentation list (Zed-parity
-/// §12.5). Built by [`flatten_git`] (flat) or [`flatten_git_tree`] (tree)
+/// One line of the flattened Source-Control presentation list, built by
+/// [`flatten_git`] (flat) or [`flatten_git_tree`] (tree)
 /// independently of the nested section render loops, then virtualised.
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) enum GitListEntry {
@@ -948,8 +945,7 @@ enum PanelMenu {
     Commit,
 }
 
-/// A pending destructive action awaiting an explicit in-panel confirmation
-/// (Zed-parity Phase 4, §9.5 — destructive actions are never a primary button).
+/// A pending destructive action awaiting explicit in-panel confirmation.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PendingConfirm {
     DiscardAll,
@@ -1013,7 +1009,6 @@ pub struct GitPanelView {
     /// A destructive action awaiting confirmation.
     pending_confirm: Option<PendingConfirm>,
 
-    // ── commit composer (editor-backed, Zed-parity Phase 4) ──
     /// Real text input; created lazily in `render` (needs a `Window`).
     commit_input: Option<Entity<InputState>>,
     /// Tracked from `InputEvent::Focus`/`Blur` — `commit_input` strips
@@ -2477,10 +2472,8 @@ impl GitPanelView {
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| on_click(this, w, cx)))
     }
 
-    /// Consolidated repository footer (Zed-parity Phase 4, §9.5): branch,
-    /// ahead/behind, and one compact repo menu (`⋯`) that holds Fetch / Pull /
-    /// Push and — clearly separated and de-emphasised — Force Push, plus
-    /// Stashes / Tags and any in-progress Continue / Abort.
+    /// Repository status summary with branch, ahead/behind, repository actions,
+    /// stashes, tags, and any in-progress Continue / Abort actions.
     fn render_footer(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(state) = &self.state else {
             return div().into_any_element();
@@ -3596,8 +3589,7 @@ impl GitPanelView {
             .into_any_element()
     }
 
-    /// Adaptive Changes header (Zed-parity Phase 4, §9.5): `View Diff`, a
-    /// view-options menu, an adaptive Stage All / Unstage All action and an
+    /// Changes header with view options, an adaptive Stage All / Unstage All action, and an
     /// overflow menu for the rare / destructive repo-wide operations.
     fn render_changes_header(
         &self,
@@ -4326,9 +4318,8 @@ fn picker_empty(text: &'static str, c: Colors) -> impl IntoElement {
         .child(SharedString::from(text))
 }
 
-/// The file's base name — used as the primary label; the full path is kept in
-/// the row's `secondary` muted text and its tooltip so identity is never
-/// reduced to an ambiguous tail (Zed-parity Phase 4, §9.5 "Change rows").
+/// The file's base name is the primary label; the row's `secondary` text and
+/// tooltip retain the full path.
 fn short_path(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_string()
 }
@@ -4800,10 +4791,7 @@ mod tests {
         );
     }
 
-    // ── Zed-parity Phase 5: large change-set render/latency evidence ──────────
-    //
-    // §14 "no row-count-linear render regression" for the Git panel. `flatten_*`
-    // is linear in the change set (it *is* the change set); the virtual list's
+    // `flatten_*` is linear in the change set, while the virtual list's
     // per-frame `git_list_element` work must be viewport-bounded. Live trace:
     //   RUST_LOG=labonair::perf=trace cargo run
     // then open Source Control on a big repo — `scm_flatten_flat` /

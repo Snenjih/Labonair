@@ -5,10 +5,8 @@
 //!
 //! Colour comes from the [`ThemeRegistry`](crate::ThemeRegistry) via
 //! [`ThemeStore`](crate::ThemeStore); *metric* (font scales, UI density, corner
-//! radius, reduce-motion) comes from the user's theme-settings. [`ActiveTheme`]
-//! is the combined view the whole app reads — analogous to Zed's
-//! `theme_settings` layer (`zed-refrence/zed/crates/theme/src/ui_density.rs`,
-//! `theme_settings.rs`).
+//! radius, reduce-motion) comes from the user's theme settings. [`ActiveTheme`]
+//! combines the active color theme and metric settings.
 //!
 //! The metric half is [`ThemeMetrics`]; the density scalar set is [`UiDensity`].
 //! `labonair-theme`'s `ThemeStore` owns the live [`ThemeMetrics`]
@@ -22,8 +20,7 @@ use std::time::Duration;
 
 use crate::tokens::{Animation, RadiusScale, Theme, Typography};
 
-/// UI density — a spacing/size multiplier applied around the layout-contract
-/// base metrics. Port of Zed's `UiDensity` (`crates/theme/src/ui_density.rs`).
+/// UI density — a spacing and size multiplier applied around the layout contract.
 ///
 /// The factors are deliberately conservative (`docs/architecture.md` §8.20):
 /// `Compact` ≈ ×0.85, `Default` ×1.0, `Comfortable` ×1.15. They scale *around*

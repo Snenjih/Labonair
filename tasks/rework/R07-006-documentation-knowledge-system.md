@@ -20,7 +20,7 @@
 ## Goal
 
 Complete the remaining evidence and coverage work in
-[`docs-reform-plan.md`](../../docs-reform-plan.md) so an agent can navigate
+[`docs/reform/README.md`](../../docs/reform/README.md) so an agent can navigate
 from a capability or workflow to its owner, contract, implementation,
 evidence, and next safe task without relying on chat history.
 

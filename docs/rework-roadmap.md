@@ -5,18 +5,17 @@
 
 The rework is through the completed R06 backend-adapter eradication. The
 capability-owned registries and surfaces, shell/workspace identity, settings
-reduction, and explicit module boundaries are established. R07 now starts with
-the clean-room parity specification and macOS Settings baseline in R07-000.
-R07-001 then verifies that documentation, ownership, dependency direction, and
-permanent product surfaces agree before remaining cleanup work proceeds.
+reduction, and explicit module boundaries are established. R07 continues with
+the Labonair product-surface acceptance task, which verifies documentation,
+ownership, dependency direction, and permanent product surfaces before
+remaining cleanup work proceeds.
 
 This roadmap replaces the historical task order. Existing completed work remains valuable, but old tasks do not override the contracts in `docs/`.
 
-The current user decision sets complete clean-room feature and UI/UX parity
-with the fixed Zed reference as the product target. This supersedes the former
-scope exclusions in the roadmap; it does not authorize a source fork. The
-canonical parity plan is [`zed-parity.md`](zed-parity.md), and its first
-specification task is ordered in `tasks/rework/README.md`.
+The current product scope is defined by [`product.md`](product.md),
+[`capabilities.md`](capabilities.md), and the owner-backed workflow catalog.
+Rework tasks must implement or verify those Labonair contracts without
+introducing a second product target.
 
 Work proceeds in dependency order. A later phase may not introduce a second
 owner or bypass an unfinished contract from an earlier phase. The roadmap is a
@@ -34,8 +33,8 @@ the predecessor.
 
 **Exit:** the target graph and ownership of every current feature are documented.
 
-The Phase 0 documentation baseline is extended by the repository-level
-[`../docs-reform-plan.md`](../docs-reform-plan.md). Its implemented knowledge
+The Phase 0 documentation baseline is extended by
+[`reform/README.md`](reform/README.md). Its implemented knowledge
 infrastructure includes the agent router, architecture manifest, capability
 coverage, product/workflow catalogs, evidence scorecard, Settings lifecycle,
 automation/security catalog, performance budgets, release checklist, and the
@@ -188,29 +187,22 @@ implemented only through bounded follow-up tasks.
 - evaluate projects/workspace enhancements;
 - add extensions or downloads only after the core is stable.
 
-Remote theme downloads, marketplace behavior, and extension hosting were
-previously deferred. They are now included in the parity inventory and remain
-unimplemented until that inventory records the owner, trust boundary, service
-contract, and acceptance evidence.
+Remote theme downloads, marketplace behavior, and extension hosting remain
+deferred. Reopen them only after a product decision records the owner, trust
+boundary, service contract, and acceptance evidence.
 
-## Phase 9 — Clean-room Zed parity specification and delivery
+## Phase 9 — Product-surface acceptance
 
-Follow [`zed-parity.md`](zed-parity.md) for the pinned baseline, clean-room
-boundary, complete feature inventory, universal UI checklist, Settings pilot,
-shared registries, universal tab model, and parity acceptance rules.
+Use [`product.md`](product.md), [`design-system.md`](design-system.md), the
+capability contracts, and the workflow catalog to review every permanent
+surface and supported user journey. Record native visual evidence and bounded
+follow-up tasks in the acceptance matrix. Editor rework remains planned until
+the acceptance gate and its dependency order are complete.
 
-The active implementation task is
-[`R07-000-zed-parity-baseline-and-inventory.md`](../tasks/rework/R07-000-zed-parity-baseline-and-inventory.md).
-It starts with shared UI-kit controls and the complete Settings surface, then
-continues through the rest of the parity inventory. R07-001 product-surface
-acceptance follows the implementation work. The existing R09 Editor tasks remain planned until the inventory
-assigns their place in the full dependency order; their implementation scope
-must align with the parity catalog before any R09 task starts.
-
-### Planned Editor rework sequence — reconcile through R07-000 (2026-09-12)
+### Planned Editor rework sequence — after product-surface acceptance
 
 The Editor rework is a bounded post-acceptance sequence. No R09 task may start
-until the R07-000 parity inventory and R07-001 acceptance gate are complete.
+until the R07-001 acceptance gate is complete.
 The Editor remains the sole owner of Editor state, behavior,
 UI-boundary, commands, persistence, and tests; Workspace remains a hosting and
 composition adapter. Local language services are in scope before any remote

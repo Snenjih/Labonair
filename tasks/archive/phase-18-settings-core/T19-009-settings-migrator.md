@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T19-004 (Settings-UI aus Modell), T19-008 (Keymap als Datei), T19-010 (Settings › Hosts)
@@ -27,10 +25,6 @@ ohne Nutzerdaten zu verlieren.
   T19-008 `keymap.json` (kontext-basiert).
 - Vorbild-Muster: T18-006 (der Bar-Item-Migrator) — dieselbe Vorsicht
   (`.bak`, idempotent, Legacy behalten).
-- Zed hat `MigrationStatus` / `migrator`-Crate
-  (`zed-refrence/zed/crates/migrator/`) — Konzept ansehen, aber unser Fall ist
-  einfacher (einmalige Struktur-Umformung, kein fortlaufendes Migrations-
-  Framework).
 
 ## Anweisungen zur Umsetzung
 1. **`migrate_settings_v1_to_v2(dir: &Path) -> Result<MigrationOutcome, String>`**

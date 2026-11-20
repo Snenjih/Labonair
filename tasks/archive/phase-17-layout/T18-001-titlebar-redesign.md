@@ -33,8 +33,6 @@ endgültige Optik inkl. **Doppelklick → lokales Terminal** und
 - `reference-src/src/modules/tabs/lib/tabUtils.tsx` — `NewTabDropdownItems`
   (das `＋`-Dropdown der Referenz: Terminal / Editor / Preview / Git Graph ·
   Trenner · `SSH ▸` Recent-Hosts · `SFTP ▸` Recent-Hosts · „All hosts…").
-- Zed-Vorbild: `zed-refrence/zed/crates/title_bar/` — dünne Titlebar,
-  `platform_title_bar` für Drag-Region + Traffic-Lights.
 
 ## Anweisungen zur Umsetzung
 1. **`crates/shell/src/titlebar.rs`** — `struct Titlebar` (Entity):
@@ -154,8 +152,6 @@ endgültige Optik inkl. **Doppelklick → lokales Terminal** und
 - `Cmd+Shift+N` ist seit T16-007 die Command-Palette-`Page::Hosts` (nicht mehr
   „Open Host Manager") — im `＋▾`-Menü und in der Empty-Surface entsprechend
   als Hosts-Shortcut zeigen.
-- Empty-Surface-Optik ist ein Design-Punkt für Nutzer-Sichtprüfung (Screenshot
-  im PR). Referenz-Vibe: Zed-Welcome / leerer Pane, aber schlichter.
 
 ## Warnungen
 - ⚠️ Drag-Region: Interaktive Kinder (Tabs, `＋▾`-Button, rechter Button)

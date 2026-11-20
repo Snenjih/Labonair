@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! `TreeRow` — a dense, flat, full-width hierarchical row (Zed-parity redesign
-//! Phase 2, `docs/ui-comparison-zed-sidebar-status-bar.md` §8.6 / §10.4 / §12.4).
+//! `TreeRow` is a dense, full-width hierarchical row.
 //!
 //! Unlike [`ListItem`](crate::ListItem) — which is a card-like selectable row
 //! with rounded corners and generous padding, used by command palettes and
@@ -500,8 +499,7 @@ mod tests {
         }
     }
 
-    /// Zed-parity Phase 5.5: the row must build at compact / default /
-    /// comfortable density and at a deep indent without overflowing — the row
+    /// Build at every density and at a deep indent without overflowing. The row
     /// is `w_full` and ellipsises its label, so a narrow dock cannot force a
     /// horizontal overflow. This is a build (not pixel) assertion.
     #[test]

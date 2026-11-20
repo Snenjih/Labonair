@@ -3,26 +3,19 @@
 
 //! Panel + dock contracts.
 //!
-//! Ported from `zed-refrence/zed/crates/workspace/src/dock.rs`. Zed's `Panel`
-//! trait carries ~30 methods (zoom, flexible size, remote ids, agent-panel
-//! flags, activation priority, …). Labonair's layout is fixed and much
-//! smaller, so only the position/size surface plus the status-bar toggle
-//! metadata is kept here. Every deliberate omission versus Zed is called out in
-//! the doc comments below.
+//! The fixed Labonair layout needs only panel position, sizing, lifecycle, and
+//! status-bar toggle contracts. Flexible sizing, remote identifiers, and
+//! activation priority are not part of this contract.
 
 use std::sync::Arc;
 
 use gpui::{AnyView, EntityId, Global};
 use labonair_gpui_ext::prelude::*;
 
-/// Which dock a panel lives in.
+/// Position of a panel's dock in the workspace layout.
 ///
-/// Ported from `DockPosition` in
-/// `zed-refrence/zed/crates/workspace/src/dock.rs`. Zed additionally defines
-/// `From`/`Into` conversions to its `settings::DockPosition` and
-/// `TerminalDockPosition`; those belong to the persistence layer in
-/// `labonair-workspace`/`labonair-settings`, not to the contracts (see the
-/// `serde` warning in the task file), so they are omitted here.
+/// Conversions to settings-specific position types belong to the persistence
+/// layer in `labonair-workspace` and `labonair-settings`, not this contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DockPosition {
     /// Left edge dock.
@@ -53,11 +46,10 @@ impl DockPosition {
 
 /// The glyph shown on a panel's status-bar toggle.
 ///
-/// Zed's `Panel::icon` returns `Option<ui::IconName>` — the full design-system
-/// icon enum. Importing that here would pull `labonair-ui-kit` into the
-/// contracts crate. Instead this is a small closed enum with one variant per
-/// Labonair panel; `labonair-shell` maps each variant to a concrete
-/// `IconName` when it renders the toggle (`docs/architecture.md` §3, §5). If a
+/// This small closed enum avoids pulling `labonair-ui-kit` into the contracts
+/// crate. It defines one variant per Labonair panel; `labonair-shell` maps each
+/// variant to a concrete `IconName` when it renders the toggle
+/// (`docs/architecture.md` §3, §5). If a
 /// future panel needs a new icon, add a variant here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelIcon {
@@ -73,13 +65,9 @@ pub enum PanelIcon {
     Tabs,
 }
 
-/// Lifecycle / zoom events a panel emits to its host dock.
+/// Lifecycle and zoom events a panel emits to its host dock.
 ///
-/// Ported verbatim from `PanelEvent` in
-/// `zed-refrence/zed/crates/workspace/src/dock.rs`. Not yet wired as an
-/// `EventEmitter` supertrait of [`Panel`] — the task leaves that to T17 once
-/// the dock actually consumes zoom/close. Defined now so the dock and panel
-/// crates agree on the variant set.
+/// Defined here so the dock and panel crates agree on the variant set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelEvent {
     /// The panel became the active one in its dock.
@@ -92,23 +80,11 @@ pub enum PanelEvent {
     ZoomOut,
 }
 
-/// A dockable side panel.
+/// A dockable side panel in the fixed Labonair layout.
 ///
-/// Reduced port of `trait Panel` from
-/// `zed-refrence/zed/crates/workspace/src/dock.rs`. Kept methods:
-/// `persistent_name`, `position`, `position_is_valid`, `set_position`,
-/// `default_size`, `min_size` (all 1:1 in intent). Renamed: Zed's
-/// `icon` + `icon_tooltip` collapse into [`Panel::icon`] (returning
-/// [`PanelIcon`]) and [`Panel::title`] (a `SharedString`, used both as the
-/// dock header and the toggle tooltip). Omitted from Zed for now: `panel_key`,
-/// `initial_size_state` / flexible-size, `is_zoomed` / `set_zoomed`,
-/// `set_active`, `pane`, `remote_id`, `activation_priority`, `enabled`,
-/// `is_agent_panel`, `hide_button_setting` — none map onto Labonair's fixed
-/// layout, or they arrive with T17/T18.
-///
-/// `Sized` is a supertrait (as in Zed) so that `persistent_name` can be an
-/// associated function; type erasure for storage goes through [`PanelHandle`]
-/// / [`AnyPanelHandle`], never `Box<dyn Panel>` directly.
+/// The contract exposes the stable name, position, sizing, icon, and title
+/// needed by the workspace. Type erasure for storage goes through
+/// [`PanelHandle`] and [`AnyPanelHandle`].
 pub trait Panel: Focusable + Render + Sized {
     /// Stable key used to persist this panel's dock/size across restarts.
     /// Must never change once shipped.
@@ -143,8 +119,7 @@ pub trait Panel: Focusable + Render + Sized {
 
 /// Object-safe view of a [`Panel`] entity.
 ///
-/// Mirrors Zed's `trait PanelHandle` (same file): the workspace stores
-/// `Arc<dyn PanelHandle>` rather than a concrete panel type, and every method
+/// The workspace stores `Arc<dyn PanelHandle>` rather than a concrete panel type, and every method
 /// forwards through the panel's `Entity`. Only the subset matching the reduced
 /// [`Panel`] trait is exposed.
 pub trait PanelHandle: Send + Sync {
@@ -220,7 +195,6 @@ impl<T: Panel + 'static> PanelHandle for Entity<T> {
 
 /// Type-erased, cheaply cloned handle to a registered panel.
 ///
-/// Zed uses `Arc<dyn PanelHandle>` inline; the alias keeps downstream
 /// signatures readable.
 pub type AnyPanelHandle = Arc<dyn PanelHandle>;
 
@@ -241,8 +215,6 @@ pub struct PanelRegistration {
 
 /// The set of every panel type known to the running app.
 ///
-/// Zed has no single registry type — panels are added ad hoc via
-/// `Dock::add_panel` (`zed-refrence/zed/crates/workspace/src/dock.rs:629`).
 /// Labonair's architecture (`docs/architecture.md` §1.3, §4) wants one panel
 /// registry read by both the workspace (which dock renders what) and the
 /// status bar (one toggle per registration). Capability modules build typed

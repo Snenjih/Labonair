@@ -3,11 +3,8 @@
 
 //! Status-bar item contracts.
 //!
-//! Ported from `zed-refrence/zed/crates/workspace/src/status_bar.rs`
-//! (`trait StatusItemView` + `struct HideStatusItem`). The new layout
-//! (`docs/architecture.md` §4) drops Zed's titlebar scope, so an item only
-//! chooses between the left and right side of the status bar and may describe
-//! how it hides itself.
+//! Each item chooses the left or right side and may describe how it hides
+//! itself.
 //!
 //! # Extensibility
 //!
@@ -99,7 +96,6 @@ impl StatusMenuEntry {
 
 /// Which side of the status bar an item defaults to.
 ///
-/// Zed's `barItemPlacements` schema had a titlebar side as well; the new
 /// `statusBarItemPlacements` (`docs/architecture.md` §4 "What is removed") has
 /// only left/right, so this enum has exactly two variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -120,16 +116,10 @@ pub struct StatusPlacement {
     pub hidden: bool,
 }
 
-/// Describes that a status-bar item can be hidden by the user.
+/// Describes how a status-bar item can be hidden by the user.
 ///
-/// Port of `HideStatusItem` from
-/// `zed-refrence/zed/crates/workspace/src/status_bar.rs`. Zed stores an
-/// `Arc<dyn Fn(&mut SettingsContent)>` and persists the change through
-/// `update_settings_file`. Labonair has no `SettingsContent` type yet
-/// (`labonair-settings-content` is a later phase) and the task explicitly
-/// forbids a `serde`/persistence dependency here, so for now this carries a
-/// plain callback against the running `App`; T18-005 swaps the body for the
-/// settings-file write without changing this type's shape.
+/// The owner supplies a callback against the running `App`; persistence stays
+/// outside this contract.
 #[derive(Clone)]
 pub struct StatusItemHide {
     hide: Arc<dyn Fn(&mut App) + Send + Sync>,
@@ -149,15 +139,10 @@ impl StatusItemHide {
     }
 }
 
-/// An item rendered into the status bar.
+/// An item rendered into the status bar as a GPUI view.
 ///
-/// Reduced port of `trait StatusItemView` from
-/// `zed-refrence/zed/crates/workspace/src/status_bar.rs`. Zed's
-/// `set_active_pane_item` hook is omitted — Labonair status items observe the
-/// workspace directly. `Render` stays a supertrait (as in Zed) so items are
-/// ordinary GPUI views; the task's `render(&mut self, window, cx) ->
-/// AnyElement` is exposed as [`StatusItem::render_status`] to avoid colliding
-/// with `Render::render`.
+/// Workspace state is observed directly. The `render_status` method avoids
+/// colliding with [`Render::render`].
 pub trait StatusItem: Render {
     /// Stable id, used as the key in the placement/hidden settings map.
     fn id(&self) -> &'static str;
@@ -221,7 +206,6 @@ pub trait StatusItem: Render {
     }
 
     /// How this item hides itself, or `None` if it is inherently conditional on
-    /// another user-visible setting (Zed's rule for returning `None`).
     fn hide(&self, cx: &App) -> Option<StatusItemHide> {
         let _ = cx;
         None
@@ -230,8 +214,7 @@ pub trait StatusItem: Render {
 
 /// Object-safe view of a [`StatusItem`] entity.
 ///
-/// Analogue of `trait StatusItemViewHandle` in the same Zed file: the status
-/// bar stores `Arc<dyn StatusItemHandle>` and forwards through each item's
+/// The status bar stores `Arc<dyn StatusItemHandle>` and forwards through each item's
 /// `Entity`.
 pub trait StatusItemHandle: Send + Sync {
     /// Entity id of the underlying item view.

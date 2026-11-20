@@ -10,11 +10,6 @@
 T16-002 (`labonair-ui-kit`), T16-004 (`labonair-command-palette`)
 
 ## Ziel
-Die Settings-Fenster-UI (`crates/ui/src/settings.rs`, 5 957 Z.) in einen eigenen
-Crate `labonair-settings-ui` lösen. In dieser Task **kein** inhaltlicher Umbau:
-`FIELDS`, `SECTION_GROUPS`, `CATEGORIES`, die Sonder-Panes bleiben wie sie sind.
-Der Zed-Style-Umbau (generierte UI, JSON-Editor) passiert in Phase 18
-(T19-004 ff.) — der braucht diesen Crate als Ort.
 
 **Zusatz-Scope (Thema 2 — Command-Palette-Host-Zugang).** T16-004 hat
 `labonair-command-palette` schon extrahiert und ist `✅ Done`; die dort noch
@@ -37,8 +32,6 @@ Abschnitt **„Zusatz: Palette-Host-Seite"** unten.
   `set_settings_deps`, `SettingsTab`, `apply_prefs_to_theme`),
   `menu.rs` (`SettingsTab::from_deep_link`), `command_palette`
   (`OpenSettings`-Command).
-- Zed-Vorbild: `zed-refrence/zed/crates/settings_ui/` (eigenständiger Crate,
-  getrennt von `settings/`).
 
 ## Anweisungen zur Umsetzung
 1. **`crates/settings-ui/` anlegen** (`labonair-settings-ui`,

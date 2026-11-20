@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! WCAG 2.x contrast helpers (Zed-parity redesign Phase 5, `docs/ui-comparison-
-//! zed-sidebar-status-bar.md` §13 Phase 5.4 / §14 "theme contrast").
+//! WCAG 2.x contrast helpers for theme colors.
 //!
 //! Previously these lived as private helpers inside `tokens.rs`'s test module.
 //! Phase 5 promotes them to a real, reusable API so the new redesign surfaces

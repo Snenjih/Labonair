@@ -5,8 +5,7 @@
 //!
 //! Moved out of `labonair-ui-kit::theme` in R08-008. `ui-kit` only ever sees
 //! [`UiTheme`]; `labonair-theme` implements it for its runtime `ThemeStore`
-//! (that `impl` lives in `labonair-theme` because of the orphan rule). This
-//! mirrors Zed's split between the `ui` and `theme` crates.
+//! (that `impl` lives in `labonair-theme` because of the orphan rule).
 
 use gpui::{App, Hsla};
 

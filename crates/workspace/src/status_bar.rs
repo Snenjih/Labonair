@@ -62,9 +62,8 @@ pub struct StatusBar {
     built: bool,
     /// The open right-click placement menu, if any: `(item id, anchor)`.
     menu: Option<(&'static str, Point<Pixels>)>,
-    /// Focus for the toolbar/tab-group keyboard contract (Zed-parity redesign
-    /// Phase 5.1 — the piece Phase 1 explicitly deferred). Once focus is inside
-    /// the bar, Left/Right Arrow walk the tab stops of the panel-button groups
+    /// Focus used to move through the status-bar tab stops. Once focus is
+    /// inside the bar, Left/Right Arrow walk the panel-button groups
     /// and the movable status items.
     focus: FocusHandle,
 }
@@ -102,9 +101,8 @@ impl StatusBar {
     }
 
     /// Left/Right Arrow move focus across the bar's tab stops while focus is
-    /// inside it; Escape hands focus back to the workspace. This is the
-    /// clean-room equivalent of Zed's status-bar toolbar/tab-group arrow loop
-    /// (§6.4). GPUI 0.2.2 has no ARIA-role API, so the semantics are carried by
+    /// inside it; Escape hands focus back to the workspace. GPUI 0.2.2 has no
+    /// ARIA-role API, so the semantics are carried by
     /// `key_context` + tab stops + per-button tooltips-with-shortcut.
     // TODO(a11y): replace with a real toolbar/button role + accessible-name API
     // once GPUI exposes one.

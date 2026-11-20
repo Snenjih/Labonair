@@ -103,8 +103,8 @@ impl ActivityCenter {
         self.registry.snapshot(Instant::now())
     }
 
-    /// Hand an entry's action to its owner. A failure is cleared once its
-    /// click action ran, matching Zed's "click to show error" behavior.
+    /// Hand an entry's action to its owner. A failure is cleared after its
+    /// click action runs.
     pub fn activate(&mut self, id: u64, cancel: bool, cx: &mut Context<Self>) {
         let Some(activity) = self.snapshot().into_iter().find(|entry| entry.id == id) else {
             return;

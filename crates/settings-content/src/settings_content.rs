@@ -3,9 +3,8 @@
 
 //! `labonair-settings-content` — the fully typed settings tree (T19-001).
 //!
-//! Blueprint: `zed-refrence/zed/crates/settings_content/src/settings_content.rs`
-//! (+ `merge_from.rs`, `fallible_options.rs`). This crate has **no** GPUI, UI,
-//! or application-composition dependency (`docs/architecture.md` §2 settings
+//! It has **no** GPUI, UI, or application-composition dependency
+//! (`docs/architecture.md` §2 settings
 //! track) — it is a pure data model that `T19-002`'s `SettingsStore` layers
 //! (default < user < project). Historical flat `Preferences` input is read
 //! only by `labonair_settings::legacy_migrations` and never becomes a runtime
@@ -84,7 +83,6 @@ impl SettingsContent {
 }
 
 /// The shipped, documented default tree (`assets/settings/default.json`,
-/// JSONC — comments per key, Zed's `assets/settings/default.json` pattern).
 pub const DEFAULT_JSON: &str = include_str!("../assets/settings/default.json");
 
 #[cfg(test)]

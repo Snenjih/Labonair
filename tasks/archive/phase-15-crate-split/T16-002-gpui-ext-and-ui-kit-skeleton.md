@@ -22,8 +22,6 @@ werden umgebogen. **Null Verhaltensänderung** — reiner Move + Re-Export.
   `gpui_component::{badge::Badge, switch::Switch, tooltip::Tooltip}`.
 - Aufrufstellen: `grep -rn 'crate::components' crates/ui/src` — überall
   (`hosts.rs`, `ai_chat.rs`, `explorer.rs`, `settings.rs`, `app_shell.rs`, …).
-- Zed-Vorbild: `zed-refrence/zed/crates/ui/` (Design-System-Crate mit
-  `prelude.rs`, `styles/`, `traits/`, `components/`), `zed-refrence/zed/crates/ui/src/prelude.rs`.
 - Wiederkehrende GPUI-Importblöcke im Port: `use gpui::{div, px, App, ...}` +
   `use gpui::prelude::FluentBuilder` in fast jeder `crates/ui/src/*.rs`.
 
@@ -87,8 +85,6 @@ werden umgebogen. **Null Verhaltensänderung** — reiner Move + Re-Export.
 ## Notizen
 - Diese Task ist bewusst „langweilig": kein Feature, kein Redesign. Der
   Primitive-**Ausbau** kommt erst in T20-001.
-- Wenn der `ThemeStore` schwer zu lösen ist, ist ein `ui-kit::Theme`-Trait der
-  Standardweg (Zed macht es via `ui`-Crate + `theme`-Crate genauso getrennt).
 
 ## Warnungen
 - ⚠️ `git mv` statt Copy+Delete, damit die History erhalten bleibt.

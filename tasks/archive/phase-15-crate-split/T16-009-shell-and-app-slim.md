@@ -27,8 +27,6 @@ bleibt nur noch Bootstrap. Nach dieser Task ist der `ui`-Monolith Geschichte;
 - `crates/app/src/main.rs` (128 Z.) — Tokio-Runtime, Backend-Init,
   `Application::new().with_assets(labonair_ui::Assets).run(...)`,
   `cx.open_window(...)`, `AppShell::new(...)`, `Root::new(...)`, `init_menus`.
-- Zed-Vorbild: `zed-refrence/zed/crates/zed/src/main.rs` (dünner Bin) +
-  `zed-refrence/zed/crates/workspace` + `zed-refrence/zed/crates/title_bar`.
 
 ## Anweisungen zur Umsetzung
 1. **`crates/shell/` anlegen** (`labonair-shell`, `src/shell.rs` Lib-Root).

@@ -9,9 +9,8 @@ Labonair adopts **Ciel's design system** (clean-room: measured values and rules,
 no source copied): calm, dense, precise, fast. Surfaces separate by **fill
 contrast**, not by borders and shadows — except in the comfortable pane
 layout, where the **floating layer** (see below) lifts panes and docks off a
-gradient canvas with a shared shadow recipe. The pinned Zed build remains the
-behavioral reference for parity; Ciel is the visual reference. Labonair owns
-its implementation, tokens, and identity.
+gradient canvas with a shared shadow recipe. Ciel is the visual reference.
+Labonair owns its implementation, tokens, and identity.
 
 Core rules (Ciel `DESIGN.md` §2, §6–§10):
 
@@ -541,8 +540,8 @@ tab (active or not, strip or sidebar) opens, after 350 ms, a 240 px
 active one); a click focuses the pane. It never opens over a context menu,
 another popover, a rename or a drag, and it replaces the tooltip.
 
-Tab tiles (`ui-kit/src/tab_tile.rs`, after Gorex `tabs.go`/`programs.go`). A
-tab shows one 18 px tile per pane instead of a plain icon: the focused pane in
+Tab tiles (`ui-kit/src/tab_tile.rs`). A tab shows one 18 px tile per pane
+instead of a plain icon: the focused pane in
 front with its glyph, up to two more peeking out behind it (5 px step, 0.8 px
 height inset, shadow and rim); more than three panes show three. A pane's tile
 is, in order: the detected coding agent (Claude, Codex, Pi, OpenCode; status
@@ -556,11 +555,11 @@ SFTP, git graph, diff, keymap ...). The tab strip, the Tabs sidebar, the
 spaces popover and the pane hover list use the same tiles; the pane header
 glyph follows the program/agent/host glyph. The own glyphs `activity`, `cpu`,
 `hexagon`, `container`, `laptop`, `monitor`, `mac_studio`, `snake_blocks` are
-hand-drawn in the Lucide style (24 px grid, `currentColor`). Not taken over
-from Gorex: the third-party brand logos (`assets/brands`: trademarks, not
-copied; programs use an abstract glyph on a brand-ish colour instead) and the
-Gorex-only UI icons that Labonair already has in its Zed/Lucide set (check,
-copy, folder-open, git-branch, globe, keyboard, search, server, terminal, x ...).
+hand-drawn in the project's outline style (24 px grid, `currentColor`).
+Third-party brand logos are not used in these tiles; programs use an abstract
+glyph on a related color instead. Existing shared icons provide check, copy,
+folder-open, git-branch, globe, keyboard, search, server, terminal, and close
+actions.
 
 Drag and drop. A dragged tab or pane shows the shared mini chip (`PaneDragChip`:
 icon and title on a `popover` surface, offset 12 px from the pointer). Over a

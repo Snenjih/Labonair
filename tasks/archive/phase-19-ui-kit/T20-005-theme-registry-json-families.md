@@ -23,12 +23,6 @@ geladen (eingebettete + User-Ordner), zur Laufzeit umschaltbar, mit Live-Reload.
 - `crates/theme/src/import.rs` — bestehender Theme-Datei-Import.
 - Settings: `appearance.app_theme` (aktive Theme-ID),
   `appearance.theme_variant_overrides`.
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/theme/src/registry.rs` — `ThemeRegistry`,
-  `ThemeFamily`, `ThemeMeta`, `list_names`, `get(name)`,
-  `load_user_themes`, `ThemeNotFoundError`.
-  `zed-refrence/zed/crates/theme/src/schema.rs` — `ThemeFamilyContent`
-  (JSON-Format), `zed-refrence/zed/assets/themes/*.json`.
 
 ## Anweisungen zur Umsetzung
 1. **JSON-Theme-Format** definieren (`ThemeFamilyContent`): `{ name, author?,

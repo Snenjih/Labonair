@@ -10,10 +10,8 @@
 //! plus the private `step_btn`/`slider_track` helpers in `view.rs`), each with
 //! its own clamping.
 //!
-//! Zed's settings use `NumericStepper`
-//! (`zed-refrence/zed/crates/ui/src/components/numeric_stepper.rs`), which this
-//! follows in shape (decrement / value / increment). The optional track is a
-//! Labonair control variant and remains hidden for Settings rows.
+//! The control has decrement, value, and increment parts. Its optional track is
+//! a Labonair variant and remains hidden for Settings rows.
 //!
 //! ```ignore
 //! number_field("font-size", c, cur, 8.0, 32.0, 1.0)

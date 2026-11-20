@@ -26,7 +26,6 @@ pub struct ChevronIcons {
     pub expanded: String,
 }
 
-/// One icon-key → asset-path entry (Zed's `IconDefinition`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IconDefinition {
     pub path: String,
@@ -195,9 +194,7 @@ pub const BUILTIN_ICON_THEME_NAME: &str = "Labonair";
 pub const BUILTIN_ICON_THEME_ID: &str = "default";
 
 // ─────────────────────────── canonical built-in tables ──────────────────────
-//
-// A 1:1 transcription of Zed's `"Zed (Default)"` icon theme. These three tables
-// are the single source of truth for the embedded
+// These tables are the single source of truth for the embedded
 // `assets/icon_themes/labonair.json` (regenerate via the
 // `builtin_icon_theme_json_round_trips` test with `REGEN_BUILTIN_ICON_THEME=1`).
 
@@ -506,7 +503,6 @@ pub const DEFAULT_FILE_SUFFIXES: &[(&str, &str)] = &[
     ("zig", "zig"),
 ];
 
-/// Icon key → asset path (Zed's `FILE_ICONS`).
 pub const DEFAULT_FILE_ICONS: &[(&str, &str)] = &[
     ("astro", "icons/file_icons/astro.svg"),
     ("audio", "icons/file_icons/audio.svg"),

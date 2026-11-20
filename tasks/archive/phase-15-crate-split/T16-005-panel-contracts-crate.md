@@ -19,16 +19,6 @@ darauf umstellen können, ohne einen Zyklus Panel ↔ Workspace zu erzeugen.
 ## Kontext
 - Ziel-Architektur: `docs/architecture.md` (T16-001) — `labonair-panel` hängt
   von **keinem** Workspace-Track-Crate ab.
-- Zed-Vorbild:
-  - `zed-refrence/zed/crates/workspace/src/dock.rs` — `pub trait Panel:
-    Focusable + EventEmitter<PanelEvent> + Render` mit `persistent_name`,
-    `panel_key`, `position`, `position_is_valid`, `set_position`,
-    `default_size`, `min_size`, `initial_size_state`, `PanelEvent`
-    (`ZoomIn`/`ZoomOut`/`Activate`/`Close`), `DockPosition`.
-  - `zed-refrence/zed/crates/panel/` — der ausgelagerte Panel-Basiscrate.
-  - `zed-refrence/zed/crates/workspace/src/status_bar.rs` —
-    `pub trait StatusItemView: Render` + `HideStatusItem`
-    (`Arc<dyn Fn(&mut SettingsContent)>` zum Ausblenden + Persistieren).
 - Heutiger Port: `enum SidebarPanel` in `crates/ui/src/app_shell.rs:74`
   (`Explorer|Snippets|SourceControl|Tabs|Hosts|Ai`) + `render_panel_body`
   `match`; `BarItemId`-Enum + `render_bar_item`-`match` in `app_shell.rs`.
@@ -40,10 +30,6 @@ darauf umstellen können, ohne einen Zyklus Panel ↔ Workspace zu erzeugen.
    gebraucht wird, einen leichten `PanelIcon`-Enum hier definieren, nicht
    `IconName` importieren — oder `labonair-ui-kit` doch zulassen, falls es
    zyklenfrei bleibt; Entscheidung in `docs/architecture.md` nachziehen).
-2. **`DockPosition`** definieren: `enum DockPosition { Left, Right, Bottom }`
-   (Port aus Zed `dock.rs`, ohne die Zed-spezifischen Varianten).
-3. **`trait Panel`** definieren, angelehnt an Zed, reduziert auf das, was
-   Labonair braucht:
    - `fn persistent_name() -> &'static str` (stabiler Persistenz-Schlüssel)
    - `fn title(&self, cx: &App) -> SharedString`
    - `fn icon(&self) -> PanelIcon` (für den Statusbar-Toggle)
@@ -70,8 +56,6 @@ darauf umstellen können, ohne einen Zyklus Panel ↔ Workspace zu erzeugen.
    - Als GPUI-Global oder als Feld in `Workspace` konsumierbar — hier nur der
      Typ + Methoden, die Anbindung macht T17-001/003.
    - Signaturen **jetzt** so festlegen, dass sie in T17 nicht brechen müssen.
-6. **Doc-Kommentare** an jedem Trait: 2–3 Sätze + Verweis auf die
-   Zed-Quelldatei, aus der die Idee stammt (Bug-&-Fix-/API-Memory-Regel).
 7. **Keine Nutzung**: Kein bestehender Code wird umgestellt. `cargo check`
    muss den Crate bauen (ggf. `#[allow(dead_code)]` mit Begründungskommentar,
    bis T17 ihn verdrahtet).
@@ -82,8 +66,6 @@ darauf umstellen können, ohne einen Zyklus Panel ↔ Workspace zu erzeugen.
       einem `labonair-panel-*`.
 - [ ] `Panel`, `PanelEvent`, `DockPosition`, `StatusItem`, `StatusSide`,
       `PanelRegistry`, `StatusItemRegistry` sind öffentlich + dokumentiert.
-- [ ] Jede Trait-Methode hat eine Entsprechung oder eine bewusste Auslassung
-      ggü. der Zed-Vorlage, im Doc-Kommentar begründet.
 - [ ] `cargo doc -p labonair-panel` ohne Warnungen.
 - [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
@@ -101,9 +83,6 @@ darauf umstellen können, ohne einen Zyklus Panel ↔ Workspace zu erzeugen.
 - ⚠️ Kein `serde` in diesem Crate für die Persistenz-Blobs — die
   Persistenz-Struktur (`statusBarItemPlacements`, `DockData`) gehört in
   `labonair-workspace` bzw. `labonair-settings`, nicht in die Contracts.
-- ⚠️ GPUI-Trait-Objekt-Grenzen beachten: `Panel` als `dyn` erfordert
-  object-safe Signaturen — in `zed/crates/workspace/src/dock.rs` nachsehen, wie
-  Zed das löst (Handle-Wrapper statt `Box<dyn Panel>` direkt).
 
 ## Weiterführende Tasks
 - [T16-006: `labonair-workspace` extrahieren](./T16-006-extract-workspace-crate.md)

@@ -3,12 +3,8 @@
 
 //! `Indicator` — a small coloured status dot.
 //!
-//! The port draws this shape everywhere by hand:
-//! `crates/hosts-ui/src/hosts.rs` (per-host reachability, 7px),
-//! `crates/workspace/src/workspace.rs` (connected-session dot and the
-//! unsaved-changes dot, 6px each) and several statusbar items. Zed keeps the
-//! same primitive at
-//! `zed-refrence/zed/crates/ui/src/components/indicator.rs`.
+//! This shape is used for host reachability, connected-session state, editor
+//! change markers, and status-bar items.
 //!
 //! ```ignore
 //! indicator(IndicatorSize::Sm, c.success)

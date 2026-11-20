@@ -4,10 +4,8 @@
 //! `Banner` — a full-width info / warning / error strip.
 //!
 //! Port of `reference-src/src/components/ui/alert.tsx` (`alertVariants`):
-//! `border-<sev>/50 bg-<sev>/10 text-<sev>` with a leading severity icon; the
-//! `default` variant is the plain `bg-card text-card-foreground` note. Zed's
-//! counterpart is `zed-refrence/zed/crates/ui/src/components/banner.rs`.
-//!
+//! `border-<sev>/50 bg-<sev>/10 text-<sev>` with a leading severity icon. The
+//! default variant uses the neutral card surface.
 //! Replaces the two hand-rolled strips in `crates/settings-ui/src/view.rs`
 //! (the JSON syntax-error and schema-validation banners — which hardcoded
 //! `gpui::red()` / `gpui::yellow()` instead of the theme's status tokens, a

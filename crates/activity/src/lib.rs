@@ -13,7 +13,7 @@
 use std::time::{Duration, Instant};
 
 /// How an activity is presented. Variants are ordered by display priority,
-/// highest first, following the tier order of Zed's activity indicator.
+/// with the highest-priority activity first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ActivityKind {
     /// Informational and self-clearing, e.g. a partial explorer index.

@@ -854,8 +854,8 @@ impl Render for TerminalView {
                     let cell = this.cell_at(ev.position);
                     let mode = this.mode();
                     let mods = to_term_mods(&ev.modifiers);
-                    // Shift bypasses mouse reporting so TUIs (vim, Claude Code)
-                    // can still be selected, like xterm/iTerm/Zed.
+                    // Shift bypasses mouse reporting so text selection remains
+                    // available in TUIs such as vim and Claude Code.
                     let report = if ev.modifiers.shift {
                         None
                     } else {

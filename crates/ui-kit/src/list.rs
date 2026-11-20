@@ -10,8 +10,6 @@
 //!
 //! Reference: `reference-src/src/components/ui/item.tsx` +
 //! `command.tsx` (`CommandGroup` heading, `CommandItem` row,
-//! `CommandSeparator`). Zed's counterpart is
-//! `zed-refrence/zed/crates/ui/src/components/list.rs` (`ListItem`,
 //! `ListHeader`, `ListSeparator`).
 //!
 //! ```ignore

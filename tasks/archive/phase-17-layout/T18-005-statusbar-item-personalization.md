@@ -36,9 +36,6 @@ Start wiederhergestellt. Ersetzt den alten titlebar+statusbar-übergreifenden
   Statusbar; wählbar ist nur `side ∈ {Left, Right}` + `hidden`.
 - Nach T17-003: `StatusItem { id, default_side, order, hideable }` +
   `StatusItemRegistry`.
-- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/status_bar.rs`
-  `HideStatusItem` (rechtsklick → „Hide Button", persistiert via
-  `update_settings_file`).
 
 ## Anweisungen zur Umsetzung
 1. **Persistenz-Schema** `statusBarItemPlacements` (im gemeinsamen

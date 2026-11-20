@@ -3,8 +3,7 @@
 
 //! Recursive n-ary split-pane tree (T17-004).
 //!
-//! A workspace tab hosts a **pane tree** modelled after Zed's
-//! `crates/workspace/src/pane_group.rs`:
+//! A workspace tab hosts a pane tree:
 //!
 //! * [`Member`] is either a single content slot ([`Member::Pane`]) or an
 //!   [`PaneAxis`] that arranges several members along one [`SplitAxis`].
@@ -17,8 +16,8 @@
 //!   Removing the last pane collapses `root` to `None` — that is a valid state,
 //!   not an error.
 //!
-//! Zed-specific concerns (collab-cursor decoration, `bounding_boxes` for
-//! item drag-drop, pixel min-sizes) are deliberately left out until needed.
+//! Optional item drag-and-drop metadata and pixel minimum sizes are deferred
+//! until needed.
 //!
 //! The tree is pure data; session persistence lives in [`crate::session`]
 //! (`SerializedPaneGroup`), which also migrates the pre-T17-004 flat binary

@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! Unified-diff (`git diff` textual output) parsing.
-//!
-//! Moved here from `labonair-panel-scm` in the Zed-parity Phase 4 redesign so
-//! that both the Source-Control panel and the workspace-level Project Diff item
-//! parse `git diff` output through one implementation. Port of the reference web
-//! app's `source-control/lib/diffHunks.ts`; the byte-for-byte body lines are
-//! kept verbatim so a re-applied hunk patch round-trips (CRLF included).
+//! Unified-diff (`git diff` textual output) parsing shared by the Source-Control
+//! panel and the workspace-level Project Diff item. Body lines stay unchanged
+//! so a re-applied hunk patch round-trips, including CRLF.
 
 /// One `@@ … @@` block of a unified diff, body lines kept verbatim.
 #[derive(Debug, Clone, PartialEq, Eq)]

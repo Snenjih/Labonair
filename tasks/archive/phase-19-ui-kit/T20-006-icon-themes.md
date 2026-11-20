@@ -20,13 +20,6 @@ einem eingebauten Default und optionalen User-Icon-Themes.
   `file_icon(ext) -> IconName` (~90 Endungen → ~18 Icons, laut Commit
   `d33fcfe`), `folder_icon(open) -> IconName`.
 - Icon-Rendering: Lucide-SVGs via `gpui-component` / eingebettete Assets.
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/theme/src/icon_theme.rs` +
-  `icon_theme_schema.rs` — `IconTheme`, `IconThemeFamilyContent`,
-  `DirectoryIcons`, `ChevronIcons`, `file_icons`-Mapping.
-  `zed-refrence/zed/crates/file_icons/` — Laufzeit-Lookup + Default-Theme
-  (`assets/icons/file_icons/*`).
-  `zed-refrence/zed/assets/icon_themes/*.json`.
 
 ## Anweisungen zur Umsetzung
 1. **Icon-Theme-Format** (`IconThemeContent`, JSON): `{ name, author?,

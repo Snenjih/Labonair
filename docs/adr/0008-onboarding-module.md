@@ -11,8 +11,8 @@ A first launch used to drop the user on the empty workspace with every default
 applied and no pointer to the choices that matter most (look, startup
 behaviour, existing SSH hosts). The product wants a short, minimal, fast
 first-run flow that can grow: later features must be able to add a step
-without editing onboarding code. The reference (Zed) shows onboarding as a
-page in the workspace's centre pane, not as a popup.
+without editing onboarding code. A workspace page keeps onboarding guidance
+in the main work area without interrupting the user with a popup.
 
 ## Decision
 

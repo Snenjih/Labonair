@@ -2,13 +2,13 @@
 
 **Status:** Normative
 **Version:** 1
-**Related:** [`../../docs-reform-plan.md`](../../docs-reform-plan.md), [`../documentation-governance.md`](../documentation-governance.md), [`../evidence/scorecard.toml`](../evidence/scorecard.toml)
+**Related:** [`../documentation-governance.md`](../documentation-governance.md), [`../evidence/scorecard.toml`](../evidence/scorecard.toml)
 
-This directory owns the machine-readable traceability of the documentation
-reform definition of done. It does not replace the reform plan, capability
-matrix, evidence scorecard, or active task queue. It connects each reform
-requirement to its current status, exact source/evidence references, known
-limitation, and bounded next task.
+This directory owns the machine-readable traceability for repository
+documentation and agent workflows. It complements the capability matrix,
+evidence scorecard, and active task queue. It connects each requirement to its
+current status, exact source/evidence references, known limitation, and bounded
+next task.
 
 The source is [`requirements.toml`](requirements.toml). The readable projection
 is [`../generated/reform-coverage.md`](../generated/reform-coverage.md),

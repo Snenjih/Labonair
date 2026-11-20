@@ -4,7 +4,6 @@
 //! [`ModalLayer`] + [`ModalView`] — the workspace's single modal overlay slot
 //! (T17-005).
 //!
-//! Ported from `zed-refrence/zed/crates/workspace/src/modal_layer.rs`, trimmed
 //! to what Labonair needs: **one** active, focus-trapping modal (no modal
 //! stack, no reopenable-picker stash, no `DismissDecision`).
 //!

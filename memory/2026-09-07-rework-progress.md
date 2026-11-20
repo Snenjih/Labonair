@@ -348,9 +348,6 @@ The command-palette core now owns the global palette command metadata, and
 Settings owns toggle-command metadata. The static palette table has been
 removed entirely.
 
-The legacy `settings::OpenShortcuts` action now resolves centrally to the
-canonical `zed::OpenKeymap` action and is accepted by keymap validation without
-being exposed as a palette command.
 
 The dependency verifier was updated for the intentional owner-to-command
 contract edges and passes with an acyclic graph. The command-core-to-keymap

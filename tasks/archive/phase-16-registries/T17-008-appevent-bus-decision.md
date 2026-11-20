@@ -43,9 +43,6 @@ Infrastruktur.
   (SFTP-Transfer-Fortschritt, Host-Reachability, Git-Status-Änderung,
   Watcher-Events, …) — prüfen, welche `AppEvent`-Varianten real emittiert
   werden (`grep -rn 'events.send\|emit\|AppEvent::' crates/backend/src`).
-- Zed-Vorbild: Zed nutzt keinen globalen Bus, sondern gerichtete
-  `cx.subscribe`-Kanäle + `Task`s pro Feature. Für Backend→UI ist eine
-  schmale Brücke der Standardweg.
 
 ## Anweisungen zur Umsetzung
 1. **Inventur**: alle real emittierten `AppEvent`-Varianten + ihre Producer

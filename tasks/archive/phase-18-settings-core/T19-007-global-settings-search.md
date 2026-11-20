@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T19-004 (Settings-UI aus Modell)
@@ -23,10 +21,6 @@ gruppiert nach Kategorie angezeigt und springen bei Auswahl direkt zum Feld
   `metadata { title, description }` + `json_path`. Custom-Panes
   (Theme/Shortcuts/AI/MCP/Personalisierung) haben eigene, nicht-Feld-Inhalte.
 - Fuzzy-Matcher: `labonair-command-palette::fuzzy` (aus T16-004).
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/settings_ui/src/settings_ui.rs` — Suchleiste +
-  `StringMatchCandidate`-Index über alle `SettingsPageItem`s aller Seiten,
-  `fuzzy::match_strings`, Ergebnis-Navigation.
 
 ## Anweisungen zur Umsetzung
 1. **Such-Index** aufbauen: beim Öffnen des Fensters (und bei

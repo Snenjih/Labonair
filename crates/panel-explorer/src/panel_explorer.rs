@@ -293,12 +293,9 @@ impl TreeModel {
         out
     }
 
-    /// Every entry in every *loaded* directory, regardless of `expanded` — the
-    /// traversal search filters over so a match can be found in a
-    /// collapsed-but-loaded subtree, not only in the rows currently on screen
-    /// (Zed-parity §8.6 / §14 "search can find entries that were not previously
-    /// expanded"). Still bounded by lazy loading: directories never opened are
-    /// not walked (that would need filesystem I/O on the render path).
+    /// Every entry in each loaded directory, including collapsed subtrees.
+    /// Directories that have never been opened remain unloaded, so this avoids
+    /// filesystem I/O on the render path.
     fn all_loaded_rows(&self) -> Vec<Row> {
         let mut out = Vec::new();
         if let Some(root) = self.root.clone() {
@@ -362,13 +359,12 @@ impl TreeModel {
     }
 }
 
-/// Presentation-ready, cheap-to-clone snapshot of one visible tree line
-/// (Zed-parity §12.4). Produced by [`flatten_rows`] with **no** filesystem
-/// access; the `uniform_list` render closure turns a `&[ExplorerRowData]`
+/// Presentation-ready, cheap-to-clone snapshot of one visible tree line,
+/// built without filesystem access. The `uniform_list` render closure turns a `&[ExplorerRowData]`
 /// viewport window into elements. Visual state (`selected` / `cut` /
 /// `drop_target`) is resolved here once, not re-derived per row during render.
-/// Diagnostic severity channel for an Explorer row (Zed-parity Phase 3.7).
-/// A typed hook only — no in-repo diagnostic source feeds it yet, so the
+/// Optional diagnostic severity for an Explorer row. This is a typed hook —
+/// no in-repo diagnostic source feeds it yet, so the
 /// provider is always empty. TODO: wire an LSP / build diagnostics source.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DiagnosticSeverity {
@@ -482,8 +478,7 @@ fn row_depth(r: &ExplorerRowData) -> usize {
 }
 
 /// Merge optional Git / diagnostic decorations and the active-file marker into
-/// a flattened row list at the presentation boundary (Zed-parity §11 / §12.4).
-/// Pure — decorations never change row geometry.
+/// flattened rows. This is pure; decorations never change row geometry.
 pub(crate) fn decorate_rows(
     rows: &mut [ExplorerRowData],
     active_file: Option<&Path>,
@@ -513,9 +508,8 @@ pub(crate) fn decorate_rows(
 }
 
 /// Collapse single-child directory *chains* (`a/b/c` where every link has
-/// exactly one child and that child is a directory) into one compressed row
-/// whose label is the joined path (Zed-parity Phase 3.6). Pure: the input is
-/// consumed and a new list returned, so it is trivially reversible (re-run
+/// exactly one child and that child is a directory) into one compressed row.
+/// The input is consumed and a new list returned, so it is trivially reversible (re-run
 /// [`flatten_rows`] without this pass). The surviving row keeps the *real*
 /// deepest path, so selection, drag/drop and context menus are unaffected.
 pub(crate) fn fold_chains(mut rows: Vec<Row>) -> Vec<Row> {
@@ -601,9 +595,8 @@ fn decrement_depth(r: &mut Row) {
     *d = d.saturating_sub(1);
 }
 
-/// The ancestor directory rows of the row at `first_visible`, in
-/// shallow→deep order (Zed-parity Phase 3.3). Computed independently over the
-/// flattened model; the caller pins these above the virtual list.
+/// The ancestor directory rows of the row at `first_visible`, ordered from
+/// shallow to deep over the flattened model. The caller pins them above the list.
 pub(crate) fn sticky_ancestor_indices(
     rows: &[ExplorerRowData],
     first_visible: usize,
@@ -641,8 +634,7 @@ pub(crate) fn sticky_ancestor_indices(
     stack
 }
 
-/// Index of the row whose path is `active` (Zed-parity Phase 3.5 reveal
-/// policy). `None` — and therefore a no-op reveal — when the file is not
+/// Return the active file's row index. `None` — and therefore a no-op reveal — when the file is not
 /// currently in the flattened tree.
 pub(crate) fn reveal_target_index(rows: &[ExplorerRowData], active: &Path) -> Option<usize> {
     rows.iter()
@@ -650,7 +642,6 @@ pub(crate) fn reveal_target_index(rows: &[ExplorerRowData], active: &Path) -> Op
 }
 
 /// Bounded, blocking filesystem walk for project-wide Explorer search
-/// (Zed-parity Phase 3.2). Runs off the GPUI thread (`background_executor`).
 /// Capped at `max_depth` levels and `max_visits` directory reads so an
 /// enormous tree can't stall the walk; returns `(path, name, depth)` for
 /// every entry whose name contains `query` (already lowercased by the caller).
@@ -687,9 +678,8 @@ pub(crate) fn bounded_fs_search(
     out
 }
 
-/// Parse `git status --porcelain` (v1) into a `relative-path → status char`
-/// map (Zed-parity Phase 3.7). Worktree status wins over index status; a `?`
-/// (untracked) is kept as-is. Pure — unit-tested.
+/// Parse `git status --porcelain` (v1) into a `relative-path → status char` map.
+/// Untracked files retain their status. This parser is pure and unit-tested.
 pub(crate) fn parse_git_porcelain(out: &str) -> HashMap<PathBuf, char> {
     let mut map = HashMap::new();
     for line in out.lines() {
@@ -913,8 +903,6 @@ impl ExplorerView {
         self.reveal_active_file(cx);
         cx.notify();
     }
-
-    // ── Zed-parity Phase 3 ──────────────────────────────────────────────────
 
     /// Resolved Explorer settings, falling back to the shipped defaults when
     /// the settings store isn't up yet (headless tests).
@@ -2328,10 +2316,8 @@ impl ExplorerView {
             .unwrap_or_default()
     }
 
-    /// Search results: matches from every lazily-loaded directory, plus the
-    /// bounded async FS-walk hits for subtrees lazy loading never opened
-    /// (Zed-parity §14 "search can find entries that were not previously
-    /// expanded"). Merge is de-duplicated by path.
+    /// Search results combine loaded directory matches with bounded async
+    /// filesystem-walk hits for unloaded subtrees. Results are de-duplicated by path.
     fn search_rows(&self, query: &str) -> Vec<Row> {
         let mut seen: HashSet<PathBuf> = HashSet::new();
         let mut out: Vec<Row> = Vec::new();
@@ -3372,8 +3358,6 @@ mod tests {
             .any(|r| matches!(r, Row::Entry { entry, .. } if entry.name == "needle.rs")));
     }
 
-    // ── Zed-parity Phase 3 ─────────────────────────────────────────────────
-
     /// Build the deep nested fixture `a/b/c/{c.txt,d.txt}` (all expanded).
     fn nested_model() -> TreeModel {
         let mut m = TreeModel::default();
@@ -3542,11 +3526,8 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    // ── Zed-parity Phase 5: large-project render/latency evidence ─────────────
-    //
-    // §14 "no row-count-linear render regression": the flatten pass is linear in
-    // the model (unavoidable — it *is* the model) but the per-frame element
-    // construction the virtual list performs must be bounded by the viewport,
+    // The flatten pass is linear in the model, while per-frame element
+    // construction by the virtual list must be bounded by the viewport,
     // never by the total row count. These tests pin both halves of that
     // contract on the pure functions so a regression fails `cargo test` without
     // needing a GPUI window. Reproduce the live trace with:

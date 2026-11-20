@@ -4,13 +4,9 @@
 //! Bundled static assets (icon SVGs) and the [`gpui::AssetSource`] that serves
 //! them.
 //!
-//! The vendored icon set (`crates/shell/assets/icons/`) is a verbatim copy of
-//! Zed's Lucide-derived UI glyphs (`assets/icons/*.svg`, ISC — see
-//! `assets/icons/LICENSES`), Zed's per-language file/folder glyphs
-//! (`assets/icons/file_icons/*.svg`), the Material Icon Theme SVG set under
-//! `assets/icons/material_icon_theme/`, and a small `+ Labonair addition` set
-//! for glyphs Zed has no equivalent for. `labonair_ui_kit::IconName` names the
-//! UI set; `labonair_theme::icon_theme` maps file names to the bundled
+//! Bundled icons live under `crates/shell/assets/icons/`, with license and
+//! attribution notices alongside the relevant assets.
+//! `labonair_theme::icon_theme` maps file names to the bundled
 //! file-icon assets. The whole tree is embedded with `rust-embed` so the list
 //! never has to be maintained by hand.
 

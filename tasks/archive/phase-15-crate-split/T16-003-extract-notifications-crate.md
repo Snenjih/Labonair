@@ -22,10 +22,6 @@ Reiner Move, keine Verhaltensänderung.
   (`render_overlay`, Demo-Toast in `AppShell::new`), `settings.rs`
   (`Notification`), evtl. weiteren Views.
 - Aufrufmuster prüfen: `grep -rn 'notifications::\|NotificationCenter\|Notification::' crates/ui/src`.
-- Zed-Vorbild: `zed-refrence/zed/crates/notifications/` und
-  `zed-refrence/zed/crates/workspace/src/{notifications.rs,toast_layer.rs}` —
-  Toast-Layer ist bei Zed Teil des Workspace, das eigentliche
-  Notification-Model ein eigener Crate. Wir folgen der Crate-Trennung.
 
 ## Anweisungen zur Umsetzung
 1. **`crates/notifications/` anlegen** (`labonair-notifications`,

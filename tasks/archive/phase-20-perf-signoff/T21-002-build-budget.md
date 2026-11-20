@@ -23,9 +23,6 @@ Graph, und die Compile-Zeit ist trotz ~22 Crates nicht schlechter als der alte
   `notifications`, `command-palette`, `panel`, `workspace`, `shell`,
   `settings-content`, `settings-macros`, `settings`, `settings-json`,
   `settings-ui`, `panel-*` ×6, ggf. `keymap`).
-- Zed-Referenz: `zed-refrence/zed/` selbst ist der Beweis, dass ~300 Crates
-  mit `sccache`/Workspace-Deps handhabbar sind — Muster (shared
-  `[workspace.dependencies]`, dünne Contracts-Crates) übernehmen.
 
 ## Anweisungen zur Umsetzung
 1. **Messreihe** (Skript `scripts/bench-build.sh`, Ergebnisse nach

@@ -55,7 +55,3 @@ Referenz-Module:
 - Sidebar-Panel-Registry so bauen, dass spätere Phasen nur ein Panel registrieren müssen.
 - Überlappung mit T14-001 (Session-Persistenz) bewusst — Fenster-State hier minimal halten,
   T14-001 baut darauf auf.
-
-## Warnungen
-- ⚠️ GPUI-Fenster-/Titlebar-API (`WindowOptions`, `titlebar`, traffic-light-Position) in
-  gpui-Source verifizieren — Zed macht das, Signatur dort abschauen.

@@ -4,13 +4,9 @@
 //! Shared `Disclosure` primitive — a clickable chevron + label row that
 //! toggles a collapsed/expanded flag the caller owns.
 //!
-//! Port of the Zed `Disclosure` component
-//! (`zed-refrence/zed/crates/ui/src/components/disclosure.rs`) and of the
-//! pattern hand-rolled in
-//! `crates/settings-ui/src/panes/generic.rs::render_section_header`, which
-//! drew the chevron as the ASCII arrows `▸`/`▾`. This module is the shared
-//! replacement — real icon glyphs
-//! ([`IconName::ChevronRight`]/[`IconName::ChevronDown`]) instead of text
+//! It replaces the section-header pattern in
+//! `crates/settings-ui/src/panes/generic.rs::render_section_header` with icon
+//! glyphs ([`IconName::ChevronRight`]/[`IconName::ChevronDown`]) instead of text
 //! arrows, same click-to-toggle contract (the state lives in the caller, this
 //! only renders + fires `on_click`).
 //!

@@ -25,8 +25,6 @@ alte 44px-Activity-Rail und die Sidebar-Umschaltleiste.
 - Referenz-Verhalten: `reference-src/src/modules/statusbar/` +
   `barItems.ts` (Panel-Toggle-Bar-Items) — die Idee „Panel-Toggle als
   Bar-Item" stammt von dort; hier fest auf die linke Statusbar-Seite gelegt.
-- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/dock.rs` `PanelButtons`
-  (Dock-Rand-Buttons) — Konzept, aber bei uns in der Statusbar gebündelt.
 
 ## Anweisungen zur Umsetzung
 1. **`PanelTogglesStatusItem`** (ein `StatusItem`, `default_side = Left`,

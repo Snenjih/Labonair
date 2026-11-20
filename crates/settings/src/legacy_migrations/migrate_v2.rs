@@ -607,8 +607,8 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
 fn file_manager_from(p: &Preferences) -> FileManagerContent {
     FileManagerContent {
         explorer_show_hidden_by_default: Some(p.explorer_show_hidden_by_default),
-        // Zed-parity Phase 3 tree options — no v1 `Preferences` equivalent, so
-        // a migrated file just inherits the shipped defaults.
+        // These options are absent from v1 Preferences, so migrated files
+        // inherit the shipped defaults.
         explorer_indent_guides: FileManagerContent::defaults().explorer_indent_guides,
         explorer_sticky_ancestors: FileManagerContent::defaults().explorer_sticky_ancestors,
         explorer_auto_reveal_active_file: FileManagerContent::defaults()

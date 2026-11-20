@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! Gorex-style tab tile: a small rounded square in a program's colour, a light
-//! rim, a soft sheen along the top and a centred glyph (`reference/gorex/tabs.go`
-//! `drawTile`). The caller maps a tab kind / detected program to a
-//! [`TabTileSpec`]; the ui-kit owns only the look.
+//! A rounded tab tile with a light rim, soft top highlight, and centered glyph.
+//! Callers select the tab kind or foreground program and provide a
+//! [`TabTileSpec`]; the ui-kit owns the rendering.
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{div, linear_color_stop, linear_gradient, px, rgb, Div, Hsla, ParentElement, Styled};
@@ -21,7 +20,7 @@ pub struct TabTileSpec {
     pub outlined: bool,
 }
 
-/// Fixed program colours (Gorex `programs.go`); the tile art is brand-coloured
+/// Fixed program colours; the tile art is brand-coloured
 /// on purpose and does not follow the theme.
 pub mod tile_colors {
     pub const TERMINAL_BG: u32 = 0x1d2420;
@@ -132,7 +131,7 @@ impl TabTileSpec {
     }
 }
 
-/// Tile edge length and glyph size (Gorex: 11px glyph in a ~18px tile).
+/// Tile edge length and glyph size.
 pub const TILE_SIZE: f32 = 18.0;
 const GLYPH_SIZE: f32 = 11.0;
 
@@ -141,9 +140,7 @@ pub fn tab_tile(spec: TabTileSpec, c: &Palette) -> Div {
     tile_box(spec, c, TILE_SIZE, true)
 }
 
-/// Horizontal peek of each tile behind the front one (Gorex `tileStep`).
 const TILE_STEP: f32 = 5.0;
-/// Height lost per tile behind the front one, top and bottom (Gorex `inset`).
 const TILE_INSET: f32 = 0.8;
 /// At most this many tiles are stacked.
 pub const MAX_STACKED_TILES: usize = 3;
@@ -153,9 +150,8 @@ pub fn stack_width(n: usize) -> f32 {
     TILE_SIZE + TILE_STEP * (n.clamp(1, MAX_STACKED_TILES) - 1) as f32
 }
 
-/// Gorex-style stack: `specs[0]` in front with its glyph, up to two more
-/// peeking out behind it, each further back a little shorter. With one spec
-/// this is just [`tab_tile`].
+/// Stack up to three tiles, with the first in front and the others peeking out
+/// behind it. With one spec this is just [`tab_tile`].
 pub fn tab_tile_stack(specs: &[TabTileSpec], c: &Palette) -> Div {
     let Some((front, rest)) = specs.split_first() else {
         return div();

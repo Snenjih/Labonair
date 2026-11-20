@@ -13,7 +13,6 @@ T04-001 (Tab-Leiste)
 Das flexible Split-Pane-Layout implementieren, das mehrere Panele (Terminals, Editoren) gleichzeitig sichtbar anordnet (horizontal/vertikal splitten, Panelsgrößen per Drag anpassen, zusammenführen), inklusive eines übergeordneten Workspace-Konzepts, das die zentralen Arbeitsbereiche (Sidebar, Terminal-Bereich, zentraler Arbeitsbereich) zusammenfügt.
 
 ## Kontext
-Labonair arbeitet mit einem Pane-Baum (Split-Pane-Modell): Ein Workspace kann in Panes unterteilt werden, die entweder geleget (ein einzelner Inhalt) oder Splits (zwei Kinder, horizontal/vertikal getrennt mit einstellbaren Größenverhältnissen) sind. Darüber gibt es zusätzliche Sektionen (z.B. Sidebar links, Terminal-Bereich unten, Statusleiste unten), vergleichbar mit Zed's Workspace-Layout.
 
 In der React-Version wurde das über `react-resizable-panels` abgebildet, mit einem Pane-Baum-Typ (`PaneNode = PaneSplit | PaneLeaf`) und einem Layout-Algorithmus. In GPUI bietet `gpui-component` eine Dock-API für Panels mit Splits, aber für die exakte Labonair-Parallelität ist möglicherweise eine eigene Pane-Baum-Struktur sinnvoller.
 

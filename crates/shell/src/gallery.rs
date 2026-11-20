@@ -4,10 +4,8 @@
 //! Component gallery — a debug-only window that renders every `ui-kit`
 //! primitive across its variants, sizes and states (T20-004).
 //!
-//! It is a hand-maintained page, not a `Component`-trait registry (Zed's
-//! `crates/component_preview/` is the full version; a one-person project does
-//! not need the registry machinery). Opened from the command palette's
-//! debug-only "Open Component Gallery" row, which calls
+//! Opened from the command palette's debug-only "Open Component Gallery" row,
+//! which calls
 //! [`open_gallery_window`].
 //!
 //! ## What is real and what is simulated

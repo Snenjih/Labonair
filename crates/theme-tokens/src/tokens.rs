@@ -312,8 +312,8 @@ pub struct StatusColors {
     pub success: Hsla,
 }
 
-/// Optional per-theme overrides of the diff hunk colors (Zed's
-/// `editor_diff_hunk_*` / `version_control_word_*` roles). `None` derives the
+/// Diff hunk roles such as `editor_diff_hunk_*` and `version_control_word_*`.
+/// `None` derives the
 /// role from the status colors at use time, so a theme that only changes
 /// `success` / `error` still gets matching diff tones.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -818,8 +818,8 @@ impl Theme {
                 action_hover: hex("#343436"),
                 action_active: hex("#080809"),
             },
-            // The floating layer: the Gorex-style pastel canvas, paper cards,
-            // a translucent tab track and neutral alpha hover/pressed overlays.
+            // Floating surfaces use a translucent tab track and neutral alpha
+            // hover/pressed overlays.
             float: FloatColors {
                 canvas_top: hex("#f6e7f6"),
                 canvas_mid: hex("#efe1e6"),

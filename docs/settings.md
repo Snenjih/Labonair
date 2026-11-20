@@ -67,9 +67,7 @@ and page placement. The registry validates IDs and page metadata, then supplies
 the same snapshot to navigation and search. Settings invokes the contribution's
 owner action; it does not add a feature-specific renderer branch.
 
-The pinned-reference target has fifteen page slots, recorded with each
-capability owner and current implementation status in the
-[Settings crosswalk](parity/settings-crosswalk.md): General, Appearance,
+The product Settings taxonomy has fifteen page slots: General, Appearance,
 Keymap, Editor, Languages & Tools, Search & Files, Window & Layout, Panels,
 Debugger, Terminal, Version Control, Collaboration, AI, Network, and
 Developer. A page appears in the runtime navigation only when it has
@@ -216,7 +214,7 @@ The native Settings window has one dense tree rail and one content surface:
 - system-font discovery exposes its loading state, reports failures through
   the notification center, and offers an in-place retry action.
 
-The Settings UI targets the pinned Zed reference for observable layout,
-navigation, focus, field behavior, and state coverage while keeping Labonair's
-settings ownership and typed persistence contracts. It must not copy Zed source
-code or introduce management pages without an owning Labonair capability.
+The Settings UI follows the Labonair product, design-system, and settings
+contracts for layout, navigation, focus, field behavior, and state coverage.
+Settings ownership and typed persistence remain canonical. Management pages
+require an owning Labonair capability.

@@ -5,9 +5,9 @@
 //!
 //! A workspace tab hosts a **pane tree**; this module carries the leaf-level
 //! primitives shared across it — the pane id, the split orientation, the
-//! per-split minimum ratio and the close outcome. The recursive tree itself
-//! ([`Member`] / [`PaneAxis`] / [`PaneGroup`] / [`WorkspaceLayout`]) lives in
-//! [`crate::pane_group`] (n-ary Zed-style split tree, T17-004); those types are
+//! per-split minimum ratio and the close outcome. The recursive tree lives in
+//! [`crate::pane_group`]. Its types
+//! ([`Member`] / [`PaneAxis`] / [`PaneGroup`] / [`WorkspaceLayout`]) are
 //! re-exported here so existing `crate::pane::…` paths keep resolving.
 
 use serde::{Deserialize, Serialize};

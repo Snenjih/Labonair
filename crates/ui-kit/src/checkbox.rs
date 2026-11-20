@@ -5,10 +5,8 @@
 //!
 //! Port of `reference-src/src/components/ui/checkbox.tsx`: `size-4`,
 //! `rounded-[5px]`, transparent border over `bg-input/90`, checked flips to
-//! `border-primary bg-primary text-primary-foreground` with a tick glyph;
-//! `disabled:opacity-50`. Zed's counterpart is
-//! `zed-refrence/zed/crates/ui/src/components/checkbox.rs`.
-//!
+//! `border-primary bg-primary text-primary-foreground` with a tick glyph and
+//! reduced opacity when disabled.
 //! Replaces the two hand-rolled `SquareCheck`/`Square` icon pairs in
 //! `crates/hosts-ui/src/hosts.rs` (SSH-config import list, host export list).
 //!

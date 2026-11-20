@@ -9,11 +9,6 @@
 ## Abhängigkeiten
 T17-001 (`Panel`-Trait & `PanelRegistry`)
 
-## Ziel
-Das heutige Dual-Slot-Modell (`left_slot`/`right_slot`, je genau ein Panel)
-durch ein echtes Dock-Modell nach Zed-Vorbild ersetzen: drei Docks (links,
-rechts, **unten** — neu), jeder Dock hält **mehrere** registrierte Panels mit
-einem aktiven, unterstützt Zoom und Resize, und persistiert seinen Zustand.
 
 ## Kontext
 - Heute: `crates/shell/src/app_shell.rs` — `left_slot`/`right_slot:
@@ -24,13 +19,6 @@ einem aktiven, unterstützt Zoom und Resize, und persistiert seinen Zustand.
 - Kein Bottom-Dock. Panels nicht zwischen Seiten verschiebbar. 44px
   „Activity-Rail" (in `subagent-1.md` als Erfindung markiert) — entfällt
   (Layout-Vertrag; Panel-Wechsel läuft ab Phase 17 über Statusbar-Toggles).
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/workspace/src/dock.rs` — `struct Dock`,
-  `DockPosition`, `Dock::{add_panel, activate_panel, toggle_open,
-  set_panel_zoomed, resize}`, `PanelButtons`, `RESIZE_HANDLE_SIZE`,
-  `persistence::model::DockData`.
-  `zed-refrence/zed/crates/workspace/src/workspace.rs` — `left_dock`,
-  `right_dock`, `bottom_dock` Felder + Serialisierung.
 
 ## Anweisungen zur Umsetzung
 1. **`crates/workspace/src/dock.rs` anlegen** (`Dock` lebt am `Workspace`, nicht
@@ -87,8 +75,6 @@ einem aktiven, unterstützt Zoom und Resize, und persistiert seinen Zustand.
 - Die *Toggles* (welche UI schaltet Panels ein/aus) kommen in T18-003 in die
   Statusbar. Hier reicht ein temporärer Debug-Weg (Command-Palette-Eintrag
   „Toggle Panel: …") zum Testen.
-- `PanelButtons` aus Zed (die kleinen Dock-Rand-Buttons) **nicht** übernehmen —
-  Labonair-Toggles leben in der Statusbar.
 
 ## Warnungen
 - ⚠️ GPUI-Flex-Layout: Bottom-Dock muss innerhalb der Workspace-Spalte liegen

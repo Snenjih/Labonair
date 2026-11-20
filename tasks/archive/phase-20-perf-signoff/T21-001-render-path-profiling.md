@@ -26,9 +26,6 @@ schlanker aktiver Frame.
   `render`/`recompute`, `puffin`/`tracy`-Integration falls in `gpui` 0.2.2
   verfügbar (sonst `std::time::Instant`-Spans), `dhat`/`heaptrack` für
   Allokationen.
-- `zed-refrence/zed/crates/gpui/` — GPUIs Dirty-Region-/Invalidierungs-Modell
-  (`cx.notify` nur bei echter Änderung), `zed-refrence/zed/crates/
-  input_latency_ui/` als Inspirationsquelle für Messung.
 
 ## Anweisungen zur Umsetzung
 1. **Instrumentierung**: `tracing`-Spans um `Render::render` der Kern-Views

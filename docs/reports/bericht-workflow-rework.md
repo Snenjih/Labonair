@@ -7,8 +7,7 @@
 **Status:** historischer Planungsbericht; nicht bindend. Die aktuellen Regeln
 stehen in den normativen Dokumenten unter `docs/`. Der Bericht ergänzt nicht
 mehr den Architektur-Rework
-([`bericht-architektur-rework-roadmap.md`](bericht-architektur-rework-roadmap.md),
-[`docs/architecture.md`](../architecture.md)). Nach T16-005 vereinbart, während
+([`docs/architecture.md`](../architecture.md)). Nach T16-005 vereinbart, während
 T16-006 lief — deshalb landete der Palette-Anteil (konzeptionell ≤ T16-004) in
 T16-007.
 
@@ -86,7 +85,7 @@ mechanischer Punkt: die `hosts-ui`-Tab-Aufrufe hinter Callbacks legen.
 
 ## Thema 3 — Settings-Redesign + fester Design-Kontrakt
 
-**Ziel:** Der geplante Zed-Style-Umbau (typisierter `SettingsContent`-Baum,
+**Ziel:** Der geplante Settings-Umbau (typisierter `SettingsContent`-Baum,
 `SettingsStore` mit Layer-Merge, `Settings`-Trait-Registrierung, UI aus dem
 Modell generiert) bleibt **unverändert**. Darauf gesetzt:
 

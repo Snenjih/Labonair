@@ -20,7 +20,7 @@ versions follow [SemVer](https://semver.org/).
   glyph is kept — the hosts panel reuses it for the "pin to top" marker.
 
 ### Added
-- **DiffView rewrite (Zed-style).** The workspace diff is now one scrolling
+- **DiffView rewrite.** The workspace diff is now one scrolling
   multi-file document instead of a one-file rail: per-file headers (fold,
   stage checkbox, file icon, name, directory, `+N −M`, open file), line-number
   gutters, row tints with word diff, staged (hollow) vs unstaged (filled) hunks,

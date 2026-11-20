@@ -33,7 +33,6 @@ jsonc-parser = { version = "0.23", features = ["serde"] }
 notify = "6"
 notify-debouncer-mini = "0.4"
 # Compile-time `Settings` registration (`#[derive(RegisterSetting)]` +
-# `inventory::submit!`/`inventory::iter!`), Zed's own pattern.
 inventory = "0.3"
 dirs = { workspace = true }
 tracing = { workspace = true }

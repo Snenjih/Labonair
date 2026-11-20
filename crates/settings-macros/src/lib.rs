@@ -12,10 +12,8 @@
 //! trait via `crate::MergeFrom` (re-exported at that crate's root) rather
 //! than trying to resolve an external crate path generically.
 //!
-//! Port of the pattern used by `zed-refrence/zed/crates/settings_content`
-//! (Zed derives the equivalent via a similar internal derive macro), trimmed
-//! to struct-with-named-fields only — this tree has no enum `SettingsContent`
-//! variants that need merging.
+//! The derive supports structs with named fields; enum variants need no merge
+//! behavior in this tree.
 //!
 //! Also home to `#[derive(RegisterSetting)]` (T19-002) — a second, unrelated
 //! derive that only `labonair-settings` itself uses (for its concrete

@@ -26,11 +26,6 @@ neues Kommando = ein `register(...)`-Aufruf, nicht ein Enum-Arm + Handler +
 - `labonair-command-palette` (T16-004): `CommandId`, `PaletteData`,
   `PaletteChoice`, `PaletteEvent`, `KeybindMap`, `ShortcutId`,
   `effective_binding`.
-- Zed-Vorbild: `zed-refrence/zed/crates/command_palette/` +
-  `zed-refrence/zed/crates/command_palette_hooks/` — Kommandos sind GPUI-
-  Actions; die Palette listet *alle* registrierten Actions im aktuellen
-  Kontext; `zed-refrence/zed/crates/settings/src/keymap_file.rs` bindet
-  Chords an Action-Namen.
 
 ## Anweisungen zur Umsetzung
 1. **`CommandRegistry`** in `labonair-command-palette` (oder neuem

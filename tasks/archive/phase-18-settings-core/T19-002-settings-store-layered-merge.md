@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T19-001 (`labonair-settings-content`)
@@ -22,14 +20,6 @@ Settings-Slices über ein `Settings`-Trait + Registrierung bereit. Die
 - Heute: `PreferencesStore` (Entity in `labonair-settings-ui`), `preferences_load`
   / `preferences_save` (in `labonair-backend`), `GlobalPreferences`-Global,
   `cx.observe`/`observe_global` in den Modulen.
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/settings/src/settings_store.rs` — `SettingsStore`,
-  `register_setting::<T>()`, `T::get(location, cx)`, `set_user_settings`,
-  `recompute` (Merge), `SettingsLocation`, `LocalSettingsKind`.
-  `zed-refrence/zed/crates/settings/src/settings.rs` — `trait Settings`
-  (`fn from_settings(content: &SettingsContent) -> Self`, `fn register(cx)`),
-  `settings_macros::RegisterSetting`, `inventory`.
-  `zed-refrence/zed/crates/settings/src/settings_file.rs` — fs-Watch.
 
 ## Anweisungen zur Umsetzung
 1. **`crates/settings/` anlegen** (`labonair-settings`, `src/settings.rs`
@@ -44,8 +34,6 @@ Settings-Slices über ein `Settings`-Trait + Registrierung bereit. Die
    - `User` = `~/<config_dir>/labonair/labonair-settings.json` (der bestehende
      Ort; der `preferences`/`editor`/`mcp`-Verbund wird von T19-009 in den
      flachen `SettingsContent` migriert).
-   - `Os` / `Profile` — Struktur vorsehen, aber nur aktiv, wenn Keys vorhanden
-     (`platform_overrides`, `profiles` wie bei Zed).
    - `Project` — leer bis T19-003.
    - `Language` — leer/Platzhalter (Labonair ist kein LSP-Editor; Feld
      vorsehen für Editor-per-Sprache-Overrides, kein Muss jetzt).
@@ -56,8 +44,6 @@ Settings-Slices über ein `Settings`-Trait + Registrierung bereit. Die
    - `fn from_settings(content: &SettingsContent) -> Self;`
    - `fn register(cx: &mut App)` → trägt sich im `SettingsStore` ein.
    - `fn get(cx: &App) -> &Self` (Store hält den berechneten Wert je Typ).
-   - `#[derive(RegisterSetting)]` in `labonair-settings-macros` (kleiner
-     proc-macro; Port aus `zed/crates/settings_macros`).
    - `inventory::collect!` für Compile-Zeit-Registrierung.
 5. **Konkrete `Settings`-Structs** für die Hauptverbraucher — mind.:
    `ThemeSettings`, `TerminalSettings`, `EditorSettings`, `AiSettings`,
@@ -129,9 +115,6 @@ Settings-Slices über ein `Settings`-Trait + Registrierung bereit. Die
   inkrementell (Folge-Tickets / T20-007).
 
 ## Warnungen
-- ⚠️ Store-als-Global + GPUI: `SettingsStore::update_global` / `observe_global`
-  wie bei Zed; niemals den Store vom Tokio-Thread mutieren (fs-Watch-Callback
-  über `cx.spawn` auf den Foreground bringen).
 - ⚠️ Merge-Reihenfolge ist normativ (`docs/architecture.md`) — Default zuerst,
   Sprache zuletzt. Nicht umdrehen.
 - ⚠️ Schreiben passiert in dieser Task noch „dumm" (ganzer User-Layer neu

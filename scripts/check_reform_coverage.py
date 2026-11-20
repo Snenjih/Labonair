@@ -15,7 +15,7 @@ SOURCE = ROOT / "docs" / "reform" / "requirements.toml"
 ALLOWED = {"Verified", "Partial", "Pending", "N/A"}
 REQUIRED = {
     "id",
-    "plan_section",
+    "contract_area",
     "requirement",
     "owner",
     "status",
@@ -77,7 +77,7 @@ def main() -> int:
             values = record.get(field)
             if not isinstance(values, list) or not values or not all(isinstance(value, str) and value.strip() for value in values):
                 errors.append(f"{identifier}: {field} must be a non-empty string array")
-        for field in ("plan_section", "requirement", "owner", "limitation", "next_task"):
+        for field in ("contract_area", "requirement", "owner", "limitation", "next_task"):
             if not isinstance(record.get(field), str) or not record[field].strip():
                 errors.append(f"{identifier}: {field} must be a non-empty string")
         for reference in record.get("source_refs", []):

@@ -17,11 +17,6 @@ visuelle Referenz und Regressions-Sichtfläche gegen `reference-src`.
 ## Kontext
 - `labonair-ui-kit` (nach T20-001) — die Primitive-Sammlung.
 - `labonair-theme` — Light/Dark + (nach T20-005) mehrere Theme-Familien.
-- Zed-Vorbild: `zed-refrence/zed/crates/component/` (`Component`-Trait,
-  Registrierung) + `zed-refrence/zed/crates/component_preview/`
-  (`ComponentPreview`-View, `component_preview.rs` — listet alle registrierten
-  Komponenten mit Beispielen, umschaltbar). Wir bauen eine **reduzierte**
-  Variante: kein Trait-Registry-Zwang, eine handgepflegte Gallery-Seite.
 - `reference-src/src/components/ui/**` — die Zielzustände (Hover/Active/Focus/
   Disabled/Selected, Größen, Varianten).
 

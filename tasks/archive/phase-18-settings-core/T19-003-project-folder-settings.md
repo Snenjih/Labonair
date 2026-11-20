@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T19-002 (`SettingsStore` + Layer-Merge)
@@ -18,16 +16,6 @@ diese AI-Directives".
 ## Kontext
 - T19-002: `SettingsStore` mit `SettingsLayer::Project(WorktreeId)` (bislang
   leer). `recompute` merged Default → User → … → Project → Language.
-- „Arbeitsverzeichnis" im Port: die aktive CWD / der Explorer-Root
-  (`Workspace::active_cwd`, `ExplorerView`-Root). Es gibt kein formales
-  „Worktree"-Konzept wie in Zed — hier reicht „das Verzeichnis, das der
-  Explorer/der aktive Terminal-Tab gerade als Root hat".
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/settings/src/settings_store.rs` — `LocalSettingsKind`,
-  `SettingsLocation`, `set_local_settings(worktree_id, path, kind, content)`,
-  `local_settings_file_relative_path` (`.zed/settings.json`).
-  `zed-refrence/zed/crates/project/` — wie Projekt-Settings-Dateien beim
-  Öffnen/Schließen von Worktrees registriert werden.
 
 ## Anweisungen zur Umsetzung
 1. **Projekt-Wurzel-Begriff**: `SettingsStore` bekommt
@@ -53,16 +41,10 @@ diese AI-Directives".
      -Enable, Auto-Revoke, Auto-Update-Quelle, beliebige Pfade zu ausführbaren
      Hooks, Keymap. Die Whitelist in `labonair-settings` als Konstante +
      Doc-Kommentar mit Begründung.
-   - Zed hat für Ähnliches `GrantedWritePath` — Konzept ansehen
-     (`zed-refrence/zed/crates/settings/src/granted_write_path.rs`).
 5. **Anzeige der Herkunft**: In der Settings-UI (T19-004) pro Feld anzeigen,
    aus welcher Schicht der effektive Wert stammt („aus Projekt: .labonair/
    settings.json"). Hier mindestens die API `SettingsStore::source_of(json_path)
    -> SettingsLayer` bereitstellen.
-6. **Erstellen-Helfer**: Command „Projekt-Settings öffnen/erstellen" → legt
-   `<root>/.labonair/settings.json` mit einem kommentierten Gerüst an
-   (`assets/settings/initial_project_settings.json`, Vorbild
-   `zed/assets/settings/initial_local_settings.json`) und öffnet sie im Editor.
 7. **Tests**: Projekt-Layer schlägt User-Layer für einen erlaubten Key;
    verbotener Key im Projekt-File wird ignoriert + gemeldet; Wurzelwechsel
    lädt/entlädt korrekt; keine Projekt-Datei ⇒ genau User-Verhalten.

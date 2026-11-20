@@ -3,8 +3,6 @@
 ## Status
 🗄️ Historical — the new product contract explicitly removes Hosts from Settings
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T19-004 (generierte Settings-UI + Custom-Top-Level-Pfad), T16-008 (`labonair-hosts-ui`), T19-001 (`hosts: HostsContent` + `AREAS`-Eintrag), T17-009 (interimer `TabKind::Hosts`)

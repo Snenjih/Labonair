@@ -3,7 +3,7 @@ status_vocabulary = ["Verified", "Partial", "Pending", "N/A"]
 
 [[requirement]]
 id = "dod.agent-route"
-plan_section = "16.1"
+contract_area = "Agent routing"
 requirement = "AGENTS.md provides a short deterministic entry path."
 owner = "repository"
 status = "Verified"
@@ -15,7 +15,7 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.canonical-index"
-plan_section = "16.2"
+contract_area = "Documentation index"
 requirement = "docs/README.md indexes every canonical documentation area."
 owner = "repository documentation"
 status = "Verified"
@@ -27,7 +27,7 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.capability-ownership"
-plan_section = "16.3"
+contract_area = "Capability ownership"
 requirement = "Every capability has exactly one owner and one canonical crate."
 owner = "capability registry and architecture policy"
 status = "Verified"
@@ -39,7 +39,7 @@ next_task = "tasks/rework/R07-007-transitional-edge-review.md"
 
 [[requirement]]
 id = "dod.capability-descriptors"
-plan_section = "16.4"
+contract_area = "Capability descriptors"
 requirement = "Every capability has a structured descriptor or an explicit tracked migration."
 owner = "capability owners"
 status = "Partial"
@@ -51,7 +51,7 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.architecture-graph"
-plan_section = "16.5"
+contract_area = "Architecture graph"
 requirement = "Architecture layers and dependency edges are checked from a declarative source."
 owner = "architecture"
 status = "Verified"
@@ -63,7 +63,7 @@ next_task = "tasks/rework/R07-007-transitional-edge-review.md"
 
 [[requirement]]
 id = "dod.visible-action-contract"
-plan_section = "16.6"
+contract_area = "Visible action contracts"
 requirement = "Every visible action has an owner and command or surface decision."
 owner = "product surface owners"
 status = "Verified"
@@ -75,7 +75,7 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.menu-surface-checks"
-plan_section = "16.7"
+contract_area = "Menu and surface checks"
 requirement = "Menu and surface catalogs are generated or mechanically checked."
 owner = "product surface owners"
 status = "Verified"
@@ -87,7 +87,7 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.settings-persistence"
-plan_section = "16.8"
+contract_area = "Settings persistence"
 requirement = "Settings and persistence ownership are explicit."
 owner = "settings and capability owners"
 status = "Partial"
@@ -99,7 +99,7 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.automation-security"
-plan_section = "16.9"
+contract_area = "Automation and security"
 requirement = "Automation and MCP tools document grants, limits, and negative tests."
 owner = "MCP and security"
 status = "Partial"
@@ -111,19 +111,19 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.status-separation"
-plan_section = "16.10"
+contract_area = "Status separation"
 requirement = "Target, current, and evidence status are separate."
 owner = "repository documentation"
 status = "Verified"
 evidence = ["Capability, workflow, scorecard, visual, performance, and release schemas carry separate status fields or evidence states"]
-source_refs = ["docs/capabilities/schema.md", "docs/product/workflows.md", "docs/testing/evidence-model.md", "docs/evidence/scorecard.toml", "docs-reform-plan.md"]
+source_refs = ["docs/capabilities/schema.md", "docs/product/workflows.md", "docs/testing/evidence-model.md", "docs/evidence/scorecard.toml", "docs/reform/README.md"]
 last_verified = "2026-10-09"
 limitation = "Semantic claims that are not represented in a structured source still require human review."
 next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.workflow-evidence"
-plan_section = "16.11"
+contract_area = "Workflow evidence"
 requirement = "Every completed workflow links contract, integration, visual, security, performance, or not-applicable evidence."
 owner = "capability owners"
 status = "Partial"
@@ -135,7 +135,7 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.generated-freshness"
-plan_section = "16.12"
+contract_area = "Generated views"
 requirement = "Generated documentation is checked for freshness."
 owner = "repository tooling"
 status = "Verified"
@@ -147,19 +147,19 @@ next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.canonical-verifier"
-plan_section = "16.13"
+contract_area = "Verification command"
 requirement = "One local command reproduces the CI verification path."
 owner = "repository tooling"
 status = "Verified"
 evidence = ["python3 scripts/verify.py --scope all passes", "CI knowledge, visual, and macOS Rust jobs call repository verifiers"]
-source_refs = ["scripts/verify.py", ".github/workflows/ci.yml", "docs/agents/finish-gates.md", "docs-reform-plan.md"]
+source_refs = ["scripts/verify.py", ".github/workflows/ci.yml", "docs/agents/finish-gates.md", "docs/reform/README.md"]
 last_verified = "2026-10-09"
 limitation = "Credential-dependent and native capture evidence remains conditional by platform and host access."
 next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[requirement]]
 id = "dod.ci-gates"
-plan_section = "16.14"
+contract_area = "CI gates"
 requirement = "All required CI gates are green, with conditional platform evidence stated explicitly."
 owner = "CI and release"
 status = "Partial"
@@ -171,7 +171,7 @@ next_task = "tasks/rework/R07-001-product-surface-acceptance.md"
 
 [[requirement]]
 id = "dod.queue-order"
-plan_section = "16.15"
+contract_area = "Active queue order"
 requirement = "The active rework queue remains ordered and has no bypassed dependency."
 owner = "rework queue"
 status = "Verified"
@@ -183,7 +183,7 @@ next_task = "tasks/rework/R07-001-product-surface-acceptance.md"
 
 [[requirement]]
 id = "dod.compatibility-removal"
-plan_section = "16.16"
+contract_area = "Compatibility removal"
 requirement = "No obsolete compatibility path remains without a removal condition."
 owner = "architecture"
 status = "Verified"
@@ -195,7 +195,7 @@ next_task = "tasks/rework/R07-007-transitional-edge-review.md"
 
 [[requirement]]
 id = "dod.no-duplicate-surface"
-plan_section = "16.17"
+contract_area = "Surface ownership"
 requirement = "No duplicate shell-wide feature table or parallel product surface has been introduced."
 owner = "shell and feature owners"
 status = "Verified"

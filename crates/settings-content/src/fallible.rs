@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! Fault-tolerant JSON → [`SettingsContent`] parsing (T19-001 Anweisung #5,
-//! the `FallibleOption` equivalent: `zed-refrence/zed/crates/settings_content/
-//! src/fallible_options.rs`).
-//!
-//! Granularity note: Zed's `FallibleOption` recovers per **leaf field**. This
-//! port recovers per **top-level area** (one `SettingsContent` field, e.g.
+//! Fault-tolerant JSON → [`SettingsContent`] parsing. Recovery happens per
+//! **top-level area** (one `SettingsContent` field, e.g.
 //! `"terminal"`): if a value under an area key fails to deserialize, that
 //! whole area falls back to its default and one [`FieldError`] is reported;
 //! every other area parses independently and is unaffected. This keeps the

@@ -47,9 +47,10 @@ Costs:
 
 Rejected for now. Existing terminal, editor, SSH, SFTP, persistence, and GPUI work contain valuable behavior. Rewriting everything would increase risk without improving the product contract.
 
-### Whole-project Zed fork
+### Whole-project fork of another product
 
-Rejected for now. Labonair has different product priorities, and a full fork would import substantial unrelated scope and licensing obligations. Zed remains a clean-room reference for interaction and architecture patterns.
+Rejected for now. Labonair has distinct product priorities, and a full fork
+would import unrelated scope and licensing obligations.
 
 ### One crate per tiny UI element
 

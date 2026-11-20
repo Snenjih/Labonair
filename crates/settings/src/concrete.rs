@@ -1069,8 +1069,8 @@ impl ConnectionsSettings {
     }
 }
 
-/// `file_manager` area, read by the sidebar Explorer (Zed-parity Phase 3):
-/// indent guides, sticky ancestors, active-file reveal, single-child folding,
+/// Explorer settings in the `file_manager` area: indent guides, sticky
+/// ancestors, active-file reveal, single-child folding,
 /// Git decorations, and the historical hidden-files default.
 #[derive(Clone, Debug, PartialEq, RegisterSetting)]
 pub struct ExplorerSettings(FileManagerContent);
@@ -1083,8 +1083,8 @@ impl Settings for ExplorerSettings {
     }
 }
 
-/// `file_manager` area as read by the Source-Control panel (Zed-parity
-/// Phase 4): tree vs flat change-list presentation.
+/// Source-Control settings in the `file_manager` area: tree or flat change-list
+/// presentation.
 #[derive(Clone, Debug, PartialEq, RegisterSetting)]
 pub struct ScmSettings(FileManagerContent);
 

@@ -72,7 +72,7 @@ members = [
 version = "1.0.0"
 
 [workspace.dependencies]
-# GPUI (Zed's GPU-accelerated UI framework).
+# GPUI, the GPU-accelerated native UI framework.
 gpui = "0.2.2"
 # gpui-component — shared primitive/component library (Button, Input, Select,
 # Dropdown, Dialog, Tooltip, Switch, Badge, ContextMenu, Lucide icons). Pinned

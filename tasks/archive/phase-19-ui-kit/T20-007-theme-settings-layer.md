@@ -23,12 +23,6 @@ Theme-Settings) kombiniert; die ganze App liest daraus.
   `typography`. `ThemeStore` hält `FontOverrides`.
 - `labonair-ui-kit`-Primitives lesen Größen teils aus dem `Theme`, teils
   hartkodiert.
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/theme/src/ui_density.rs` — `UiDensity`
-  (`Comfortable`/`Default`/`Compact`), skaliert Spacing.
-  `zed-refrence/zed/crates/theme/` — `ThemeSettings` (buffer/ui font size,
-  line height, `theme_settings_provider.rs`), `scale.rs`,
-  `buffer_line_height.rs`.
 
 ## Anweisungen zur Umsetzung
 1. **`ThemeSettings`** (ein `Settings`-Struct, registriert in T19-002):

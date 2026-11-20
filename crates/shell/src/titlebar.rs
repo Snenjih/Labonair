@@ -18,11 +18,9 @@
 //! T18-002), every bar item / badge (they are `StatusItem`s since T17-003) and
 //! the sidebar toggle (a status-bar control since T18-003).
 //!
-//! Window chrome: the whole titlebar background is a drag region
-//! (`WindowControlArea::Drag` + a `start_window_move` on drag), and a
-//! double-click zooms the window (`titlebar_double_click`) — same mechanism as
-//! Zed's `platform_title_bar`. Interactive children handle their own clicks;
-//! only a bare press-then-drag on empty background moves the window.
+//! Window chrome: the titlebar background is a drag region, and double-clicking
+//! it zooms the window. Interactive children handle their own clicks; only a
+//! bare press-and-drag on empty background moves the window.
 //!
 //! `zen_mode_show_header` still gates the whole thing — when off, the titlebar
 //! renders nothing and the OS window frame / traffic lights take over.
@@ -296,9 +294,8 @@ impl Render for Titlebar {
             .when(!floating, |bar| {
                 bar.bg(toolbar).border_b_1().border_color(border)
             })
-            // Whole background is a window drag region; a bare press-then-drag
-            // starts a window move (Zed `platform_title_bar` mechanism). A
-            // double-click zooms. Interactive children consume their own
+            // The background is a window drag region; double-click zooms.
+            // Interactive children consume their own
             // clicks, so this only fires on empty background.
             .window_control_area(WindowControlArea::Drag)
             .on_mouse_down(

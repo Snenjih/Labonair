@@ -4,10 +4,8 @@
 //! `Kbd` key chips and the `KeybindingHint` (label + chips) pair.
 //!
 //! Port of `reference-src/src/components/ui/kbd.tsx` (`Kbd` + `KbdGroup`):
-//! `h-5.5 min-w-5.5 rounded-lg bg-muted px-1.5 text-xs text-muted-foreground`,
-//! grouped with `gap-1`. Zed's equivalents are
-//! `zed-refrence/zed/crates/ui/src/components/keybinding.rs` (`KeyBinding`) and
-//! `.../keybinding_hint.rs`.
+//! `h-5.5 min-w-5.5 rounded-lg bg-muted px-1.5 text-xs text-muted-foreground`.
+//! Keybinding hints combine a label with a row of these chips.
 //!
 //! Before this module the port hand-rolled the chip in
 //! `crates/command-palette/src/palette.rs` (a private `kbd` fn) and again in

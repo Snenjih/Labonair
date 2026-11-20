@@ -39,8 +39,6 @@ diese Task liefert die **Zustands-/Logik-Seite** und einen minimalen Platzhalter
   Layout; `TabSnapshot::Home` (`workspace.rs:575`).
 - Host-Manager-View: seit T16-008 `labonair-hosts-ui` (`HostManagerView`),
   wird über hereingereichte `on_open_ssh`/`on_open_sftp`-Callbacks bedient.
-- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/workspace.rs` — Workspace
-  ohne aktiven Tab (leerer `Pane`), `Workspace::render` mit leerem Zentrum.
 
 ## Anweisungen zur Umsetzung
 1. **`TabKind::Home` streichen.** Variante + alle `match`-Arme

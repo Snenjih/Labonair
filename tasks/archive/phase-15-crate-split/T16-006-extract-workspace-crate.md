@@ -29,8 +29,6 @@ in Phase 16.
 - Konsumenten: `app_shell.rs` (hält `Entity<Workspace>`, ruft ~15 Methoden),
   `live_bridge.rs` (`WorkspaceLiveBridge` liest Workspace-Snapshot),
   `session.rs` (Snapshot load/save).
-- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/{workspace.rs,pane.rs,
-  pane_group.rs,item.rs,persistence.rs}`.
 
 ## Anweisungen zur Umsetzung
 1. **`crates/workspace/` anlegen** (`labonair-workspace`,

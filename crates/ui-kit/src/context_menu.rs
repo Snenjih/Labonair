@@ -827,12 +827,9 @@ pub fn context_menu_with_exit(
     .into_any_element()
 }
 
-/// The same menu, opened from a *trigger* instead of a right-click: the card is
-/// shared window-anchored placement + `deferred(..)` so it cannot be clipped by an
-/// ancestor's `overflow_hidden` and flips itself back into the window near an
-/// edge. This is radix' `DropdownMenu`/`PopoverMenu` (reference
-/// `components/ui/dropdown-menu.tsx`) as opposed to `ContextMenu`; Zed splits
-/// the same two roles across `popover_menu.rs` and `context_menu.rs`.
+/// The same menu, opened from a trigger instead of a right-click. It uses
+/// window-anchored placement and `deferred(..)` so it cannot be clipped by an
+/// ancestor's `overflow_hidden`, and flips back into the window near an edge.
 ///
 /// Pass the trigger's bottom-left window point as `anchor` so the card opens
 /// below it.

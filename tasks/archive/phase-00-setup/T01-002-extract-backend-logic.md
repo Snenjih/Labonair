@@ -164,8 +164,6 @@ edition = "2021"
 russh = { workspace = true }
 russh-sftp = { workspace = true }
 
-# Git — KEIN git2. Git läuft über das `git`-CLI (std::process / tokio::process),
-# lokal und remote-over-SSH (GitExecutor). So macht es auch das Original.
 
 # SQLite
 rusqlite = { workspace = true }

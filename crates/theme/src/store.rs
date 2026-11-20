@@ -871,8 +871,8 @@ impl ThemeStore {
         self.theme().status.success
     }
 
-    /// Diff hunk colors (the Zed `editor_diff_hunk_*` / `version_control_word_*`
-    /// roles): the theme's `diff_*` tokens, else derived from its status colors.
+    /// Diff hunk colors use the theme's `diff_*` tokens, or derive from its
+    /// status colors when no explicit diff colors are set.
     pub fn diff_hunk_colors(&self) -> DiffHunkColors {
         let theme = self.theme();
         let (added, deleted) = theme.diff.resolve(&theme.status, theme.is_dark);

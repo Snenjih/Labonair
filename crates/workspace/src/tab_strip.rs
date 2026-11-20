@@ -44,8 +44,8 @@ pub(crate) struct TabDisplay {
     pub tooltip: SharedString,
     /// Kind icon, shown on non-editor tabs and in the sidebar.
     pub icon: IconName,
-    /// Gorex-style tiles, one per pane (focused pane first, at most three
-    /// shown). Empty only if the tab has no pane at all.
+    /// Program tiles, one per pane, with the focused pane first and at most
+    /// three shown. Empty only if the tab has no pane.
     pub tiles: Vec<TabTileSpec>,
     /// Git status marker of an editor tab, when enabled in settings.
     pub status_color: Option<Hsla>,

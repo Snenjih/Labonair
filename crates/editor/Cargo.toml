@@ -29,7 +29,6 @@ ropey = { version = "2.0.0-beta.1", default-features = false, features = [
 # Apache-2.0. The dependency avoids a second ad-hoc regex parser in Editor.
 regex = { version = "1.11", default-features = false, features = ["std", "unicode"] }
 
-# Syntax highlighting — Tree-sitter (grammar-based parsing, same approach as Zed).
 tree-sitter = "0.25"
 tree-sitter-highlight = "0.25"
 tree-sitter-rust = "0.24"

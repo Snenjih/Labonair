@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! Neutral Project-Diff request contract (Zed-parity redesign Phase 4,
-//! `docs/ui-comparison-zed-sidebar-status-bar.md` §9.5 / §12.6).
-//!
+//! Shared request contract for the workspace-owned Project Diff surface.
 //! The Source-Control panel (`labonair-panel-scm`) no longer owns an inline
 //! diff viewer. Instead it emits a [`ProjectDiffRequest`] describing *what* to
 //! review; the workspace opens or focuses exactly one Project Diff item and
@@ -21,9 +19,9 @@ pub enum ProjectDiffMode {
     Split,
 }
 
-/// What the Diff item is reviewing. One workspace Diff surface renders every
+/// What the Diff item is reviewing. One workspace surface renders every
 /// variant; the source decides where the base text comes from and whether
-/// hunk-level staging is offered (Zed's `DiffOperations` idea in miniature).
+/// hunk-level staging is available.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum DiffSource {
     /// Uncommitted work: the request's `files` list drives the rail and each

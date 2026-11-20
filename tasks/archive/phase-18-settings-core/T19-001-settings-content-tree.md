@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T16-001 (ADR & Ziel-Crate-Graph), T16-007 (`labonair-settings-ui` extrahiert), T19-000 (Settings-Design-Kontrakt)
@@ -20,16 +18,6 @@ mit dem vollständig typisierten `SettingsContent`-Baum (alle Bereiche) und dem
   `struct Preferences` (~170 Felder, `#[serde(default, rename_all = "camelCase")]`,
   Kategorien als Kommentar-Blöcke), plus `editor.rs` (`"editor"`-Key),
   `mcp.rs` (`"mcp"`-Key). Alles in `labonair-settings.json`.
-- Zed-Vorbild (die Blaupause):
-  `zed-refrence/zed/crates/settings_content/src/settings_content.rs` —
-  `struct SettingsContent { ... }` (Baum), Submodule `editor.rs`,
-  `terminal.rs`, `theme.rs`, `project.rs`, `workspace.rs`, `title_bar.rs`,
-  `agent.rs`, `language.rs`.
-  `zed-refrence/zed/crates/settings_content/src/merge_from.rs` —
-  `trait MergeFrom { fn merge_from(&mut self, other: &Self); }` + Impls für
-  `Option`, Maps, Vecs, Primitives; `#[derive(MergeFrom)]`.
-  `zed-refrence/zed/crates/settings_content/src/fallible_options.rs` —
-  `FallibleOption` (Feld ungültig ⇒ Default statt Datei-Abbruch).
 
 ## Anweisungen zur Umsetzung
 1. **`crates/settings-content/` anlegen** (`labonair-settings-content`,
@@ -71,17 +59,11 @@ mit dem vollständig typisierten `SettingsContent`-Baum (alle Bereiche) und dem
      ein `base_keymap: BaseKeymap`-Feld (VSCode/JetBrains/…), kein Bindings-Baum.
    - Jedes Feld `Option<T>` (für Schicht-Merge: „nicht gesetzt" ≠ „Default").
    - `#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema, MergeFrom)]`.
-3. **`MergeFrom`** implementieren (Port aus Zed):
    - `trait MergeFrom` + Blanket-/Basis-Impls (`Option<T>`: `other.is_some()`
      gewinnt und merged rekursiv; `Vec`: ersetzen oder anhängen — je Feld
      via Attribut; `BTreeMap`: key-weise mergen).
    - `#[derive(MergeFrom)]` via `labonair-settings-macros` (kleiner
      proc-macro-Crate — hier gleich mit anlegen, minimal).
-4. **`DEFAULTS`**: `SettingsContent::defaults()` — der voll ausgefüllte Baum
-   mit allen heutigen `Preferences`-Default-Werten. Zusätzlich als
-   **dokumentiertes JSON-Asset** `assets/settings/default.json` (Vorbild
-   `zed-refrence/zed/assets/settings/default.json` — jeder Key mit
-   Kommentar). `defaults()` und `default.json` müssen übereinstimmen (Test).
 5. **`FallibleOption`**-Äquivalent: eine `parse(json) -> (SettingsContent,
    Vec<FieldError>)`-Funktion, die pro Feld fehlertolerant ist.
 6. **Ableitung von `Preferences`**: `impl From<&SettingsContent> for Preferences`
@@ -133,9 +115,6 @@ mit dem vollständig typisierten `SettingsContent`-Baum (alle Bereiche) und dem
 ## Notizen
 - Diese Task ändert **noch nicht** das Laufzeitverhalten — sie baut nur das
   Modell + die `default.json`. T19-002 schaltet den Store darauf um.
-- `zed-refrence/zed/crates/settings_content/` ist fast 1:1 die Vorlage — dort
-  die Struktur der Submodule + `merge_from.rs` genau lesen und übernehmen,
-  Zed-spezifische Bereiche (collab, dap, vim-tiefe) weglassen.
 - **`parse`-Granularität:** Zeds `FallibleOption` erholt sich pro **Blatt-Feld**.
   Dieser Port (`fallible.rs`) erholt sich pro **Top-Level-Area** (ein
   `SettingsContent`-Feld, z. B. `"terminal"`): ein kaputtes Feld defaultet die

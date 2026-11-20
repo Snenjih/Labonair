@@ -10,10 +10,6 @@ the migration is complete.
 ## Normative documents
 
 - [`product.md`](product.md) — product identity, scope, and user-facing principles.
-- [`zed-parity.md`](zed-parity.md) — pinned Zed baseline, clean-room process,
-  full feature inventory, shared-system specification, and parity gates.
-- [`parity/README.md`](parity/README.md) — R07-000 working inventory,
-  independent glossary/checklist, and source-boundary status.
 - [`architecture.md`](architecture.md) — runtime architecture, layers, and dependency direction.
 - [`architecture/layers.md`](architecture/layers.md) — normative layer and direction rules.
 - [`architecture/composition-root.md`](architecture/composition-root.md) — composition-root responsibilities and prohibitions.
@@ -111,13 +107,13 @@ the migration is complete.
 
 The executable task queue derived from the roadmap is
 [`../tasks/rework/README.md`](../tasks/rework/README.md). The historical
-`tasks/archive/` tree and original roadmap are retained for traceability only.
+`tasks/archive/` tree is retained for traceability only.
 
 Normative documents are written in English because they are also engineering contracts. `ideas/` contains proposals only; an idea becomes binding only after it is incorporated here or accepted in an ADR. The document classes and maintenance rules are defined in [`documentation-governance.md`](documentation-governance.md).
 
 ## Supporting documents
 
-- [`../docs-reform-plan.md`](../docs-reform-plan.md) — project goal for an
+- [`reform/README.md`](reform/README.md) — project goal for an
   agent-discoverable, generated, evidence-backed documentation and verification
   system.
 - [`generated/architecture.md`](generated/architecture.md) — generated readable
@@ -157,7 +153,7 @@ Normative documents are written in English because they are also engineering con
   route source.
 - [`adr/`](adr/) records accepted decisions and their consequences. Superseded
   ADRs are kept separately in [`archive/adr/`](archive/adr/).
-- [`reports/`](reports/) contains source comparisons and research.
+- [`reports/`](reports/) contains advisory research and implementation reports.
 - [`performance.md`](performance.md) and [`perf-baseline.md`](perf-baseline.md) contain measurements and performance notes.
 - [`archive/`](archive/) contains superseded architecture and design documents. Archived documents are historical references, not instructions.
 - [`audits/architecture-inventory.md`](audits/architecture-inventory.md) records the current migration baseline.

@@ -8,8 +8,7 @@ use labonair_command_palette_core::{CommandDescriptor, CommandIcon, CommandId, C
 /// The keymap capability owns the discoverable entry point for editing the
 /// user's keymap. Opening the surface (a workspace tab) is an execution
 /// concern of the tab owner (`labonair-workspace`); this crate only publishes
-/// the command metadata. `CommandId::OpenKeymapJson` keeps its historical name
-/// (and `zed::OpenKeymap` alias) for user-keymap-file compatibility.
+/// the command metadata. The command ID remains `CommandId::OpenKeymapJson`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KeymapCommandProvider;
 

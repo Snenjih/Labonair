@@ -28,11 +28,6 @@ bereitstellt — damit jede View aus denselben Teilen gebaut wird.
 - `reference-src/src/components/ui/**` — die cva-basierte Primitive-Sammlung
   der alten App (shadcn-Stil): maßgeblich für Radien, Höhen, Paddings,
   Zustände.
-- Zed-Vorbild: `zed-refrence/zed/crates/ui/src/components/*` (List, ListItem,
-  ListHeader, Button-Familie, PopoverMenu, DropdownMenu, ContextMenu, Table,
-  Disclosure, KeyBinding, KeybindingHint, Indicator, Banner, Divider,
-  Tab, TabBar, ToggleButton, Checkbox, …), `zed-refrence/zed/crates/ui/src/
-  styles/`, `prelude.rs`.
 
 ## Anweisungen zur Umsetzung
 1. **Inventur**: aus allen Panel-/Workspace-/Settings-Crates die
@@ -70,8 +65,6 @@ bereitstellt — damit jede View aus denselben Teilen gebaut wird.
 4. **Zustände** aus `reference-src`: Hover/Active/Focus/Disabled/Selected 1:1
    an den Theme-Tokens (`hover_fill`, `selected_fill`, `border.focused`,
    `DISABLED_OPACITY`).
-5. **Doc-Kommentare** je Primitive: Zweck + Referenz (`reference-src`-Pfad
-   oder Zed-Datei) + ein Mini-Beispiel.
 6. **Snapshot-/Render-Tests** wo möglich (GPUI-Test-Kontext): Primitive
    rendert ohne Panik in allen Zuständen; `NumberField` klemmt an min/max;
    `Select` gibt die Auswahl.
@@ -132,9 +125,6 @@ Card/Row-Layouts) und `Tab`/`TabBar` (die einzige echte Tab-Leiste ist
   4).
 - ⚠️ Kein Primitive darf `labonair-theme` umgehen und Hex-/Hsla-Literale
   hartkodieren (Critical Rule 3).
-- ⚠️ `RenderOnce` + `#[derive(IntoElement)]` vs. Builder-Fn — eine Konvention
-  wählen und durchhalten (Zed nutzt beides je nach Fall; für uns: `RenderOnce`
-  für alles mit >2 Feldern, sonst Fn).
 
 ## Weiterführende Tasks
 - [T20-002: View-Migration Welle 1](./T20-002-view-migration-wave-1.md)

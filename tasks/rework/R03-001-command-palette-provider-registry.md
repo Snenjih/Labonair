@@ -102,9 +102,6 @@ The command-palette core now contributes its own global palette command, and
 Settings contributes the remaining settings-toggle metadata. The shell's
 palette-only list has been removed entirely.
 
-The legacy `settings::OpenShortcuts` action is now an explicit compatibility
-alias for `zed::OpenKeymap`. It is accepted by keymap validation and normalized
-for display without being registered as a discoverable command.
 
 The dependency verifier now allows the owner-to-contract edges explicitly and
 confirms the graph remains acyclic. `labonair-interaction-contracts` owns the

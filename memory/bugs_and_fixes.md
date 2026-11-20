@@ -843,25 +843,7 @@ slot that replaces the default hover fill and is applied in `IntoElement` before
 `hosts-ui` (accent-border hover) and `panel-scm` file rows (border hover, accent
 selected) onto it.
 
-**Reference:** confirmed via the panic message at runtime; the constraint is
-visible in the Zed `gpui` element state (one `hover` slot per element).
 
-## 2026-09-05 — Zed UI source cannot be copied into the Apache-2.0 project
-
-**Context:** A source-level comparison was made for Zed's dock/status bar,
-Project Panel, Git Panel, and shared UI primitives.
-
-**Finding:** The inspected Zed crates `workspace`, `project_panel`, `git_ui`,
-and `ui` each declare `GPL-3.0-or-later`. Labonair's root license is
-Apache-2.0.
-
-**Resolution:** Treat Zed as a behavioral and architectural reference. Specify
-observable interaction outcomes and independently implement them over
-Labonair's existing panel, dock, workspace, and UI-kit APIs. Do not copy or
-closely translate Zed function bodies, type layouts, comments, or algorithms
-unless the project first makes an explicit, reviewed licensing decision.
-
-**Reference:** `docs/ui-comparison-zed-sidebar-status-bar.md` section 2.
 ## 2026-09-06 — Transfer capability extraction and wire compatibility
 
 **Decision:** Transfer lifecycle state and the queue UI now belong to the
@@ -1072,13 +1054,6 @@ pending.
 
 ## 2026-10-11 — Pinned BackQuotes action has duplicate listeners
 
-**Discovery:** The frozen Zed `vim::object::register` function calls
-`Vim::action` twice for `&BackQuotes`. Each call reaches
-`Editor::register_action`, which stores a distinct subscription and installs a
-Bubble-phase listener for the same action type. No focused BackQuotes action
-fixture was found; existing AnyQuotes backtick cases exercise a different
-action. The effect of both listeners on each operator and Helix selection path
-has not been observed.
 
 **Disposition:** Preserve this as a pinned-source anomaly and verify its event
 effects before claiming exact behavior. Do not edit the frozen reference or

@@ -457,9 +457,8 @@ pub(crate) fn bootstrap(
         }
     })
     .detach();
-    // Source Control → workspace surfaces. The panel emits neutral requests; the
-    // workspace owns each surface's lifecycle (idempotent open/focus): the single
-    // Project Diff item (Zed-parity Phase 4, §12.6) and the on-demand Git Graph tab.
+    // Source Control emits neutral requests; the workspace owns each surface's
+    // lifecycle and idempotent open/focus behavior.
     cx.subscribe_in(
         &git_panel,
         window,

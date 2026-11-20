@@ -3,11 +3,9 @@
 
 //! Flex-layout shorthands.
 //!
-//! `div().flex().flex_col()` / `div().flex().flex_row().items_center()` are by
-//! far the most repeated constructs in the port (>400 occurrences across the
-//! view crates). Zed keeps the same two helpers in
-//! `zed-refrence/zed/crates/ui/src/styles/stack.rs`; `labonair-gpui-ext` has no
-//! layout helpers, so they live here with the rest of the design system.
+//! `div().flex().flex_col()` and `div().flex().flex_row().items_center()` are
+//! common view patterns. These helpers keep them consistent across feature
+//! crates and alongside the rest of the design system.
 //!
 //! ```ignore
 //! v_stack().gap_2().child(header).child(body)

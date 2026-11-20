@@ -27,9 +27,9 @@ under a permissive license (MIT / Apache-2.0 / BSD / ISC / Zlib / Unicode-3.0
 
 `gpui 0.2.2` and all its `gpui_*` companion crates
 (`gpui_media`, `gpui_perf`, `gpui-macros`, `gpui_refineable`, …) are
-**`Apache-2.0`**. Earlier iterations of Zed's GPUI were GPL-3.0; the crates.io
-0.2.x line used for this port is not. No copyleft obligation from the UI
-framework.
+**`Apache-2.0`**. Earlier framework releases used GPL-3.0; the crates.io
+0.2.x line used here does not. No copyleft obligation comes from this UI
+framework version.
 
 ### Dual/multi-license crates offering a copyleft option (we pick permissive)
 

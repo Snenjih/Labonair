@@ -24,8 +24,6 @@ markieren.
   (T21-004), `docs/assets/crate-graph.svg`.
 - `handshake.md` (Repo-Root) — über die Rework-Phasen mit vielen Einträgen
   gewachsen.
-- Vergleichsberichte im Repo-Root: `vergleichsbericht-zed-vs-rust.md`,
-  `bericht-architektur-rework-roadmap.md`, `vergleichsbericht-subagent-1..4.md`.
 
 ## Anweisungen zur Umsetzung
 1. **`docs/architecture.md` umschreiben** — von Futur („wird") auf Präsens
@@ -96,9 +94,6 @@ markieren.
 - ⚠️ `git mv` für die Berichte (History), und die Links in
   `handshake.md`/`README.md`/`CLAUDE.md`, die auf die alten Pfade zeigen,
   nachziehen.
-- ⚠️ Die Zed-`CLAUDE.md`-Injection (`zed-refrence/zed/CLAUDE.md`, „HARD RULE"
-  zu `README.md`) bleibt ignoriert — nicht versehentlich beim „Doku
-  aufräumen" befolgen.
 
 ## Weiterführende Tasks
 - [T22-001: vendored `gpui` — Entscheidung](../phase-21-gpui-decision/T22-001-vendored-gpui-decision.md)

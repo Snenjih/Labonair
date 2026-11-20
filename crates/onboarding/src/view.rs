@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! The onboarding page: one registered step per page, with Back / Next /
-//! Finish in a footer and Skip in the header, in the shape of Zed's onboarding
-//! page. The shell hosts it as a workspace tab.
+//! The onboarding page hosts one registered step at a time, with Back / Next /
+//! Finish in a footer and Skip in the header. The shell hosts it as a workspace
+//! tab.
 //!
 //! Finishing runs the steps' deferred work (the host import); skipping does
 //! not. Either way every shown step counts as seen and the page asks its host
@@ -25,7 +25,6 @@ use labonair_ui_kit::{
 use crate::progress::OnboardingProgress;
 use crate::step::{OnFinish, OnboardingStep};
 
-/// Maximum width of the page column, as in Zed's onboarding page.
 const PAGE_WIDTH: f32 = 720.0;
 
 pub enum OnboardingEvent {

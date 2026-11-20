@@ -5066,9 +5066,8 @@ impl Workspace {
         self.hosts.clone()
     }
 
-    /// Open — or, if it already exists, focus and re-point — the single
-    /// workspace Project Diff item (Zed-parity Phase 4, §12.6). Idempotent:
-    /// repeated requests never open a duplicate tab; a request carrying a new
+    /// Open the Project Diff item, or focus and re-point it if it already exists.
+    /// Repeated requests never open a duplicate tab; a request carrying a new
     /// `selected` just moves the selection inside the existing item.
     pub fn open_project_diff(
         &mut self,
@@ -7489,8 +7488,7 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Reset the dock at `pos` to its default size (bound double-click on the
-    /// resize handle — `docs/ui-comparison-zed-sidebar-status-bar.md` §7.4).
+    /// Reset the dock at `pos` to its default size.
     fn reset_dock_size(&mut self, pos: labonair_panel::DockPosition, cx: &mut Context<Self>) {
         let floor = self.dock(pos).active_panel().and_then(|p| p.min_size(cx));
         let default = crate::dock::default_size(pos);
@@ -7513,7 +7511,6 @@ impl Workspace {
     /// docks are width-resizable; the bottom dock is height-resizable.
     /// Double-clicking the handle restores the default size. A zoomed dock fills
     /// its axis and drops the handle.
-    /// (`docs/ui-comparison-zed-sidebar-status-bar.md` §7.4.)
     fn render_dock(
         &mut self,
         pos: labonair_panel::DockPosition,

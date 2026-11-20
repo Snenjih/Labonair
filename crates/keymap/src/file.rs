@@ -13,8 +13,7 @@
 //! ```jsonc
 //! [
 //!   { "context": "Workspace", "bindings": {
-//!       "cmd-t": "tab::NewTerminal",
-//!       "cmd-k cmd-s": "zed::OpenKeymap"   // chord — space-separated keystrokes
+//!       "cmd-t": "tab::NewTerminal"
 //!   }},
 //!   { "context": "Editor", "bindings": { "cmd-f": "search::Toggle" } },
 //!   { "bindings": { "cmd-w": null } }        // no context = always active;
@@ -677,7 +676,7 @@ pub fn ensure_user_keymap_file() -> Result<PathBuf, String> {
         let scaffold = "// User keybindings — overrides the built-in default keymap.\n\
              // See docs/settings-guidelines.md. Example:\n\
              // [\n\
-             //   { \"context\": \"Editor\", \"bindings\": { \"cmd-k cmd-s\": \"zed::OpenKeymap\" } }\n\
+             //   { \"context\": \"Editor\", \"bindings\": { \"cmd-k cmd-s\": \"search::Toggle\" } }\n\
              // ]\n[]\n";
         std::fs::write(&path, scaffold).map_err(|e| e.to_string())?;
     }

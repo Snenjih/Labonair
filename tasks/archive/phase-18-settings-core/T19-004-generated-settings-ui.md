@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T19-002 (`SettingsStore`), T16-007 (`labonair-settings-ui` extrahiert), T19-000 (Settings-Design-Kontrakt)
@@ -30,17 +28,6 @@ Shortcuts, AI, MCP, Personalisierung) aus `AREAS` (T19-001).
   Panes (Theme-Grid, Shortcuts, AI, MCP, Personalisierung aus T18-007).
 - T19-001/002: `SettingsContent`-Baum, `SettingsStore`,
   `SettingsStore::source_of`.
-- Zed-Vorbild (fast 1:1 die Blaupause):
-  `zed-refrence/zed/crates/settings_ui/src/settings_ui.rs` —
-  `struct SettingField<T> { pick: fn(&SettingsContent) -> Option<&T>, ... }`,
-  `SettingFieldRenderer` (Registry pro Typ: `bool → Switch`,
-  Enum → `EnumVariantDropdown`, Zahl → `NumberField`,
-  `String → SettingsInputField`, Sondertypen → Custom),
-  `struct SettingItem { field, metadata, files }`,
-  `enum SettingsPageItem { SectionHeader | SettingItem | SubPageLink |
-  DynamicItem | ActionLink }`, `struct SettingsPage`.
-  `zed-refrence/zed/crates/settings_ui/src/page_data.rs` — wie die Seiten aus
-  Feld-Listen deklarativ zusammengesetzt werden.
 
 ## Anweisungen zur Umsetzung
 1. **`SettingField<T>`** in `labonair-settings-ui`:
@@ -74,9 +61,6 @@ Shortcuts, AI, MCP, Personalisierung) aus `AREAS` (T19-001).
    - Rechte Spalte: Seiten-Kopf (Titel, Suche, Herkunfts-Badge-Legende) +
      die `SectionHeader` als **aufklappbare Disclosure-Abschnitte**
      (Default: alle offen; Zustand pro Kategorie merken).
-   - **Sprungleiste / Scroll-Spy**: eine schmale Abschnitts-Liste (oben oder
-     an der rechten Kante), Klick scrollt zum Abschnitt, der sichtbare
-     Abschnitt ist markiert. Vorbild `zed-refrence/zed/crates/settings_ui/`.
    - **`SubPageLink`**: für große Kategorien (Terminal, Editor, AI) eine
      Unter-Seite mit Zurück-Pfeil + eigenem Slug (`terminal/appearance`).
    - Jede Kategorie **und** jeder Abschnitt hat einen stabilen Deep-Link-Slug;
@@ -159,9 +143,6 @@ Shortcuts, AI, MCP, Personalisierung) aus `AREAS` (T19-001).
       `cargo test --workspace` (alle vier lokal verifiziert).
 
 ## Notizen
-- Das ist die P0-3-Kern-Task. `zed-refrence/zed/crates/settings_ui/src/
-  settings_ui.rs` + `page_data.rs` sind die direkte Vorlage — Struktur
-  übernehmen, Umfang auf Labonairs Bereiche reduzieren.
 - `SubPageLink` ist hier **nicht mehr optional** (Thema 3): mind. Terminal +
   Editor + AI bekommen Unter-Seiten, damit die Seiten nicht endlos scrollen.
   „DynamicItem" bleibt nice-to-have (AI-Provider-Liste).
@@ -172,9 +153,6 @@ Shortcuts, AI, MCP, Personalisierung) aus `AREAS` (T19-001).
   einsetzt.
 
 ## Warnungen
-- ⚠️ `pick`/`write` als `fn`-Pointer (nicht Closures) halten, damit
-  `SettingField` `Copy`/`'static` bleibt (wie bei Zed) — sonst Lebenszeit-
-  Schmerz in der Registry.
 - ⚠️ Enum-Varianten-Labels: nicht die Rust-Namen zeigen. Über `strum`
   `EnumMessage` oder eine Metadata-Map menschenlesbare Labels.
 - ⚠️ „Live wirken" heißt: `SettingsStore` benachrichtigt, die Module lesen neu.

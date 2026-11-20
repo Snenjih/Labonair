@@ -3,10 +3,8 @@
 
 //! [`SettingsStore`] — layered [`SettingsContent`] merge (T19-002).
 //!
-//! Blueprint: `zed-refrence/zed/crates/settings/src/settings_store.rs`,
-//! trimmed to what this task needs: a fixed-order layer merge, per-type
-//! computed-value cache (`register_setting::<T>()` / `get::<T>()`), and a
-//! surgical (leaf-diff, not whole-layer) persist path
+//! The store provides fixed-order layer merging, a per-type computed-value
+//! cache (`register_setting::<T>()` / `get::<T>()`), and a surgical persist path
 //! ([`SettingsStore::update_user_settings`], T19-005) built on
 //! `labonair-settings-json`.
 
@@ -48,7 +46,6 @@ pub enum SettingsLayer {
     /// §8.3 / `legacy_migrations` for historical `editor`/`mcp` input. Those
     /// keys are converted before the runtime store reads the file.
     User,
-    /// Platform-specific overrides (`platform_overrides`-shaped, Zed-style).
     /// No `SettingsContent` field carries this data yet — always empty until
     /// a follow-up task adds the wrapper type; the variant/ordering exists
     /// now so it never needs to be inserted out of order later.
@@ -58,8 +55,7 @@ pub enum SettingsLayer {
     Profile,
     /// Per-worktree `.labonair/settings.json` (T19-003). Empty until then.
     Project(WorktreeId),
-    /// Per-language editor overrides. Labonair has no LSP-per-language
-    /// editor surface yet; placeholder for parity with the Zed model.
+    /// Per-language editor overrides.
     Language(String),
 }
 
@@ -990,8 +986,7 @@ impl SettingsStore {
 
     /// Register a `Settings` type: compute its initial value from the
     /// current `merged` tree and remember how to recompute it on every
-    /// future `recompute()`. Idempotent — re-registering the same type is a
-    /// no-op (mirrors Zed's `register_setting_internal` dedup).
+    /// future `recompute()`. Idempotent — re-registering the same type is a no-op.
     pub fn register_setting<T: Settings>(&mut self) {
         let id = TypeId::of::<T>();
         if !self.registered.insert(id) {
@@ -1010,8 +1005,7 @@ impl SettingsStore {
 
     /// The current computed value for `T`. Panics if `T` was never
     /// registered (`Settings::register` / `#[derive(RegisterSetting)]` +
-    /// `labonair_settings::init` not having run for it) — same contract as
-    /// Zed's `Settings::get`.
+    /// `labonair_settings::init` not having run for it).
     #[track_caller]
     pub fn get<T: Settings>(&self) -> &T {
         self.values

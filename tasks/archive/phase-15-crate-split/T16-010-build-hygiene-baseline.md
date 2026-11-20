@@ -23,8 +23,6 @@ für die Perf-Abnahme in T21-002).
 - CI heute: `.github/` enthält Workflows (`cargo check/clippy/test/fmt`).
 - Werkzeuge: `cargo tree`, `cargo-depgraph` (Graphviz-Ausgabe),
   `cargo metadata` (JSON — für ein kleines Prüfskript).
-- Zed-Vorbild: `zed-refrence/zed/clippy.toml`, `zed-refrence/zed/typos.toml`,
-  `zed-refrence/zed/tooling/` (Workspace-weite Lints + Skripte).
 
 ## Anweisungen zur Umsetzung
 1. **Dependency-Regel-Check** `scripts/check-crate-deps.sh` (oder ein kleines

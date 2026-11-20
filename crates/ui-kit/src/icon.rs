@@ -1,22 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! Icon system — Zed-parity (`docs/architecture.md` §8.19).
+//! Icon system for UI chrome and file/folder assets.
 //!
-//! Two strictly separated concerns, mirroring Zed:
-//!
-//! 1. **UI / chrome icons** — the [`IconName`] enum below. One variant per SVG
-//!    in `crates/shell/assets/icons/*.svg`, a verbatim vendored copy of Zed's
-//!    Lucide-derived set (`zed-refrence/zed/assets/icons`, ISC) plus a small
-//!    `// + Labonair addition` set for glyphs Zed has no equivalent for
-//!    (dock-panel toggles, `house`, `shield`, …). Names follow Zed's
-//!    `strum(snake_case)` stems; [`IconName`] also carries back-compat aliases
-//!    (assoc. consts) for the port's earlier semantic names.
-//! 2. **File / folder icons** — a swappable *icon theme*
-//!    ([`labonair_theme_tokens::IconThemeContent`]). The free functions
-//!    [`file_icon_path`] / [`folder_icon_path`] / [`chevron_icon_path`] /
-//!    [`icon_for_path`] resolve a path against the active theme and return an
-//!    asset path string; render it with [`svg_path`].
+//! [`IconName`] maps UI glyphs to bundled SVG files and carries compatibility
+//! aliases for earlier semantic names. File and folder paths resolve through
+//! the active [`labonair_theme_tokens::IconThemeContent`] and render with
+//! [`svg_path`].
 //!
 //! [Lucide]: https://lucide.dev
 
@@ -305,10 +295,10 @@ Sourcehut => "sourcehut",
 Space => "space",
 Sparkle => "sparkle",
 Split => "split",
-SplitRight => "split_right", // + Labonair addition (Gorex columns-2)
-SplitDown => "split_down", // + Labonair addition (Gorex rows-2)
-Maximize2 => "maximize_2", // + Labonair addition (Gorex)
-Minimize2 => "minimize_2", // + Labonair addition (Gorex)
+SplitRight => "split_right",
+SplitDown => "split_down",
+Maximize2 => "maximize_2",
+Minimize2 => "minimize_2",
 SplitAlt => "split_alt",
 Square => "square", // + Labonair addition
 SquareDot => "square_dot",
@@ -383,10 +373,8 @@ ZedSrcCustom => "zed_src_custom",
 ZedSrcExtension => "zed_src_extension",
 }
 
-/// Back-compat aliases: the port's earlier semantic names, mapped onto the
-/// Zed-named variant that now carries the glyph. Call sites keep compiling
-/// unchanged (all uses are expression position — there are no `match` arms on
-/// these outside this crate).
+/// Compatibility aliases for earlier semantic names. All uses are in
+/// expression position; there are no `match` arms on these outside this crate.
 #[allow(non_upper_case_globals)]
 impl IconName {
     pub const Search: Self = Self::MagnifyingGlass;

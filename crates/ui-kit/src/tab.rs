@@ -120,7 +120,6 @@ impl TabItemBuilder {
         self
     }
 
-    /// A Gorex-style program tile in place of the plain leading glyph.
     pub fn leading_tile(mut self, tile: TabTileSpec) -> Self {
         self.leading_tiles = vec![tile];
         self

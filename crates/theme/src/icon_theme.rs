@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! Icon themes (T20-006, Zed-parity model — `docs/architecture.md` §8.19).
-//!
-//! A **swappable file/folder glyph mapping** with two levels of indirection:
+//! File and folder glyphs use a swappable theme with two levels of indirection:
 //!
 //! 1. `file_stems` / `file_suffixes` map a file name or extension to an
 //!    **icon key** (`"rust"`, `"typescript"`, …);
@@ -12,11 +10,10 @@
 //!
 //! `directory` / `chevron` (+ optional `named_directory_icons`) are direct
 //! asset paths. The built-in "Labonair" theme is generated from the
-//! [`DEFAULT_FILE_STEMS`] / [`DEFAULT_FILE_SUFFIXES`] / [`DEFAULT_FILE_ICONS`]
-//! tables (themselves a transcription of Zed's `"Zed (Default)"`), embedded as
-//! `assets/icon_themes/labonair.json`. The built-in Material Icon Theme uses
-//! its complete bundled mapping and SVG set. The user-file loader remains an
-//! unwired extension adapter.
+//! [`DEFAULT_FILE_STEMS`], [`DEFAULT_FILE_SUFFIXES`], and [`DEFAULT_FILE_ICONS`],
+//! embedded in `assets/icon_themes/labonair.json`. The built-in Material Icon
+//! Theme uses its complete bundled mapping and SVG set. The user-file loader
+//! remains an unwired extension adapter.
 //!
 //! # JSON format ([`IconThemeContent`])
 //!
@@ -38,8 +35,7 @@
 //! }
 //! ```
 //!
-//! Lookup order for a file name (see [`IconThemeContent::file_icon_path`],
-//! mirrors Zed's `FileIcons::get_icon`):
+//! Lookup order for a file name (see [`IconThemeContent::file_icon_path`]):
 //! 1. the whole (lower-cased) file name in `file_stems` then `file_suffixes`;
 //! 2. every dot-delimited trailing suffix, **longest first**
 //!    (`archive.tar.gz` tries `tar.gz` before `gz`; `.gitignore` tries
@@ -137,8 +133,7 @@ impl IconThemeRegistry {
     /// Replace the non-built-in themes with everything valid in `dir`.
     ///
     /// This is an extension adapter, not part of the current static catalog.
-    /// Accepts both a bare [`IconThemeContent`] and a Zed-style *family*
-    /// (`{ "name", "author", "themes": [ … ] }`). Malformed / unreadable files
+    /// It accepts a single theme or a family (`{ "name", "author", "themes": [ … ] }`). Malformed / unreadable files
     /// are skipped and returned as warnings; the built-in themes always remain.
     pub fn load_user_icon_themes(&mut self, dir: &std::path::Path) -> Vec<String> {
         self.themes.retain(|t| t.builtin);
@@ -249,7 +244,6 @@ impl IconThemeRegistry {
     }
 }
 
-/// Parse a user icon-theme file as either a single theme or a Zed-style family.
 fn parse_user_icon_theme_file(raw: &str) -> Result<Vec<IconThemeContent>, String> {
     #[derive(Deserialize)]
     struct Family {
@@ -264,9 +258,6 @@ fn parse_user_icon_theme_file(raw: &str) -> Result<Vec<IconThemeContent>, String
 }
 
 // ─────────────────────────── canonical built-in tables ──────────────────────
-//
-// A 1:1 transcription of Zed's `"Zed (Default)"` icon theme
-// (`zed-refrence/zed/crates/theme/src/icon_theme.rs`): `FILE_STEMS_BY_ICON_KEY`
 
 #[cfg(test)]
 mod tests {
@@ -288,9 +279,8 @@ mod tests {
     #[test]
     fn every_icon_key_referenced_is_defined_or_falls_back() {
         let t = IconThemeContent::default();
-        // Every stem/suffix key that has a `file_icons` entry resolves to a
-        // `file_icons/*.svg` path; the few Zed leaves undefined (`backup`)
-        // fall through to `default`.
+        // Every stem/suffix key resolves to a bundled icon or falls back to
+        // the default icon.
         for key in t.file_stems.values().chain(t.file_suffixes.values()) {
             let path = t
                 .file_icons

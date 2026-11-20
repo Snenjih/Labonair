@@ -3,8 +3,7 @@
 
 //! [`MergeFrom`] — recursive settings-layer merge (default < user < project).
 //!
-//! Trimmed port of `zed-refrence/zed/crates/settings_content/src/merge_from.rs`,
-//! cut down to the primitive/collection impls this tree actually needs (no
+//! It implements only the primitive and collection types this tree needs (no
 //! `HashMap`/`IndexMap`/`Arc` — this tree only uses `BTreeMap` for
 //! deterministic serialization).
 

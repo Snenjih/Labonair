@@ -17,10 +17,9 @@ visible for dependency auditing. The one-capability/one-capability-crate rule
 applies to product rows; composition and foundation crates have one explicit
 coordination or reusable-service responsibility instead.
 
-The dispositions below describe existing implementation and earlier product
-decisions. Under the current parity target, they are crosswalk inputs, not
-exclusions for capabilities present in the pinned Zed baseline. R07-000 must
-reconcile them before any later implementation task starts.
+The dispositions below describe the current implementation and product
+decisions. Reopen a deferred or removed capability only through an explicit
+product decision and an owner-backed contract.
 
 | Capability | Disposition | Owning module | Contract / domain crate | UI crate | Storage / integration | Canonical entry point | Current implementation state |
 |---|---|---|---|---|---|---|---|
@@ -65,7 +64,7 @@ binding without that review:
 | Remote theme/icon-theme downloads | Crosswalk against the pinned baseline | Extension and theme distribution workflows are in the parity inventory; the owner, trust model, and service boundary are defined before implementation. |
 | User theme-file import/export (local `.json`) | Crosswalk against the pinned baseline | Existing code remains dormant until the parity inventory decides whether the pinned reference has an equivalent workflow and which owner exposes it. |
 | Static shell-wide command tables | Remove | Commands and submenus are contributed by owning modules through the command registry. |
-| Full Zed feature and UI/UX parity | Adopt as a clean-room target, not a source fork | Keep an independent native Rust/GPUI implementation and use the fixed reference and [`zed-parity.md`](zed-parity.md) contracts to drive the complete capability inventory. |
+| Complete Labonair workflows | Deliver through owner-backed capabilities | Use the product contract, capability matrix, workflow catalog, and release evidence to define and verify the supported experience. |
 
 ## Rules for changing this matrix
 

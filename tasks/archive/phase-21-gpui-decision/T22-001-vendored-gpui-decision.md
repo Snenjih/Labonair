@@ -9,18 +9,10 @@
 ## Abhängigkeiten
 T21-004 (Modularitäts- & Personalisierungs-Abnahme), T21-005 (Architektur-Doku)
 
-## Ziel
-Eine begründete Entscheidung treffen (**nicht** blind umsetzen): Bleibt
-Labonair-rust bei `gpui = "0.2.2"` von crates.io, oder wird `gpui` (samt
-`gpui_*`-Begleitcrates) vom Zed-Git gepinnt/vendored, um den API-Deckel
-loszuwerden? Ergebnis ist ein ADR + ggf. ein Umsetzungs-Folgeticket — nur wenn
-ein konkretes geplantes Feature es erzwingt.
 
 ## Kontext
 - `gpui = "0.2.2"` + `gpui-component = "0.5.1"` (an 0.2.2 gepinnt) —
   `Cargo.toml` / `[workspace.dependencies]`.
-- Bekannte 0.2.2-Grenzen (aus `vergleichsbericht-zed-vs-rust.md` §0/§6.2 +
-  `crates/settings-ui`/`settings.rs`-Modul-Doc):
   - `WindowOptions` ohne always-on-top / Window-Level, ohne Max-Size, ohne
     Parent-Window-Handle → Settings-Fenster kann nicht an Main hängen /
     -minimieren; keine Max-Größe.
@@ -28,9 +20,6 @@ ein konkretes geplantes Feature es erzwingt.
   - Linux-Client-Side-Decorations / Multi-Window-Feinheiten unklar.
   - Keymap-Kontext-Prädikat-/Chord-APIs evtl. nicht voll exportiert
     (offener Punkt aus T19-008).
-- Zed selbst: `zed-refrence/zed/crates/gpui`, `gpui_macos`, `gpui_linux`,
-  `gpui_wgpu`, `gpui_tokio`, `gpui_macros`, `gpui_platform` — am Git-Tip,
-  eng mit dem Rest von Zed verzahnt.
 
 ## Anweisungen zur Umsetzung
 1. **Bedarf sammeln** (`docs/adr/0003-gpui-vendoring.md`, Abschnitt „Kontext"):
@@ -43,14 +32,6 @@ ein konkretes geplantes Feature es erzwingt.
 2. **Optionen bewerten**:
    - **A — bei 0.2.2 bleiben**: Kosten = Workarounds/Verzicht (Liste).
      Nutzen = null Wartungslast, `gpui-component` bleibt kompatibel.
-   - **B — `gpui` als Git-Pin** (`gpui = { git = "...zed...", rev = "..." }`
-     + die `gpui_*`-Begleitcrates als Path/Git): Kosten = `gpui-component`
-     0.5.1 bricht wahrscheinlich (an 0.2.2 gebunden) → entweder
-     `gpui-component` forken/patchen oder ersetzen (großer Posten, betrifft
-     das ganze `ui-kit` + alle Views); laufende Rebase-Last bei jedem
-     gpui-Update; Zeds `gpui` erwartet ggf. Zed-interne Crates
-     (`util`, `collections`, `sum_tree`, …) → mitvendorn. Nutzen = volle
-     API, Linux-Parität, zukunftssicher.
    - **C — Hybrid**: bei 0.2.2 bleiben, aber die 1–2 wirklich blockierenden
      APIs über einen kleinen plattformspezifischen Shim (eigenes
      `objc`/`x11`/`wayland`-Snippet) nachrüsten, ohne ganz `gpui` zu tauschen.
@@ -94,10 +75,6 @@ ein konkretes geplantes Feature es erzwingt.
   besser, welche APIs wirklich fehlen.
 
 ## Warnungen
-- ⚠️ CLAUDE.md Critical Rule 1 (standalone, kein Submodul zu einem externen
-  **Labonair**-Repo) betrifft `gpui` von Zed **nicht** — aber ein Git-Pin auf
-  Zed ist trotzdem eine echte Kopplung an ein fremdes, schnell bewegtes Repo.
-  Im ADR ehrlich als Risiko benennen.
 - ⚠️ `gpui-component` ist der Knackpunkt. Ohne belastbaren Plan für dessen
   Ersatz/Fork ist Option B nicht seriös empfehlbar.
 - ⚠️ Prototyp im **Wegwerf-Branch**, niemals auf `master` — der Pin würde CI

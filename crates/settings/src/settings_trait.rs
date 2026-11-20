@@ -4,8 +4,7 @@
 //! `trait Settings` — a feature-local, typed slice of the merged
 //! [`SettingsContent`] tree (T19-002 Anweisung #4).
 //!
-//! Port of `zed-refrence/zed/crates/settings/src/settings_store.rs`'s
-//! `Settings` trait, trimmed to what this app needs: no `SettingsLocation`
+//! The `Settings` trait is trimmed to what this app needs: no `SettingsLocation`
 //! parameter (project-scoped reads land with T19-003; until then every
 //! `Settings` type resolves against the single global `merged` tree).
 

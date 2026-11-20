@@ -11,11 +11,9 @@
 > **Erstellt:** 2026-09-02
 > **Gilt ab:** Nach Erreichen der Feature-Parität (Phase 15 abgeschlossen)
 
-Dieses Dokument beschreibt die strategische Weiterentwicklung von Labonair nach dem Erreichen der Feature-Parität mit der Referenz-App. Grundlage ist die **Zed-Philosophie**: so simple und performant wie möglich, maximale User-Effizienz, keine überflüssige UI, feste Orte für bestimmte Funktionen — aber Modularität und Individualisierung für Personalisierung.
 
 ---
 
-## Leitprinzipien (Zed-Philosophie angewandt auf Labonair)
 
 1. **Simple by default** — So wenig UI-Surface wie nötig. Alles was nicht aktiv gebraucht wird, verschwindet.
 2. **Fast always** — KeineOperation blockiert. Alles async, alles non-blocking.
@@ -426,7 +424,6 @@ Der AI erkennt automatisch den Typ:
 
 ### 5B) Editor-Verbesserungen
 
-**Ziel:** Editor-Qualität schrittweise auf Zed-Niveau bringen.
 
 **Priorisierte Verbesserungen:**
 1. **Multi-Cursor** — `Alt+Click` für zusätzliche Cursors, `Cmd+D` für Next-Occurrence
@@ -447,7 +444,6 @@ Der AI erkennt automatisch den Typ:
 - **Actions** — CI/CD Runs anzeigen, Logs lesen, Re-Trigger
 - **Releases** — Releases anzeigen, Notes lesen, Assets herunterladen
 - **Blame** — Editor-Integration: Zeile → Git-Blame (wer hat diese Zeile geändert?)
-- **Code-Review-Modus** — Editor zeigt PR-Diffs inline (wie Zed's multibuffer)
 
 **Integration mit bestehendem Git-Panel:**
 ```
@@ -502,16 +498,6 @@ labonair --version               # Version
 
 ### 5E) Allgemeine Kleinoptimierungen
 
-| Bereich | Optimierung |
-|---|---|
-| **Tab-Schließen** | `Cmd+W` schließt Tab, nicht App (aktuell manchmal App) |
-| **Tab-Benennung** | Automatisch aus Dateiname/Host/Pfad, editierbar per Doppelklick |
-| **Notification-System** | Toasts mit Undo-Funktion wo möglich |
-| **Clipboard** | `Cmd+Shift+C` = Copy without formatting |
-| **File-Associations** | Dateien aus Explorer im passenden Tab öffnen (Editor vs. Preview) |
-| **Keyboard-Overlay** | `Cmd+/` zeigt alle Shortcuts als Overlay |
-| **Idle-Dimming** | Tabs die lange nicht genutzt wurden, werden visuell zurückgenommen |
-| **Theme-Auswahl** | Quick-Theme-Switcher im Header (Zed-Style) |
 
 ---
 

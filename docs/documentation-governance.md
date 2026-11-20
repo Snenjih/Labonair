@@ -13,7 +13,6 @@ feature-lifecycle contracts; it does not replace them.
 |---|---|---|---|
 | `AGENTS.md` | engineering instructions | binding | Repository-wide implementation constraints and verification gates. |
 | `docs/*.md` | normative contract | binding | Current product, architecture, module, registry, design, settings, workspace, and lifecycle rules. |
-| `docs/zed-parity.md` | normative product/specification plan | binding | Pinned Zed target, clean-room boundary, full feature scope, parity inventory, and specification gates. |
 | `docs/architecture/*.md` | decomposed normative contract | binding | Layer, composition, lifecycle, and dependency rules used by agents and reviewers. |
 | `docs/architecture/graph.toml` | machine-readable policy source | binding | Exact crate ownership, layer, and internal dependency policy checked against Cargo metadata. |
 | `docs/generated/` | generated projection | derived | Human-readable views generated from canonical policy sources; never edit directly. Every view carries a deterministic source fingerprint. |
@@ -31,7 +30,6 @@ feature-lifecycle contracts; it does not replace them.
 | `docs/adr/` | accepted decision | binding for its decision | Records a deliberate architectural decision, its rationale, and consequences. |
 | `docs/audits/` | current-state evidence | descriptive | Records what the source tree currently proves, including partial migrations and blockers. |
 | `docs/reports/` | research and comparison | advisory | Preserves investigations and source comparisons; it cannot change the target. |
-| `zed-refrence/zed/` | optional frozen external reference checkout | non-authoritative | Zed comparison links may resolve here when the local gitlink is populated; CI is allowed to omit this read-only reference tree. |
 | `tasks/rework/` | active implementation queue | execution authority | Contains the ordered, bounded work needed to change the current tree. |
 | `tasks/archive/` | historical tasks | non-authoritative | Preserves the former plan and completed historical work for traceability only. |
 | `ideas/` | proposal | non-authoritative | Explores possible future directions before a product or architecture decision exists. |
@@ -48,7 +46,6 @@ Every subject has one canonical document. The index in `docs/README.md` is the
 map of those authorities:
 
 - product identity and scope → `docs/product.md`;
-- clean-room Zed parity scope and specification process → `docs/zed-parity.md`;
 - runtime layers and crate boundaries → `docs/architecture.md`;
 - machine-readable ownership and dependency policy → `docs/architecture/graph.toml`;
 - decomposed layer, composition, lifecycle, and dependency rules →

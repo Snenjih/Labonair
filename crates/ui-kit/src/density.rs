@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! Semantic UI-density tokens (Zed-parity redesign Phase 2, `docs/ui-comparison-zed-sidebar-status-bar.md`
-//! §10.3).
+//! Semantic UI-density tokens used by shared controls and feature views.
 //!
 //! [`Palette`] already carries a raw `density` multiplier (T20-007). This module
-//! turns it into a small *named* set of layout dimensions so feature renderers
-//! stop hardcoding `h(px(22.0))` / `h(px(24.0))` and instead ask for
-//! [`Density::tree_row_height`] etc. It is deliberately **not** a port of Zed's
-//! `DynamicSpacing` enum — it is a flat accessor over the one multiplier.
+//! exposes named accessors for density-adjusted layout dimensions, so feature
+//! renderers can use them instead of hardcoded pixel values.
 //!
 //! Rule (§10.3): only *rows, gaps and hit targets* scale with density. Hairline
 //! borders and focus indicators stay 1–2 logical pixels at every density.

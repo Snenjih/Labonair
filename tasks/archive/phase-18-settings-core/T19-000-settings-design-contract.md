@@ -3,19 +3,10 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T16-007 (`labonair-settings-ui` extrahiert)
 
-## Ziel
-Bevor der Zed-Style-Umbau der Settings beginnt (T19-001 ff.), einen **schriftlichen,
-verbindlichen Design-Kontrakt** für alle Settings-Seiten festlegen — damit die
-Settings nicht wieder driften wie in der Tauri-Version (verstreut, uneinheitliches
-UI je Kategorie, Optionen nur im UI ohne Modell). Der Kontrakt ist reine
-Dokumentation + eine `CLAUDE.md`-Regel; **kein Code**. Er ist die Zielvorgabe,
-gegen die T19-001–T19-010 implementieren.
 
 ## Kontext
 - `docs/architecture.md §8.3` fasst den Kontrakt bereits an — diese Task macht
@@ -24,8 +15,6 @@ gegen die T19-001–T19-010 implementieren.
   flache `CATEGORIES` (10), handgepflegte `FIELDS`-Tabelle (131 Einträge,
   driftet gegen ~170 `Preferences`-Felder), `SECTION_GROUPS`; Sonder-Panes
   (Theme-Grid, Shortcuts-Capture, AI-Provider, MCP) mit je eigenem UI-Stil.
-- Zed-Vorbild: `zed-refrence/zed/crates/settings_ui/src/settings_ui.rs` +
-  `page_data.rs` (deklarative Seiten aus `SettingField` + Renderer-Registry).
 - Referenz-Verhalten (Navigation/Copy): `reference-src/src/modules/settings/`
   (`definitions.ts` — Kategorie/Sektion-Struktur, Beschreibungstexte).
 

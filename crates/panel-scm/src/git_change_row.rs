@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Snenjih
 
-//! `GitChangeRow` — a dense version-control entry (Zed-parity redesign Phase 2,
-//! `docs/ui-comparison-zed-sidebar-status-bar.md` §9.5 / §10.4 / §12.5).
-//!
-//! Distinct from [`ListItem`](labonair_ui_kit::ListItem): a tri-state staging *control*
-//! (checkbox: Unstaged / Staged / PartiallyStaged) whose meaning is independent
-//! of the semantic status icon/tint, file identity with a full-path fallback,
+//! Dense source-control row with a tri-state staging control, file identity,
 //! and contextual actions that stay hidden until the row is hovered.
+//!
+//! It is distinct from [`ListItem`](labonair_ui_kit::ListItem): the checkbox's
+//! staging state is independent of the semantic status icon and tint.
 //!
 //! State stays with the caller. Handlers are plain
 //! `Fn(.., &mut Window, &mut App)` closures so the row can be built inside a
@@ -373,7 +371,6 @@ mod tests {
         }
     }
 
-    /// Zed-parity Phase 5.5: builds at compact / default / comfortable density
     /// and deep indent. The row is `w_full` with an ellipsised identity, so a
     /// minimum-width Git dock cannot force horizontal overflow.
     #[test]

@@ -101,8 +101,8 @@ pub struct FileManagerContent {
     pub explorer_fold_single_child_dirs: Option<bool>,
     /// Show Git status decorations (tint + letter) on Explorer rows.
     pub explorer_git_decorations: Option<bool>,
-    /// Source-Control panel change list: `true` = directory tree, `false` =
-    /// flat status buckets (Zed-parity Phase 4).
+    /// Show the Source-Control change list as a directory tree when `true` or
+    /// flat status buckets when `false`.
     pub scm_file_tree: Option<bool>,
 
     // ── SFTP dual-pane browser ─────────────────────────────────────────────

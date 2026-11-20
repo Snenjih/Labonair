@@ -35,10 +35,6 @@ Command-Palette, Verwalten über Settings › Hosts). `labonair-hosts-ui` bekomm
   `-panel-scm` (`GitPanelView`), `-panel-git-graph` (`GitGraphView`),
   `-panel-snippets` (`SnippetsView`), `-panel-ai` (`AiChatView`).
   `labonair-hosts-ui` ist **kein** Panel-Crate.
-- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/dock.rs`
-  (`Panel`-Trait, `Dock::add_panel`, `PanelHandle`,
-  `dyn PanelHandle`-Erasure), `zed-refrence/zed/crates/project_panel/src/
-  project_panel.rs` (ein konkretes `impl Panel`).
 
 ## Anweisungen zur Umsetzung
 1. **`Panel`-Trait finalisieren** in `labonair-panel` (aus T16-005-Skelett):
@@ -50,9 +46,6 @@ Command-Palette, Verwalten über Settings › Hosts). `labonair-hosts-ui` bekomm
      = `{ persistent_name, default_position, default_visible }`;
      `PanelCtor` = `Box<dyn Fn(&mut Window, &mut App) -> PanelHandle>`.
    - `iter()` / `by_name()` / `for_position(DockPosition)`.
-   - Als GPUI-Global **oder** als Feld im `Workspace` — Entscheidung: Feld im
-     `Workspace` (wie Zed die Docks am Workspace hängt), Zugriff über
-     `workspace.panel_registry()`.
 3. **`impl Panel` je Panel-Crate**:
    - `labonair-panel-explorer`: `impl Panel for ExplorerView` —
      `persistent_name() = "explorer"`, `default_position = Left`,
@@ -119,10 +112,6 @@ Command-Palette, Verwalten über Settings › Hosts). `labonair-hosts-ui` bekomm
   sie mit dem Dock.
 
 ## Warnungen
-- ⚠️ Object-Safety: `Panel`-Methoden mit `impl Trait` im Rückgabetyp oder
-  generischen Parametern brechen `dyn Panel`. In `zed/crates/workspace/src/
-  dock.rs` prüfen, wie Zed `Render` über den Handle statt über das Trait-Objekt
-  auflöst.
 - ⚠️ Keine gegenseitigen Panel-Deps einschleusen — die Registrierung lebt in
   `shell`, nicht in einem Panel-Crate.
 

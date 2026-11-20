@@ -10,7 +10,7 @@ create a mixed feature crate or a second owner. New contributions are
 registered by the owning module and wired by the composition root. Do not add
 static shell-wide command, panel, theme, host, or notification tables.
 
-Use the local `reference-src/` and `zed-refrence/` trees as read-only references. Never copy Zed implementation code into the project.
+Treat the frozen predecessor tree as read-only. Keep the native implementation and its assets independently maintained.
 
 For local execution and visual verification, use `cargo run -p labonair` or
 an explicit native Rust executable path. Never use `open -a Labonair`, because

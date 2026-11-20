@@ -1079,8 +1079,7 @@ impl App {
         self.platform.open_url(url);
     }
 
-    /// Registers the given URL scheme (e.g. `zed` for `zed://` urls) to be
-    /// opened by the current app.
+    /// Registers a URL scheme to be opened by the current app.
     ///
     /// On some platforms (e.g. macOS) you may be able to register URL schemes
     /// as part of app distribution, but this method exists to let you register

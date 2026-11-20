@@ -5,11 +5,9 @@
 //! registered panels with a single active one, plus open / size / zoom state
 //! and its own persistence record.
 //!
-//! Reduced port of `struct Dock` from
-//! `zed-refrence/zed/crates/workspace/src/dock.rs`. Kept: multi-panel storage
-//! with an active index, `add_panel` / `remove_panel` / `activate_panel` /
+//! The dock stores panels with one active index and supports
+//! `add_panel` / `remove_panel` / `activate_panel` /
 //! `toggle_open` / `toggle_panel`, resize with a per-active-panel `min_size`
-//! clamp, and a zoom flag. Omitted versus Zed: the `PanelButtons` dock-edge
 //! button strip (`docs/architecture.md` §5 — Labonair toggles live in the
 //! status bar, T18-003), the `Entity<Dock>` wrapper + `PanelEvent`
 //! subscriptions (no panel subscribes to its dock yet; zoom/close are driven
@@ -22,8 +20,7 @@ use gpui::{px, App, Pixels};
 use labonair_panel::{AnyPanelHandle, DockPosition};
 use serde::{Deserialize, Serialize};
 
-/// Thickness of the drag handle on a dock's resizable edge. Ported from Zed's
-/// `RESIZE_HANDLE_SIZE` (`dock.rs`).
+/// Thickness of the dock resize handle.
 pub const RESIZE_HANDLE_SIZE: Pixels = px(6.0);
 
 /// Default size (width for L/R, height for bottom) of a freshly-created dock,
@@ -273,10 +270,8 @@ impl Dock {
     }
 }
 
-/// Persisted layout of one dock. The equivalent of Zed's
-/// `persistence::model::DockData`, reduced to Labonair's needs
-/// (`panel_positions` is unnecessary — a moved panel is simply the one that
-/// appears in another dock's `panel_order`).
+/// Persisted layout of one dock. A moved panel is represented by the dock's
+/// `panel_order` field rather than a separate positions list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DockData {
     /// [`position_slug`] of the dock this record describes.

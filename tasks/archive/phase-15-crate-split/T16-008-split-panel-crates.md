@@ -46,9 +46,6 @@ Task: reiner Move + Kompilierbarkeit. Das `impl Panel` für die fünf Panels
   SSH-/SFTP-Tabs geht über hereingereichte Callbacks (`Fn(HostId)` o.ä.), die
   der Aufrufer (heute `Workspace`/`shell`, ab T19-010 auch `settings-ui`)
   stellt.
-- Zed-Vorbild: `zed-refrence/zed/crates/{project_panel,outline_panel,git_ui,
-  agent_ui}` — je Panel ein Crate, hängt von `workspace` + `ui` + Projekt/
-  Backend, nie voneinander.
 
 ## Anweisungen zur Umsetzung
 1. Für jeden der fünf Panel-Crates:

@@ -165,7 +165,7 @@ edges; the dependency verifier rejects every unlisted edge.
   one-way edge. R08-007 deleted the now-unused `interaction-contracts` crate
   (its only export, `ShortcutId`, is gone).
 - `settings::OpenShortcuts` is modeled as a compatibility alias for the
-  canonical `zed::OpenKeymap` action. Validation accepts it, while discovery
+  legacy keymap-open action alias. Validation accepts it, while discovery
   excludes it from visible command rows.
 - Dynamic palette pages now consume a typed `SubmenuRegistry` of immutable
   snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,

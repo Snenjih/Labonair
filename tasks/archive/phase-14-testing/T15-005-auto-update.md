@@ -63,8 +63,6 @@ Referenz:
       `cargo test --workspace` + `cargo fmt --all --check` grün.
 
 ## Notizen
-- Sparkle-Anbindung aus Rust: via `objc2`/Framework-Bindings oder ein kleines Swift-Shim.
-  Zed nutzt einen eigenen Auto-Updater — dessen Ansatz als Referenz ansehen.
 - Linux-Update (AppImage/Flatpak/Repo) ist „später", kein Blocker.
 
 ## Warnungen

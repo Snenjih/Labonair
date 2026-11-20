@@ -9,7 +9,7 @@
 
 The Editor is currently hosted as a Workspace tab and its GPUI adapter is in
 `labonair-workspace`. The Workspace also has a separate recursive pane tree
-for cross-capability layout. A Zed-like editor needs more than one editing
+for cross-capability layout. A full editor needs more than one editing
 surface in one tab: users must be able to compare files, keep related views
 side by side, and focus an editor group without turning every editor action
 into a shell concern.
@@ -62,11 +62,9 @@ owner.
 
 ## Consequences
 
-The scope in consequence 8 below is superseded by the current full
-clean-room parity target in [`../zed-parity.md`](../zed-parity.md).
-Editor-owned split state remains the initial boundary; R07-000 must specify
-how remote editor views, collaboration, and their session lifecycle extend
-that contract before implementation.
+The scope in consequence 8 remains the initial boundary. Remote editor views,
+collaboration, and cross-window synchronization require a separate product
+decision and owner-backed contract before implementation.
 
 Positive consequences:
 
@@ -83,8 +81,8 @@ Costs and constraints:
 - the Editor needs a small tree/state contract before the visual work starts;
 - Workspace session serialization needs a typed adapter and a migration;
 - the editor must define focus, close, empty, and narrow-layout behavior;
-- this decision does not authorize copying Zed's implementation or importing
-  its dependency graph or license obligations.
+- this decision does not change the application's dependency or licensing
+  requirements.
 
 ## Rejected alternatives
 
@@ -99,11 +97,10 @@ implementation.
 Rejected. It would duplicate the existing Workspace layout owner and add a
 permanent product surface without a separate user workflow.
 
-### Copy Zed's editor/display-map implementation
+### Copy another editor's implementation
 
-Rejected. Zed is a clean-room behavioral and architectural reference only.
-Labonair will implement the required contracts independently under its own
-module, token, dependency, and licensing rules.
+Rejected. Labonair will implement its editor contracts under its own module,
+token, dependency, and licensing rules.
 
 ## Exit condition
 

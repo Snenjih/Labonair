@@ -15,7 +15,6 @@ Syntax-Highlighting für die unterstützten Programmiersprachen implementieren, 
 ## Kontext
 Labonair's Editor unterstützt viele Sprachen (C/C++, CSS, Go, HTML, Java, JavaScript, JSON, Markdown, PHP, Python, Rust, SQL, XML u.a.) über CodeMirror-Lang-Pakete, und mehrere Editor-Themes (Atomone, Aura, Copilot, Github, Nord, TokyoNight, Xcode). Die Syntax-Highlighting wird im Editor über Sprach-Regeln realisiert.
 
-In der Rust/GPUI-Welt ist der Standard-Ansatz Tree-Sitter (Grammar-basierte Parsing), das auch Zed nutzt. Tree-Sitter-Grammatiken stehen für die meisten gängigen Sprachen zur Verfügung. Über die Editor-Engine (aus T06-001 kommen TreeSitter-Fähigkeiten) soll ein Highlighting auf Basis der Tree-Sitter-Syntax-Captures realisiert werden.
 
 Die Editor-Themes (Farbschemas) müssen dem Benutzer-Theme folgen — d.h. auch bei Theme-Wechsel dynamisch aktualisieren.
 

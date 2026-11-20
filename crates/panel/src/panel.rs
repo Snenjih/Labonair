@@ -12,12 +12,9 @@
 //! on **no** `labonair-panel-*` crate; its only dependencies are `gpui` and
 //! `labonair-gpui-ext`.
 //!
-//! The types here are ported from Zed
-//! (`zed-refrence/zed/crates/workspace/src/dock.rs` and
-//! `.../status_bar.rs`, plus the extracted `zed-refrence/zed/crates/panel/`
-//! crate) and reduced to what Labonair's fixed four-zone layout needs. They are
-//! intentionally **unused** until T17-001/003 wire them into the workspace and
-//! status bar.
+//! The contracts are reduced to what Labonair's fixed four-zone layout needs.
+//! They remain intentionally **unused** until the workspace and status bar
+//! integrations in T17-001/003 are complete.
 
 mod dock;
 mod project_diff;

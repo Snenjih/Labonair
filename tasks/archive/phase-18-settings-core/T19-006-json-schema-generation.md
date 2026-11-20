@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T19-001 (`labonair-settings-content`), T19-005 (Rohe `settings.json` editierbar)
@@ -22,11 +20,6 @@ Feld"), (b) die Grundlage für spätere Editor-Autocomplete in der
 - `crates/editor` — TreeSitter-Editor; ein echtes JSON-LSP gibt es nicht.
   „Autocomplete" hier = schema-getriebene, einfache Vervollständigung / Hover
   im Editor (klein), nicht ein voller Language-Server.
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/settings/src/settings_store.rs` —
-  `SettingsJsonSchemaParams`, `json_schema` (schemars), Registrierung als
-  `zed://schemas/settings/...`.
-  `zed-refrence/zed/crates/json_schema_store/`.
 
 ## Anweisungen zur Umsetzung
 1. **Schema-Erzeugung**: `labonair_settings::json_schema() -> serde_json::Value`

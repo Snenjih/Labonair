@@ -28,11 +28,6 @@ die Registry.
 - `crates/shell/src/bar_items.rs` (455 Z.) — `BarItemId`, `BarLoc`
   (`Titlebar`/`Statusbar`), `BarSide` (`Left`/`Right`), `Placements`,
   `default_placement`, `placement_patch`, `BAR_ITEM_ORDER`, `BarLayoutTick`.
-- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/status_bar.rs` —
-  `trait StatusItemView: Render`, `HideStatusItem`
-  (`Arc<dyn Fn(&mut SettingsContent)>` + `apply(cx)` → `update_settings_file`),
-  `left_items`/`right_items: Vec<Box<dyn StatusItemViewHandle>>`,
-  `add_left_item`/`add_right_item`, `set_active_pane_item`-Callback.
 - Layout-Vertrag (`docs/architecture.md`): Statusbar-Items **nur** in der
   Statusbar (kein Titlebar-Scope mehr), links = Panel-Steuerung, rechts =
   Info-Dropdowns.
@@ -136,8 +131,6 @@ die Registry.
 - Die **Personalisierung** (Rechtsklick → links/rechts/ausblenden + Persistenz)
   ist T18-005. Hier zählt nur: Items sind self-describing + registry-gerendert,
   Default-Seiten stimmen mit dem Layout-Vertrag überein.
-- `HideStatusItem` bei Zed schreibt in `SettingsContent` — bei uns wird das in
-  T18-005 an `statusBarItemPlacements` gebunden; hier reicht `hideable() -> bool`.
 
 ## Warnungen
 - ⚠️ Der CWD-Breadcrumb hat State (expandiert? offenes Segment-Menü? Subdir-

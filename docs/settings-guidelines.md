@@ -37,7 +37,7 @@ editor, not a general application-management window.
    migrations, serialization, UI metadata, command IDs, tests, and documentation.
 
 10. **Dense native navigation.** The Settings rail is one UI-kit tree over the
-    owner-backed pages in the [Settings crosswalk](parity/settings-crosswalk.md).
+    owner-backed pages in the [Settings contract](settings.md).
     Root selection and disclosure are separate actions; section children are
     scroll anchors, not management pages. Pages start collapsed; selecting a
     root does not disclose its section anchors. Search results and deep links

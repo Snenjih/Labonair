@@ -8,13 +8,13 @@ target rule for a claim that the current tree already satisfies it.
 
 The current product and engineering contracts are in [`docs/README.md`](docs/README.md). Read the relevant normative documents before changing architecture, product behavior, module boundaries, settings, registries, or UI. The canonical repository placement is [`docs/repository-layout.md`](docs/repository-layout.md), and the required boundary-first change workflow is [`docs/feature-lifecycle.md`](docs/feature-lifecycle.md).
 
-For the shortest safe agent path, read [`docs/agents/README.md`](docs/agents/README.md) and use its change matrix, pre-change contract, finish gates, and handoff template. The complete reform goal is recorded in [`docs-reform-plan.md`](docs-reform-plan.md); it is a plan, not a replacement authority.
+For the shortest safe agent path, read [`docs/agents/README.md`](docs/agents/README.md) and use its change matrix, pre-change contract, finish gates, and handoff template. The repository reform requirements are recorded in [`docs/reform/README.md`](docs/reform/README.md); they do not replace the normative product contracts.
 
 ## Product direction
 
 Labonair is a fast, keyboard-first Dev-Op workspace for local and remote work. Terminal, editor, SSH, SFTP, Git, transfers, themes, keymap, notifications, and AI are independent feature modules. The product supports both project workspaces and standalone tool use.
 
-The application is not a terminal-only app, not an IDE-only app, and not a Zed fork. Zed is used as a behavioral and architectural reference only; its source is not copied.
+The application is not a terminal-only app or an IDE-only app. Keep the product's implementation, assets, and architecture independently owned.
 
 ## Architecture rules
 
@@ -61,7 +61,7 @@ Notifications are shown in the statusbar notification dropdown. There is no toas
 - Do not block the GPUI foreground thread. Use async work, Tokio tasks, or `spawn_blocking` for I/O.
 - Do not use `unwrap()` for predictable runtime errors; return descriptive results.
 - Do not add speculative abstractions or compatibility paths without an explicit removal reason.
-- Consult GPUI and the local Zed reference source before relying on undocumented APIs.
+- Consult GPUI documentation and its vendored API source before relying on undocumented APIs.
 - Never expose secrets in source, logs, SQLite, tests, or commits.
 - Run the native application with `cargo run -p labonair` or an explicit
   `target/**/labonair` path. Never use `open -a Labonair` for development or

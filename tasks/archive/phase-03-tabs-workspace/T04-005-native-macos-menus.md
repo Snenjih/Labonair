@@ -25,8 +25,6 @@ Referenz:
 - `reference-src/src-tauri/tauri.conf.json` / `menu`-Aufbau in `lib.rs`.
 
 ## Anweisungen
-1. GPUI-Menü-API klären (`gpui::Menu`, `MenuItem`, `cx.set_menus(...)` — in gpui/Zed-Source
-   verifizieren; Zed hat eine vollständige macOS-Menüleiste als Vorlage).
 2. Menüstruktur 1:1 aus dem Original übernehmen (Reihenfolge, Trenner, Untermenüs,
    Tastenkürzel-Anzeige). Jeder Eintrag löst eine GPUI-Action aus.
 3. Actions an dieselben Handler binden, die auch die Shortcut-Registry nutzt (T12-002) —
@@ -51,4 +49,3 @@ Referenz:
 
 ## Warnungen
 - ⚠️ GPUI-Menü-API ist Plattform-spezifisch — Linux-Menüs später (kein Blocker für macOS-first).
-- ⚠️ Keine erfundene API — Zed-`crates/zed/src/zed/app_menus.rs` als konkrete Vorlage lesen.

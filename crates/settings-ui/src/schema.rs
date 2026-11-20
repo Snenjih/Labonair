@@ -5,8 +5,7 @@
 //! hand-maintained `FIELDS: &[FieldDef]` table (T16-007's `fields.rs`, 131
 //! entries chronically drifting against ~170 `Preferences` fields).
 //!
-//! Blueprint: `zed-refrence/zed/crates/settings_ui/src/settings_ui.rs`'s
-//! `SettingField<T>` + `SettingFieldRenderer` registry, scoped down to what
+//! The `SettingField<T>` and `SettingFieldRenderer` registry is scoped to what
 //! Labonair needs (`docs/settings-guidelines.md` rule 3): every entry below is
 //! a single declarative line naming a real `SettingsContent` value field, a widget
 //! kind (`FieldControl`), and copy. `get`/`set` are generated once by the

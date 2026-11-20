@@ -4,10 +4,8 @@
 //! Shared `Divider` primitive.
 //!
 //! Port of `reference-src/src/components/ui/separator.tsx`:
-//! `shrink-0 bg-border`, `h-px w-full` horizontal / `w-px self-stretch`
-//! vertical. Zed's counterpart is
-//! `zed-refrence/zed/crates/ui/src/components/divider.rs`.
-//!
+//! It uses `shrink-0 bg-border`, with `h-px w-full` horizontally and
+//! `w-px self-stretch` vertically.
 //! Replaces the `div().h(px(1.0)).bg(border)` / `div().w(px(1.0)).bg(border)`
 //! one-offs hand-rolled across `crates/shell/src/titlebar.rs`,
 //! feature markdown renderers (`MdBlock::Rule`),

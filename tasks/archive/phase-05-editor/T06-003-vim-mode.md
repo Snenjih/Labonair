@@ -13,7 +13,6 @@ T06-001 (Editor-Fundament)
 Einen funktionsfähigen Vim-Modus im Editor implementieren (Normal-, Insert-, Visual-Modus und Grundkommandos), der über eine Einstellung umschaltbar ist und das vim-typische Tastaturlayout sowie eine Auswahl an Kommandos und Motion unterstützt.
 
 ## Kontext
-Labonair bietet Vim-Modus über den CodeMirror-Vim-Addon. Viele Nutzer wollen vim-ähnliche Bearbeitung (Modal-Editieren, Motion, Kommandos). In der Rust/GPUI-Welt gibt es Vim-Modus-Implementierungen in verschiedenen Editor-Engines; eine gängige Wahl (wie von Zed) ist der `vim`-Modus über die `vim`-Crate (zx- Kollektiv), die eine Vim-Emulation bietet, die mit einem Textpuffer-Wrapper interagiert.
 
 Ziel ist ein solider, umschaltbarer Vim-Modus mit den meistgenutzten Funktionen:
 - Modale (Normal/Insert/Visual) mit Status-Anzeige.

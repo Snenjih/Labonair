@@ -26,9 +26,6 @@ Task: reiner Move, API stabil.
   `effective_binding`, `resolve_conflict`, `shortcut*`, `Conflict`,
   `KeybindMap`, `ShortcutId` für die Shortcuts-Settings-Seite),
   `menu.rs` (`apply_keybinds`).
-- Zed-Vorbild: `zed-refrence/zed/crates/command_palette/`,
-  `zed-refrence/zed/crates/command_palette_hooks/`,
-  `zed-refrence/zed/crates/fuzzy/` (eigener Fuzzy-Crate).
 
 ## Anweisungen zur Umsetzung
 1. **`crates/command-palette/` anlegen** (`labonair-command-palette`,

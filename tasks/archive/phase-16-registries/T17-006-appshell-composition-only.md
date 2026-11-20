@@ -25,10 +25,6 @@ kein manuelles `observe`-Boilerplate für ein Dutzend Entities.
   jeweils eigene, self-registrierende Systeme im `Workspace`.
 - `WorkspaceLiveBridge` (`sync_live_bridge`) — der Snapshot wird heute pro
   Frame aus Shell + Explorer neu geschrieben.
-- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/workspace.rs`
-  (`Workspace::render` — komponiert `titlebar`, `Dock`s, `pane_group`,
-  `status_bar`, `modal_layer`, `toast_layer`) + `zed-refrence/zed/crates/
-  title_bar/`.
 
 ## Anweisungen zur Umsetzung
 1. **Zielzustand `AppShell`** (Felder):

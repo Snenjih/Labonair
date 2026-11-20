@@ -9,13 +9,6 @@
 ## Abhängigkeiten
 T16-006 (`labonair-workspace`), T16-003 (`labonair-notifications`), T16-004 (`labonair-command-palette`)
 
-## Ziel
-Die heute in `AppShell::render` einzeln zusammengesteckten Overlays
-(Command-Palette, Bookmarks, Updater, Bar-Menüs, Breadcrumb-Menüs, Toasts) durch
-zwei wiederverwendbare Layer nach Zed-Vorbild ersetzen: `ModalLayer` (ein
-aktiver, fokus-fangender Modal) und `ToastLayer` (gestapelte, nicht-blockierende
-Toasts). Sie sind Teil des `Workspace`/der Shell-Komposition — der Layout-Vertrag
-nennt sie als einzige „Overlay-Ebene".
 
 ## Kontext
 - Heute: `crates/shell/src/app_shell.rs::render` — am Ende:
@@ -25,12 +18,6 @@ nennt sie als einzige „Overlay-Ebene".
   `deferred`/`anchored` Konstrukt. Palette-/Bookmark-Events werden über
   `pending_commands`/`pending_bookmarks`-Vec + `drain_*` im nächsten Render
   verarbeitet.
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/workspace/src/modal_layer.rs` — `ModalLayer`,
-  `trait ModalView: Focusable + Render`, `Workspace::toggle_modal`,
-  `dismiss_on_focus_lost`, Fokus-Trap.
-  `zed-refrence/zed/crates/workspace/src/toast_layer.rs` — `ToastLayer`,
-  gestapelte Toasts mit Auto-Dismiss.
 - `labonair-notifications::render_overlay` liefert heute die Toasts.
 
 ## Anweisungen zur Umsetzung
@@ -118,7 +105,6 @@ Festgehalten in `docs/architecture.md §8.8`:
    nur die Palette nutzt `open_modal` / `hide_modal` direkt.
 
 ## Notizen
-- `ModalLayer` hält **einen** aktiven Modal (wie Zed). Kein Modal-Stack.
 - Die transiente `Cmd+F`-Suche (T18-002) wird ebenfalls ein `ModalView`
   (oder ein leichtes Overlay) — deshalb die API generisch halten.
 

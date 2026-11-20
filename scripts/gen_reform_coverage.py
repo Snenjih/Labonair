@@ -28,16 +28,16 @@ def main() -> int:
         f"<!-- Source fingerprint: `{fingerprint}` -->",
         "",
         "This view is generated from [`../reform/requirements.toml`](../reform/requirements.toml).",
-        "It maps every definition-of-done requirement in `docs-reform-plan.md` to its",
+        "It maps each repository-documentation requirement to its",
         "current status, evidence, limitation, and bounded next task.",
         "",
-        "| ID | Plan section | Status | Owner | Requirement | Evidence | Limitation | Next task |",
+        "| ID | Contract area | Status | Owner | Requirement | Evidence | Limitation | Next task |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for record in records:
         next_task = record["next_task"]
         lines.append(
-            f"| `{record['id']}` | `{record['plan_section']}` | **{record['status']}** | "
+            f"| `{record['id']}` | {record['contract_area']} | **{record['status']}** | "
             f"{record['owner']} | {record['requirement']} | {'; '.join(record['evidence'])} | "
             f"{record['limitation']} | [`{next_task}`](../../{next_task}) |"
         )

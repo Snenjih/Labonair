@@ -7,9 +7,7 @@
 * **Status:** Superseded by ADR 0003 (historical event-bus decision)
 * **Date:** 2026-09-04
 * **Deciders:** project owner (Snenjih)
-* **Related:** `docs/architecture.md §8.11`, roadmap task **T17-008**,
-  `../reports/vergleichsbericht-zed-vs-rust.md` (P3 recommendation "`AppEvent` bus:
-  use it or drop it"), ADR 0001
+* **Related:** `docs/architecture.md §8.11`, roadmap task **T17-008**, ADR 0001
 
 ## Context
 
@@ -21,7 +19,7 @@ typed [`AppEvent`] enum that new code emits / decodes via
 
 Before this ADR the only *dedicated* subscriber was `spawn_event_logger` in
 `crates/app/src/main.rs` — it decoded every event and wrote a `tracing`
-line, nothing else. The comparison report flagged this as "logged-but-unused
+line, nothing else. The inventory flagged this as "logged-but-unused
 infrastructure — either wire it or delete it".
 
 ### Inventory — what is actually emitted, and who consumes it

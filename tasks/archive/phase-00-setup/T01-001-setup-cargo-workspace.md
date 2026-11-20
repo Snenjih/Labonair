@@ -79,8 +79,6 @@ tokio = { version = "1", features = ["full"] }
 russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "2.3.0"
 
-# Git — KEIN git2/libgit2. Das Original shellt zum `git`-CLI aus
-# (lokal UND remote-over-SSH via GitExecutor). Parität = gleiche Strategie beibehalten.
 
 # SQLite
 rusqlite = { version = "0.40", features = ["bundled"] }
@@ -246,7 +244,6 @@ pub mod theme_store;
 ## Warnungen
 
 - ⚠️ **gpui ist pre-1.0** — API-Brüche zwischen Versionen sind möglich. Pin eine spezifische Version.
-- ⚠️ **Dokumentation ist dünn** — Die offizielle Empfehlung ist "lese den Zed-Code". Für GPUI-Internas den Zed-Monorepo unter `crates/gpui/` konsultieren.
 - ⚠️ **Kein WebView** — GPUI kann keine Web-Inhalte rendern. Falls jemals Markdown-Vorschau mit Web-CSS benötigt wird, geht das nicht.
 
 ## Weiterführende Tasks

@@ -12,12 +12,7 @@
 - Composition entry point: `labonair_theme_ui::apply_theme_metrics` /
   `window_background`
 
-## Goal
 
-Replace Labonair's visual system with Ciel's (`~/Developer/active/Ciel`,
-`packages/app/DESIGN.md`): colors, radius, spacing/control scale, active-state
-matrix, menus/dropdowns/dialogs, chrome heights. Clean-room: measured values
-and rules, no source copied. Zed icon set stays.
 
 ## Scope
 

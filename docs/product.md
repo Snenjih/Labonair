@@ -20,18 +20,16 @@ The primary unit is a workspace. A workspace may represent a project, a remote e
 
 ## Non-goals
 
-- Labonair is not a Zed fork and does not copy Zed source code.
-- Labonair targets clean-room feature and UI/UX parity with the fixed reference
-  in [`zed-parity.md`](zed-parity.md); it does not inherit Zed's implementation,
-  branding, or assets.
-- Marketplace, extension, remote, collaboration, AI, and hosted-service
-  workflows in the pinned reference are included in the parity inventory.
-  Their Labonair implementations require independent owners and service,
-  security, and distribution review.
-- Settings keeps typed value ownership, while its navigation, categories,
-  controls, and behavior are crosswalked to the pinned reference. Capability
-  management remains with its owner and may be reached from Settings only when
-  the parity specification calls for that user workflow.
+- Labonair owns its product scope, interaction model, implementation, and
+  assets. Product behavior is specified by this contract and the owner-backed
+  capability and workflow records.
+- Marketplace, extension, collaboration, and hosted-service workflows require
+  an explicit product decision, capability owner, service contract, and
+  security and distribution review before implementation.
+- Settings keeps typed value ownership; navigation, categories, controls, and
+  behavior follow the Labonair product and design contracts. Capability
+  management remains with its owner and is exposed through its canonical
+  entrypoint.
 - The application must not preserve a feature merely because it existed in the Tauri predecessor.
 
 ## Core principles
@@ -68,12 +66,10 @@ Existing implementation may be reused only when it satisfies this contract. Comp
 
 ### Deliberate scope
 
-The pinned Zed baseline defines the complete feature and workflow inventory.
-Existing `defer` and `remove` dispositions are crosswalk inputs, not exclusions
-from that target. Every reference capability receives an owner and a parity
-status; any intentional difference from the reference is recorded explicitly.
-Labonair-specific capabilities remain in scope when they serve the local and
-remote development workflows.
+The capability matrix and workflow catalog define Labonair's feature scope.
+Every retained capability has an owner, canonical entrypoint, contract, and
+acceptance evidence. Deferred or removed work stays outside the release scope
+until a product decision reopens it.
 
 ## Product surfaces
 
@@ -91,8 +87,6 @@ No feature may add a new permanent global strip, badge row, or shell toolbar wit
 
 - One universal tab bar manages all registered tab content, including Editor,
   Terminal, Source Control, Git Graph, DiffView, Settings, and feature views.
-  This is an intentional Labonair divergence from Zed-specific tab grouping;
-  the complete decision is specified in [`zed-parity.md`](zed-parity.md).
 - Themes and icon themes are selected through command-palette submenus with live preview.
 - Hosts are selected through a command-palette submenu; `Enter` opens SSH and `Shift+Enter` opens SFTP.
 - The titlebar's global menu exposes Keymap, Themes, Icon Themes, and Hosts.
@@ -102,5 +96,5 @@ No feature may add a new permanent global strip, badge row, or shell toolbar wit
 - Notifications are persistent entries in the statusbar notification dropdown. There is no toast system.
 - Transfers are represented by a statusbar item with progress and history.
 - Jump hosts are part of connection configuration and connection execution, not a standalone primary menu.
-- AI and agent workflows are part of the parity inventory. Their UI and service
-  contracts follow the same owner-first design as other capabilities.
+- AI and agent workflows follow the same owner-first design as other
+  capabilities.

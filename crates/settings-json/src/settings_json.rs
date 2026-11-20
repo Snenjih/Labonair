@@ -3,8 +3,7 @@
 
 //! Surgical single-node edits to a `settings.json` text (T19-005).
 //!
-//! Port of `zed-refrence/zed/crates/settings_json/src/settings_json.rs`,
-//! trimmed to what this task needs: no `editing` cargo feature gate (always
+//! Trimmed to what this crate needs: no `editing` cargo feature gate (always
 //! compiled — this crate exists *only* for editing), and
 //! `parse_json_with_comments` dropped (labonair already has a JSONC-tolerant
 //! parse path in `labonair-settings-content`/`jsonc-parser`, used by
@@ -25,9 +24,7 @@ use std::ops::Range;
 use std::sync::LazyLock;
 use tree_sitter::{Query, StreamingIterator as _};
 
-/// `Range::contains` extended to also accept `other == self` at the
-/// endpoints (`zed_util::RangeExt::contains_inclusive`, inlined here so this
-/// crate has no dependency on Zed's `util` crate).
+/// `Range::contains` extended to also accept `other == self` at the endpoints.
 fn contains_inclusive(container: &Range<usize>, other: &Range<usize>) -> bool {
     container.start <= other.start && other.end <= container.end
 }

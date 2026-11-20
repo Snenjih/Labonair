@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T19-002 (`SettingsStore`), T19-004 (Settings-UI aus Modell)
@@ -22,13 +20,6 @@ synchron.
   Kommentare gibt es keine (die Datei ist maschinen-geschrieben). JSON-
   Editieren ist nicht vorgesehen.
 - T19-002: fs-Watch auf `labonair-settings.json`; T19-004: `SettingField.write`.
-- Zed-Vorbild:
-  `zed-refrence/zed/crates/settings_json/` — `update_value_in_json_text`,
-  `infer_json_indent_size` (surgische Text-Edits, JSON5/Kommentare tolerant).
-  `zed-refrence/zed/crates/settings/src/settings_file.rs` —
-  `update_settings_file(fs, cx, |content, _| ...)` (lädt Text, wendet die
-  Mutation auf `SettingsContent` an, diff't gegen den alten Text, schreibt
-  minimal).
 
 ## Anweisungen zur Umsetzung
 1. **`labonair-settings-json` Crate** (oder Modul in `labonair-settings`):
@@ -53,11 +44,6 @@ synchron.
      direkt, um Latenz zu sparen).
 3. **`SettingField.write`** (T19-004) leitet ab jetzt über
    `update_user_settings` — die GUI erhält Kommentare/Formatierung.
-4. **Command „Open Settings (JSON)"** (im `CommandRegistry`): öffnet
-   `~/<config_dir>/labonair/labonair-settings.json` in einem Editor-Tab
-   (`labonair-editor`). Existiert die Datei nicht → aus
-   `assets/settings/initial_user_settings.json` (kommentiertes Gerüst,
-   Vorbild `zed/assets/settings/initial_user_settings.json`) anlegen.
 5. **Live-Sync GUI ⇄ Datei**: Datei im Editor speichern → fs-Watch →
    `recompute` → GUI-Felder aktualisieren. GUI-Feld ändern → surgischer
    Write → der offene Editor-Tab lädt neu (Datei-extern-geändert-Erkennung,
@@ -97,8 +83,6 @@ synchron.
       `cargo test --workspace`.
 
 ## Notizen
-- `zed-refrence/zed/crates/settings_json/` ist klein und herauslösbar — die
-  beste Vorlage. Nicht selbst einen JSON-Patcher erfinden.
 - Editor-„extern geändert"-Erkennung: falls `labonair-editor` das noch nicht
   kann, hier das Minimum (mtime-Check beim Fokus-Gewinn) ergänzen — aber
   klein halten, kein Voll-Feature.

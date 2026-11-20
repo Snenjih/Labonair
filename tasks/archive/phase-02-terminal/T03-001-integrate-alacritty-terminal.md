@@ -14,7 +14,6 @@ T02-004 (Terminal-ANSI-Palette in Theme integrieren)
 Die terminalemulationsbibliothek von Alacritty (`alacritty_terminal`) als Kern der Terminal-Engine in das Projekt einbinden. Das Ziel ist eine funktionierende, nicht interaktive Terminal-Logik, die korrekt mit PTY gestartet wird, ANSI/Escape-Sequenzen verarbeitet, Scrollback verwaltet und Zell-Daten für die spätere GPUI-Rendering-Schicht bereitstellt. Zuerst nur Backend-Logik — das visuelle GPUI-Rendering folgt in einem eigenen Task.
 
 ## Kontext
-Alacritty's Terminal-Logik ist als eigenständige Crate (`alacritty_terminal`) verfügbar und bewusst so gebaut, dass sie ohne Alacritty's Renderer nutzbar ist. Sie enthält die komplette ANSI/VTE-Parsierung, das Zell-Grid, Scrollback, Auswahl, Vi-Modus und das Ereignissystem. Zed selbst nutzt exakt diese Crate und baut darüber seine GPUI-Terminalansicht.
 
 Das ist der gleiche Ansatz, der hier verwendet werden soll:
 - Die `alacritty_terminal`-Crate stellt die Terminal-Logik bereit (kein Rendering).
@@ -71,7 +70,6 @@ Wichtig: In der Original-Labonair-App lief das Terminal über `xterm.js` im Fron
 ## Notizen
 
 - Der Fokus dieses Tasks liegt ausschließlich auf der Terminal-Logik — kein GPUI-Rendering. Trennung von Logik und Darstellung ist Absicht.
-- Der Ansatz "alacritty_terminal als Kern" ist exakt der, den auch Zed verwendet. Du kannst Zed's Vorgehen inspiriert aber nicht kopiert nutzen — eigene, schlanke Struktur aufbauen.
 - Das PTY-Handling (portable-pty) stellt die Verbindung zum System-Shell her.
 
 ## Warnungen

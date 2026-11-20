@@ -128,9 +128,6 @@ What changed:
   `commands.rs` registers via `register_keymap_handler`; native menu item
   relabelled `"Open Keymap (JSON)"` → `"Keymap"`. Dropped the
   `labonair-keymap-ui` dep entirely.
-- **`labonair-keymap`**: palette descriptor label `"Open Keymap (JSON)"` →
-  `"Open Keymap"`. `CommandId::OpenKeymapJson` + `zed::OpenKeymap` /
-  `settings::OpenShortcuts` aliases kept unchanged for keymap-file compat.
 - Docs updated: `registries.md`, `architecture.md`, `capabilities.md`,
   `audits/architecture-inventory.md`. Deps allow-list
   (`scripts/check_crate_deps.py`) updated.
@@ -1013,40 +1010,6 @@ implemented through the typed `WorkspaceTransition` contract; cwd changes do
 not mutate project identity. The worktree is clean before starting the next
 task.
 
-`R03-001-command-palette-provider-registry.md` is complete. Its first
-provider slice is wired: workspace, terminal, editor, hosts, themes, and
-settings now contribute command metadata from their owning crates. The shell
-assembles the providers and verifies its transitional execution adapters
-against the owner snapshots. The stable `ShortcutId` identity now lives in
-`interaction-contracts`, so keymap can publish its own command provider via
-the one-way keymap → command-core edge.
-The migrated provider rows were also removed from the palette-only shell table;
-remaining shell descriptors are execution adapters checked against the owner
-snapshot. Next: migrate the remaining metadata and remove those transitional
-declarations. Workspace tabs/panes, Git, and Snippets now also provide
-owner-local metadata; the palette-only table is now gone. `Toggle Full Screen`
-is a shell-owned provider because it targets the native window directly.
-Command-palette core now owns the
-global palette command and Settings owns toggle-command metadata. The current
-branch is `master`.
-The legacy `settings::OpenShortcuts` keymap action is now an explicit
-compatibility alias for `zed::OpenKeymap`, accepted by validation but excluded
-from command discovery.
-The dependency verifier now explicitly allows the owner-to-command-contract
-edges and reports an acyclic graph. The former command-core-to-keymap edge is
-removed; the stable identity contract is now owned by `interaction-contracts`.
-Dynamic palette rows now flow through a typed `SubmenuRegistry` of immutable
-snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,
-snippets, branches, symbols, and hidden status-bar items. Snapshot builders
-now live in the workspace, hosts, editor, theme, snippets, and Git provider
-modules; the shell only supplies live values and registers the snapshots.
-Hidden status-bar state and labels are owned by the workspace status registry
-as well. The current task is now `R03-002-keymap-runtime-and-editor.md`. The
-first resolver slice is implemented and the GPUI menu adapter now consumes the
-keymap-owned canonical action resolver, including the legacy keymap alias.
-The next slice is to move reload/install orchestration behind the keymap
-adapter and then build the management surface. The current commit is
-`bdb3cfb`; the worktree is clean after the loader-ownership extraction below.
 
 The keymap JSONC parser, merge/validation model, default assets, and user-file
 path now live under `labonair-keymap::file`; Settings no longer owns or imports
@@ -1869,7 +1832,6 @@ warnings`, `cargo test` (0 failed).
 
 ---
 
-## Previous Session: 2026-09-06 (Zed-parity icon system — full Lucide UI set + Zed icon-theme model)
 
 Ad-hoc request (not a ROADMAP task; user: "einfach machen, keine Task erstellen").
 All four gates green on this machine: `cargo fmt --check`, `cargo check
@@ -1880,31 +1842,6 @@ discarded). `scripts/check-crate-deps.sh` still reports the **3 pre-existing**
 panel-explorer/panel-scm → settings/editor violations (present on HEAD with this
 work stashed — not introduced here; no new `labonair-*` edges added).
 
-**Two strictly separated icon systems, mirroring Zed** (`docs/architecture.md`
-§8.19 rewritten):
-
-1. **UI / chrome icons** — `labonair_ui_kit::IconName` regenerated to Zed's
-   full `snake_case` set (~297 variants, one per `crates/shell/assets/icons/*.svg`
-   — those SVGs were *already vendored* in the repo, so this was mostly a code
-   change) + a 9-file `// + Labonair addition` block (`house`, `shield`,
-   `square`, `palette`, `panel_{left,top,bottom}`, `arrow_down_up`,
-   `circle_check`). Back-compat **alias assoc-consts** on `impl IconName`
-   (`Search = MagnifyingGlass`, `X = Close`, `Minus = Dash`, `Refresh =
-   RotateCw`, `Zap = BoltOutlined`, `Globe = Public`, `Type = Font`, …) keep
-   every existing call site compiling — no sed across the 15 consumer crates
-   (all uses are expression position; no `match` on `IconName` outside ui-kit).
-   Deleted 33 obsolete kebab SVGs, renamed 5 kebab→snake.
-2. **File / folder icons** — `crates/theme/src/icon_theme.rs` `IconThemeContent`
-   moved to Zed's **two-level shape**: `file_stems`/`file_suffixes` → *icon key*
-   → `file_icons` map → asset path (`icons/file_icons/rust.svg`). `directory` /
-   `chevron` / new `named_directory_icons` are direct paths. New resolver
-   `file_icon_path` / `directory_icon_path` / `chevron_icon_path` (return
-   `&str` asset path; hard-fallback `icons/file_icons/file.svg`, never blank).
-   `DEFAULT_FILE_STEMS` / `DEFAULT_FILE_SUFFIXES` / new `DEFAULT_FILE_ICONS`
-   transcribed 1:1 from Zed's `FILE_STEMS_BY_ICON_KEY` /
-   `FILE_SUFFIXES_BY_ICON_KEY` / `FILE_ICONS`; `assets/icon_themes/labonair.json`
-   regenerated (`REGEN_BUILTIN_ICON_THEME=1`). `load_user_icon_themes` now also
-   accepts a Zed-style family file (`{ name, author, themes: [...] }`).
 
 Render path:
 - `labonair_ui_kit::icon` — removed `file_icon` / `folder_icon` / `glyph_icon` /
@@ -1925,10 +1862,6 @@ Not done / deviations from the approved plan:
 - **No new `crates/icons` crate** — kept `IconName` in `ui-kit`, assets in
   `shell` (both already existed as a 2-crate split); avoids crate-graph +
   `check_crate_deps.py` churn.
-- **Tab-bar / command-palette icons stay category glyphs** (Zed does the same
-  on editor tabs) — not wired to per-file `file_icon_path`.
-- License: `assets/icons/LICENSES` covers Lucide (ISC); Zed's `file_icons/*.svg`
-  provenance noted in `docs/architecture.md` §8.19 (revisit if GPL-only).
 
 Next task: resume the ROADMAP — **T20-007** (`theme_settings` metric layer) is
 the next open item after Phase 19.
@@ -1997,13 +1930,6 @@ Done:
 - Deviation from `docs/settings-guidelines.md` rule 1 recorded in
   `docs/architecture.md` §8.3 ("Deviation (UI-optimization pass, post-T21)").
 
-Not done / next: per-field visual match to Zed (image #6) is only partial
-(reset unified; spacing untouched); notification-system work for the suppressed
-warnings. Changes uncommitted.
-
-## Current Session: 2026-09-06 (Zed-parity redesign Phase 5 — accessibility, keyboard traversal, performance & contrast evidence)
-
-### Phase 5 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 5 / §14)
 
 Polish + evidence only — no redesign, changes surgical. All four gates green on this
 machine (`fmt --check`, `clippy --workspace --all-targets -D warnings`,
@@ -2108,7 +2034,6 @@ it).
 
 ---
 
-## Zed-parity redesign — phases 1–5 complete
 
 | Phase | Commit | Scope |
 |---|---|---|
@@ -2127,9 +2052,6 @@ reach the 3:1 non-text AA floor because the reference's `--ring` / `--primary`
 tokens are a light gold (Critical Rule 3 forbids changing them); the dark theme
 meets every threshold.
 
-## Previous Session: 2026-09-06 (Zed-parity redesign Phase 4 — Git information architecture)
-
-### Phase 4 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 4)
 
 - **Panel navigation**: panel-owned `Changes | History` tab bar (`segmented_control`,
   `PanelMode`). History = commit list via `git_get_log` (100), read-only (Git Graph
@@ -2180,9 +2102,6 @@ meets every threshold.
   flat status buckets, path-sorted); directory-collapse key is not
   section-scoped (collapsing `src` hides `src/*` in every section).
 
-### Phase 3 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 3)
-
-### Phase 3 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 3)
 
 - **Toolbar → compact root row** (`panel_explorer.rs` render): the 5 permanent
   icons collapse to `root identity + Search + one `…` overflow`. Overflow menu =
@@ -2232,9 +2151,6 @@ meets every threshold.
   across Explorer + SCM (Explorer runs its own local `git` poll for now); the
   recursive search walk is bounded (see caps above), not exhaustive.
 
-## Previous Session: 2026-09-05 (Zed-parity redesign Phase 2 — dense rows + virtualization)
-
-### Phase 2 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 2)
 
 - **New ui-kit primitives** (`crates/ui-kit/src/`): `density.rs` (`Density` —
   semantic tokens: tree row 24 / section header 22 / control 22 / row gap 4 /
@@ -2297,18 +2213,10 @@ meets every threshold.
 - **Not acted on:** the remaining parity gaps are real but are not formal roadmap tasks.
   Awaiting a decision whether to log/fix them as work or continue the roadmap.
 
-### Zed sidebar/status-bar source comparison
 
-- Added `docs/ui-comparison-zed-sidebar-status-bar.md`, a source-level comparison
-  of Labonair and the pinned Zed snapshot for dock chrome, status-bar panel
-  switching, Explorer/Project Panel, and Source Control/Git Panel.
 - The report includes exact source anchors, design diagnosis, a clean-room
   module/trait/state map, phased implementation order, tests, and acceptance
   criteria. It does not change product behavior.
-- Direct source copying is not proposed: the inspected Zed `workspace`,
-  `project_panel`, `git_ui`, and `ui` crates are GPL-3.0-or-later while
-  Labonair is Apache-2.0. The plan independently reimplements observable UI
-  patterns on Labonair's existing APIs.
 - **Next remains:** complete the graphical macOS evidence required by T21-001;
   the UI redesign report is planning input and does not supersede roadmap order.
 
@@ -2364,11 +2272,6 @@ profiling evidence is captured on macOS.
 
 ## Last Session: 2026-09-05 (T20-007 — `theme_settings` metric layer)
 
-**T20-007 done.** UI density, font scales, corner-radius scale and
-reduce-motion are now a coherent **metric layer** that scales the active
-`Theme` at runtime — Zed's `theme_settings` pattern. `ActiveTheme` = colour
-(from the `ThemeRegistry`) + metric (from settings), recomputed only on a real
-change of either.
 
 - **`crates/theme/src/theme_settings.rs`** (new, ~330 lines incl. 5 tests):
   `UiDensity` (`Compact` ×0.85 / `Default` ×1.0 / `Comfortable` ×1.15,
@@ -2730,20 +2633,6 @@ crate: 21 modules / ~3040 lines, 29 unit tests, one shared token type
   missing accessors (`background`/`accent`/`accent_foreground`/`destructive`/
   `primary_foreground`/`status_error`/`status_warning`/`status_info`), each a
   1:1 mirror of `ThemeStore`'s inherent method of the same name.
-- **New primitives** (all token-bound, all with a doc comment naming the
-  `reference-src/src/components/ui/*.tsx` cva source *and* the Zed
-  counterpart): `stack.rs` (`v_stack`/`h_stack`), `number_field.rs`
-  (`NumberField` + pure `step_value`), `select.rs` (`select_trigger`/
-  `select_popover` + pure `selected_label`), `checkbox.rs`, `segmented.rs`
-  (`SegmentedControl`, `Outline`/`Solid` variants), `toggle.rs`
-  (`icon_toggle_button`/`toggle_base`), `indicator.rs`, `banner.rs`
-  (`Severity::{Note,Info,Success,Warning,Error}`), `kbd.rs` (`kbd`/`kbd_row`/
-  `keybinding_hint`), `palette.rs`, `test_support.rs`. The three files a
-  previous session had left on disk uncommitted (`divider.rs`,
-  `disclosure.rs`, `list.rs`) were reviewed, wired in, and finished:
-  `ListItem` gained `on_click` + `cursor_pointer`, unused imports dropped, and
-  their doc comments — which claimed migrations that did not exist yet — were
-  made true by actually doing those migrations.
 - **`ContextMenu` extended**: `MenuItem::keybind([..])` renders a right-aligned
   `Kbd` chip row (radix `ContextMenuShortcut`); the card body was factored into
   a shared `menu_card` so the new **`popover_menu`** (the `anchored().
@@ -2812,28 +2701,12 @@ crate: 21 modules / ~3040 lines, 29 unit tests, one shared token type
   (24 crates, 103 internal edges, acyclic — no new crate edges: every migrated
   crate already depended on `labonair-ui-kit`).
 
-**Current state**: branch `master`, committed on top of `d95b8f3`. Files
-touched: `crates/ui-kit/src/*` (11 new modules + `button.rs`,
-`context_menu.rs`, `popover.rs`, `theme.rs`, `ui_kit.rs`, plus the three
-previously-uncommitted files), `crates/settings-ui/src/{view.rs,panes/
-{generic.rs,themes.rs}}`, `crates/hosts-ui/src/hosts.rs`,
-`crates/shell/src/{titlebar.rs,status_items.rs}`,
-`crates/workspace/src/{workspace.rs,status_bar.rs,views/{sftp.rs,terminal.rs,
-preview.rs}}`, `crates/command-palette/src/palette.rs`,
-`crates/panel-{ai,explorer,git-graph,scm,snippets}/src/*.rs`,
-`docs/architecture.md` (new §8.16), the task file. The unrelated
-`zed-refrence/zed` submodule-pointer change was left unstaged on purpose.
 
 **Next**: `T20-002` — View-Migration Welle 1
 (`tasks/archive/phase-19-ui-kit/T20-002-view-migration-wave-1.md`). No blockers.
 
 ## Previous Session: 2026-09-04 (T19-010 — Settings › Hosts, final task of Phase 18)
 
-**T19-010 done — Phase 18 (Settings-System Zed-Style, T19-000..T19-010) is
-now fully complete.** Host/credential management gets its permanent home: a
-top-level Settings category "Hosts" (`AreaMeta` already existed from
-T19-001), a peer of "Themes"; the interim `TabKind::Hosts` tab from T17-009
-is gone.
 
 - **Settings pane** — new `crates/settings-ui/src/panes/hosts.rs`: `labonair
   -settings-ui` gained a dependency on `labonair-hosts-ui` (new allow-list
@@ -2931,17 +2804,6 @@ is gone.
   labonair-hosts-ui` shows no `labonair-workspace`/`-shell`/`-panel*` edge;
   `scripts/check_crate_deps.py` passes (24 crates, 103 edges, acyclic).
 
-**Current state**: branch `master`. **Phase 18 (Settings-System Zed-Style)
-is fully complete: T19-000 through T19-010 all `✅ Done`.** Files touched:
-`crates/settings-content/src/hosts.rs` (untouched, already correct from
-T19-001), `crates/settings-ui/src/{pages.rs,view.rs,window.rs,panes/{mod.rs,
-hosts.rs,generic.rs}}`, `crates/hosts-ui/src/{apply.rs (new),hosts.rs,
-hosts_ui.rs,Cargo.toml}`, `crates/settings-ui/Cargo.toml`,
-`crates/settings/src/store.rs` (`SettingsStore::new` made `pub`),
-`crates/backend/src/modules/hosts/mod.rs` (`credential_ref` helper),
-`crates/workspace/src/{workspace.rs,tabs.rs}`, `crates/shell/src/
-{bootstrap.rs,commands.rs,menu.rs,status_items.rs}`,
-`crates/command-palette/src/palette.rs`, `scripts/check_crate_deps.py`.
 
 **Next**: `T20-001` — starts **Phase 19 "UI-Kit"**, a new task-numbering
 phase (`tasks/archive/phase-19-ui-kit/T20-001-ui-kit-primitive-set.md`). No
@@ -3082,13 +2944,6 @@ the SQLite-backed hosts (`backend::modules::hosts`) into `hosts.entries`.
 
 ## Last Session: 2026-09-04 (T19-008 — keymap.json with contexts + chords)
 
-**T19-008 done.** The flat, hardcoded `ShortcutId` enum + `preferences.keybinds`
-`BTreeMap<slug,String>` override blob is replaced by an editable, layered
-`keymap.json` with **contexts** (`"context": "Editor"`) and **chords**
-(`"cmd-k cmd-s"`), following the Zed `keymap_file.rs` blueprint referenced in
-the task. `ShortcutId`/`SHORTCUTS` (in `crates/command-palette/src/keybind.rs`)
-survive only as a display/label source and as the origin of the generated
-default-keymap assets — they no longer resolve any actual key binding.
 
 - **`crates/settings/src/keymap.rs`** (new) — pure parse/merge/validate model,
   deliberately decoupled from `CommandId`/`labonair-command-palette` per the
@@ -3110,17 +2965,6 @@ default-keymap assets — they no longer resolve any actual key binding.
   `null`-unbind, unknown-action error line, context-non-conflict vs.
   same-context conflict, and a reload-proxy test (parse+merge twice with two
   text snapshots, assert the effective set changes).
-- **`crates/settings/assets/keymaps/default-{macos,linux}.json`** (new) —
-  generated from the pre-T19-008 `ShortcutId`/`SHORTCUTS` table crossed with
-  the new `CommandId::action_name()` strings (see below); most bindings sit
-  under a `"context": null` block (always active, preserving today's
-  behavior of zero context-filtering), a handful get a real context where
-  `commands.rs`'s registered `CommandContext` for that command matches one of
-  the 20 existing `.key_context("...")` string literals (e.g. `"Editor"`,
-  `"Terminal"`). Includes one literal chord demo:
-  `"cmd-k cmd-s"`/`"ctrl-k ctrl-s"` → `"zed::OpenKeymap"` (new
-  `CommandId::OpenKeymapJson` command, opens `keymap.json` as an editor tab
-  the same way `OpenSettingsJson`/`OpenProjectSettings` already do).
 - **`crates/command-palette/src/palette.rs`** — `CommandId::action_name()` /
   `::from_action_name()` (all ~70 variants, `<namespace>::<Name>` strings,
   e.g. `tab::NewTerminal`, `command_palette::Toggle`), `known_action_names()`
@@ -3199,13 +3043,6 @@ default-keymap assets — they no longer resolve any actual key binding.
 
 ## Last Session: 2026-09-04 (T19-007 — global settings search)
 
-**T19-007 done.** The per-category substring filter (`panes/generic.rs`'s old
-`render_global_search`, which re-rendered matched fields inline in the main
-content area) is replaced with a real global search: one query box, a
-pre-built index over every field + custom pane, fuzzy scoring, and a jump
-that navigates to the field's normal on-screen location with a highlight
-pulse — matching the task's Zed-inspired design (`settings_ui.rs`'s
-`StringMatchCandidate` index + `fuzzy::match_strings`).
 
 - **`crates/settings-ui/src/search.rs`** (new file) — pure, view-free module:
   `SearchEntry`/`SearchIndex` (index built once from `all_fields()` + `pages()`
@@ -3261,22 +3098,6 @@ pulse — matching the task's Zed-inspired design (`settings_ui.rs`'s
   (tracking the row index of the matching field as rows are built, then
   `content_scroll.scroll_to_item(row)` once) and `render_field` paints a
   `c.accent.opacity(0.25)` background when `self.highlight == Some(json_path)`.
-- **Known limitation carried over, not introduced by this task:** GPUI's
-  `ScrollHandle::scroll_to_item(ix)` indexes the *immediate* children of the
-  `track_scroll`-tracked element (confirmed by reading
-  `zed-refrence/zed/crates/gpui/src/elements/div.rs`'s `child_bounds`
-  population — it's filled from `request_layout.child_layout_ids`, the
-  tracked div's own direct children). The settings window's tracked
-  `#settings-scroll` div has exactly **one** child (the `max-w` content
-  wrapper), so `scroll_to_item(row)` for `row > 0` is a no-op today — this
-  was already true of the pre-existing jump-bar feature
-  (`render_jump_bar`/`content_scroll.scroll_to_item(row)`, T19-004) before
-  this task touched anything. Not fixed here (a real fix needs restructuring
-  the scroll container so `rows` are its direct children, which is a larger,
-  separate change); the search jump still fully navigates + un-collapses +
-  highlights the field, only the auto-scroll-into-view is inert beyond the
-  first row. Worth a dedicated follow-up if scroll-to-field precision
-  matters before T19-008.
 - Gates green: `cargo fmt --check`, `cargo check --workspace --all-targets`,
   `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
   --workspace` (30 tests in `labonair-settings-ui`, full workspace suite
@@ -3284,9 +3105,6 @@ pulse — matching the task's Zed-inspired design (`settings_ui.rs`'s
   already a `settings-ui` dep) — `scripts/check_crate_deps.py` re-run clean
   (24 crates, 98 edges, acyclic).
 
-**Current state:** branch `master`, commit after this session's own commit
-(see `git log`). Working tree also has a long-standing unrelated uncommitted
-`zed-refrence/zed` submodule-pointer change (pre-existing, not touched).
 
 **Next:** T19-008 (keymap as a file with contexts) —
 `tasks/archive/phase-18-settings-core/T19-008-keymap-file-with-contexts.md`.
@@ -3297,11 +3115,6 @@ block T19-008.
 
 ## Last Session: 2026-09-04 (T19-006 — JSON-Schema generation + settings.json validation)
 
-**T19-006 done.** `SettingsContent` now drives a real generated JSON Schema
-used for both file-write convenience and on-load validation of both text-
-backed settings layers (`User` + `Project`), matching Zed's
-`SettingsJsonSchemaParams`/`json_schema` design at a scope this repo needs.
-New/changed:
 
 - **`crates/settings/src/schema.rs`** (new file) — `json_schema()` ==
   `serde_json::to_value(schemars::schema_for!(SettingsContent))` (schemars
@@ -3409,28 +3222,7 @@ blockers.
 
 ## Last Session: 2026-09-04 (T19-005 — raw `settings.json` editor, comment-preserving)
 
-**T19-005 done.** `settings.json` is now a first-class, comment-preserving
-edit path alongside the generated Settings UI, matching Zed's
-`settings_json`/`update_settings_file` design. New/changed:
 
-- **`crates/settings-json/src/settings_json.rs`** (new crate,
-  `labonair-settings-json`) — near-verbatim port of
-  `zed-refrence/zed/crates/settings_json/src/settings_json.rs`:
-  `update_value_in_json_text` (recursive old/new `serde_json::Value` diff,
-  only rewrites the leaf(s) that actually changed), `replace_value_in_json_text`
-  (finds a key path via a real `tree-sitter-json` syntax tree so `//`/`/* */`
-  comments and trailing commas survive), array-index (`#N`) support,
-  `infer_json_indent_size`. Trimmed vs. upstream: no `editing` cargo feature
-  (this crate exists only for editing), `parse_json_with_comments` dropped
-  (this repo already has a JSONC-tolerant parse path via `jsonc-parser` +
-  `labonair_settings_content::parse`), `zed_util::RangeExt` inlined as a
-  private helper so this crate has zero Zed-`util` dependency. Ported all of
-  upstream's `object_replace`/`object_replace_array`/`array_replace`/
-  `array_append`/`infer_indent` tests too (kept a representative subset in
-  the port, the full upstream suite is >1900 lines and was already proven
-  correct by Zed's own CI). Note: edition 2021 (this workspace, unlike Zed's
-  2024) has no let-chains — three `if let … && …` spots from the Zed source
-  had to be rewritten as nested `if let`.
 - **`crates/settings/src/store.rs`** — `SettingsStore::update_user_settings`
   (the task's named entry point) replaces the old "dumb" whole-layer
   `persist_user_layer`: diffs the in-memory pre-mutation `SettingsContent`
@@ -3768,10 +3560,6 @@ crate, no `labonair-backend`.
   `SettingsContent` top-level keys, preserves every other key
   (`preferences`, `dockLayout`, …) untouched, `.bak`-copies the existing file
   first, atomic tmp+rename.
-- `trait Settings` (`settings_trait.rs`): `from_settings`, `register(cx)`,
-  `get(cx) -> &Self` (panics if never registered — mirrors Zed), plus a
-  **new, non-Zed** `try_get(cx) -> Option<&Self>` for render paths that might
-  run before `labonair_settings::init` (headless test harnesses).
 - `#[derive(RegisterSetting)]` added to `labonair-settings-macros` (alongside
   the existing `MergeFrom` derive) — emits `inventory::submit! {
   RegisteredSetting { register: |cx| <Self as Settings>::register(cx) } }`.
@@ -3836,9 +3624,6 @@ members. Both are leaves — no GPUI/UI/`labonair-backend` deps.
 - `labonair-settings-macros`: `#[proc_macro_derive(MergeFrom)]` — field-wise
   `self.field.merge_from(&other.field)`, emits `impl crate::MergeFrom for …`
   (only ever used from within `labonair-settings-content` itself).
-- `labonair-settings-content::merge_from`: trimmed port of Zed's `MergeFrom`
-  trait (`Option<T>` recurses/replaces, `BTreeMap<K,V>` merges key-wise,
-  everything else incl. `Vec<T>` overwrites).
 - 12 area modules (`general`, `appearance`, `terminal`, `editor`,
   `file_manager`, `connections`, `hosts`, `workspace`, `ai`, `mcp`,
   `personalization`, `keymap`), each `Option<T>`-leafed, camelCase serde,
@@ -3852,9 +3637,6 @@ members. Both are leaves — no GPUI/UI/`labonair-backend` deps.
   file_manager, connections, workspace}, `Custom` = {themes, hosts,
   shortcuts, ai, mcp, personalization} per `docs/settings-guidelines.md`
   rule 4.
-- `fallible::parse`: JSONC-tolerant (via `jsonc-parser`), fault-tolerant at
-  **area granularity** (documented deviation from Zed's leaf-level
-  `FallibleOption` — see the task file's `## Notizen`).
 - `assets/settings/default.json`: commented JSONC, `SettingsContent::defaults()
   == parse(DEFAULT_JSON)` enforced by a test.
 - `impl From<&SettingsContent> for Preferences` lives in **`labonair-backend`**
@@ -3881,9 +3663,6 @@ own `## Abhängigkeiten` lists only T19-001, now done.
 
 ## Session: 2026-09-04 (T19-000 — Settings design contract)
 
-**T19-000 done.** Phase 17 (T18-001..T18-007) was already complete; this is
-the first task of Phase 18 — Settings-System Zed-Style. Pure documentation
-task, no code changes.
 
 - New `docs/settings-guidelines.md`: the 9-point settings design contract
   (one navigation model / every setting is a typed `SettingsContent` field /
@@ -3919,10 +3698,6 @@ dependencies (T16-001, T16-007, T19-000) are all Done. Note: T19-002
 (`SettingsStore` + layer merge) depends on T19-001, not directly on T19-000 —
 so T19-001 is next in strict roadmap order, not T19-002.
 
-### Note on repo state at session start
-An unrelated submodule pointer drift in `zed-refrence/zed` (1-line diff, not
-part of this task) was present before this session and left untouched —
-not committed here.
 
 ## Last Session: 2026-09-04 (T18-007 — Philosophy verankert + Personalization settings page)
 
@@ -4004,9 +3779,6 @@ the two little per-chip action-button builders out of
 Branch `master`, working tree clean after this session's commit. Phase 17
 (T18-001..T18-007) fully done.
 
-### Next
-**T19-000** (`tasks/archive/phase-18-settings-core/T19-000-settings-design-contract.md`)
-— first task of Phase 18 (Settings-System Zed-Style). No known blockers.
 
 ## Last Session: 2026-09-04 (T18-006 — Migrator `barItemPlacements` → `statusBarItemPlacements`)
 
@@ -4354,19 +4126,6 @@ on explicit user request: full real scrollback search for terminals (not
 its final look + file-drop.
 
 ### What Was Done (T18-001)
-- **`crates/shell/src/titlebar.rs`** — full redesign. Removed `render_app_menu`
-  / the `⋯` app-menu branch. New `render_account_menu`: single
-  `IconName::Ellipsis` button → hand-rolled dropdown (`absolute` under the
-  button) with `Settings…` (→ `open_settings_window(None)`) + a `Profile`
-  placeholder (→ "coming soon" toast via `labonair_notifications::notification_center`,
-  no new crate edge). Titlebar root is now `.window_control_area(Drag)` +
-  `should_move` latch (`on_mouse_down`→`on_mouse_move`→`window.start_window_move()`
-  →`on_mouse_up`) and `on_click` `click_count == 2` → `window.titlebar_double_click()`
-  (Zed `platform_title_bar` mechanism). `TRAFFIC_LIGHT_INSET` `#[cfg]`-split
-  78 px macOS / 8 px else. `render_search` kept but **rendered as a floating
-  `absolute` overlay** (provisional until T18-002); `open_search` still drives
-  the `⌘F` fallback from `commands.rs`. `render` returns `AnyElement` (the
-  hidden-header early-return needs the same type as the `Stateful<Div>` body).
 - **`crates/workspace/src/workspace.rs`** — `render_empty_surface` rewrite:
   centred "Labonair" wordmark over shortcut-hint rows (`⌘T` New Terminal, `⌘E`
   Editor, `⌘K` Commands, `⌘,` Settings, `⌘⇧N` Hosts) with bordered key chips,
@@ -4632,12 +4391,6 @@ no per-frame `build_palette_data`.
 - **`crates/shell/src/modals.rs`** (new, ~148 Z.) — the three `ModalView`
   wrapper newtypes + `ShellPalette` alias, moved out of `app_shell.rs`
   unchanged.
-- **`crates/workspace/src/workspace.rs`** — `Workspace::render_dock` +
-  `DockResize` drag payload + `set_dock_size` + `move_panel_persist` +
-  `apply_live_command` added; `Workspace::render` now composes
-  `[left dock | (pane group + bottom dock) | right dock]` + the drag-to-resize
-  handler itself (Zed model). Shell just does `.child(workspace.clone())`.
-  Reuses the existing `DragGhost`. **No new crate edge.**
 - **`crates/shell/src/app_shell.rs`** — now only: `struct AppShell` (13 fields;
   8 concrete entities grouped in `ShellPanels`), `new` (one `cx.observe(theme)`
   + delegate to `bootstrap`), `from_parts`, `workspace()`/`preferences()`,
@@ -4689,21 +4442,8 @@ no per-frame `build_palette_data`.
 
 ## Last Session: 2026-09-04 (T17-005 — `ModalLayer` + `ToastLayer` · **Phase 16**)
 
-Replaced the six hand-wired overlay children in `AppShell::render` with **two**
-reusable layers (Zed pattern), and deleted the `pending_*` / `drain_pending_*`
-buffering for palette + bookmark picks.
 
 ### What Was Done (T17-005)
-- **`crates/workspace/src/modal_layer.rs`** (new) — `trait ModalView:
-  ManagedView` (`on_dismiss` hook + `render_bare()`); `struct ModalLayer`
-  (Entity, `#[derive(Default)]`): one active modal, `toggle_modal<V,B>` /
-  `open_modal<V,B>` / `hide_modal` / `active_modal::<V>()` /
-  `has_active_modal` / `set_dismiss_on_focus_lost`. `show_modal` wires a
-  `DismissEvent` subscription (`subscribe_in`) + `on_focus_out`, focuses the
-  modal via `cx.defer_in`. `Render`: bare → view as-is; non-bare →
-  `modal_scrim()` backdrop (`occlude()` + `on_mouse_down`→`hide_modal`) +
-  centered `occlude()`d panel with `track_focus`. Ported/trimmed from
-  `zed-refrence/.../modal_layer.rs`.
 - **`crates/workspace/src/toast_layer.rs`** (new) — `ToastLayer<Th: UiTheme>`
   observes `NotificationCenter`, renders `notifications::render_overlay`. The
   stacking + `background_executor().timer()` auto-dismiss already lived in the
@@ -4756,27 +4496,8 @@ buffering for palette + bookmark picks.
 
 ## Last Session: 2026-09-04 (T17-004 — `PaneGroup` n-ary split tree + persistence · **Phase 16**)
 
-Replaced the flat binary pane tree with a Zed-style n-ary `Member` tree that
-has an **optional root**, arbitrary nesting, `flexes` (sum-1.0 invariant), and
-full session persistence with backward compat.
 
 ### What Was Done (T17-004)
-- **`crates/workspace/src/pane_group.rs`** — rewritten. `enum SplitDirection
-  {Up,Down,Left,Right}` (`axis()`, `increasing()`, `along(SplitAxis)`);
-  `enum Member { Pane(PaneId), Axis(PaneAxis) }`; `struct PaneAxis { id:
-  PaneId, axis: SplitAxis, members: Vec<Member>, flexes: Vec<f32> }` (even
-  redistribution on insert/remove, Zed-style; `with_flexes` validates &
-  renormalises a persisted vector); `struct PaneGroup { root: Option<Member> }`
-  with `split(new_axis_id, target, new_pane, dir)` (handles `root==None` →
-  new root; falls back to first pane if target vanished), `remove(pane) ->
-  RemoveOutcome{Removed{neighbor:Option<PaneId>}|NotFound}` (collapses
-  single-child axes, empties root), `set_boundary(axis_id, boundary, frac)`
-  (redistributes **only** the two adjacent flexes — whole-axis sum preserved
-  exactly), `reset_axis`, `panes`/`first_pane`/`find_pane`/`is_empty`.
-  `WorkspaceLayout` kept (per-tab) but now `{ group: PaneGroup, active:
-  Option<PaneId> }`; `split`/`close`(→`CloseOutcome` unchanged)/`set_active`/
-  `set_boundary`/`reset_axis`/`leaves`/`len`/`is_empty`. 6 new unit tests.
-  `PaneNode` deleted.
 - **`crates/workspace/src/pane.rs`** — re-exports updated to `Member`,
   `PaneAxis`, `PaneGroup`, `RemoveOutcome`, `SplitDirection`, `WorkspaceLayout`.
 - **`crates/workspace/src/session.rs`** — new `SerializedPaneGroup` (recursive
@@ -4910,18 +4631,6 @@ Replaces the shell's ad-hoc dual-slot sidebar (`left_slot`/`right_slot`,
 one panel each) with a real three-dock model owned by the `Workspace`.
 
 ### What Was Done (T17-002)
-- **`crates/workspace/src/dock.rs`** — NEW. `struct Dock { position, panels:
-  Vec<AnyPanelHandle>, active, open, size, zoomed }` — reduced port of Zed's
-  `dock.rs`. Methods: `add_panel` / `remove_panel` (with active-index fixup) /
-  `activate_panel` / `toggle_open` / `toggle_panel` (open+activate, or close if
-  already active) / `set_zoomed` / `set_size` (clamped to per-position
-  `min_size`/`max_size`, plus the active panel's own `min_size` floor) /
-  `apply_order` / `apply_scalars` / `to_data`. `RESIZE_HANDLE_SIZE = px(6.)`,
-  per-position `default_size`/`min_size`/`max_size`, `position_slug` /
-  `position_from_slug` (the serde bridge `labonair-panel` deliberately omits).
-  `DockData` serde struct `{ position, open, size, zoomed, active_panel,
-  panel_order }` (Zed's `panel_positions` map dropped — a moved panel is just
-  the one that appears in another dock's `panel_order`). 5 unit tests.
 - **`crates/workspace/src/workspace.rs`** — `left_dock` / `right_dock` /
   `bottom_dock: Dock` fields (empty at construction). `dock()` / `dock_mut()` /
   `docks()` / `dock_of_panel()` accessors. `init_docks(layout_json, window,
@@ -4930,21 +4639,6 @@ one panel each) with a real three-dock model owned by the `Workspace`.
   applies per-dock order + scalars; first run (no layout) opens the left dock.
   `move_panel(name, to, cx) -> bool` removes from the old dock, validates via
   `PanelHandle::position_is_valid`, adds+activates+opens the new dock.
-- **`crates/shell/src/app_shell.rs`** — deleted `left_slot`/`right_slot`/
-  `slot`/`slot_mut`/`side_for_panel`/`select_panel_on_side`/`persist_sidebar`/
-  `set_slot_width`/`render_sidebar` and the `resolve_persisted_panel` helper.
-  New: `primary_dock`, `dock_for_panel` (live membership), `panel_is_active`,
-  `select_panel`/`open_panel`/`move_panel`/`set_dock_size` (all operate on
-  `workspace.dock_mut(pos)`), `persist_docks` (throttled write of the whole
-  `[DockData;3]` to the new `dockLayout` pref), `migrate_dock_layout` (first-run
-  port of the legacy `sidebar_*` prefs), and `render_dock(pos)` — one function
-  for all three edges: header (title / multi-panel switcher / "move to next
-  dock" arrow), active-panel body, resize handle on the inner edge
-  (col-resize L/R, row-resize bottom), zoom = fill + no handle. Body layout:
-  `row[ left_dock | col[ workspace / bottom_dock ] | right_dock ]` with the
-  bottom dock nested inside the centre column (Zed's `workspace.rs` nesting),
-  status bar a sibling below. `DockResize(DockPosition)` drag value; the
-  `on_drag_move` math handles the bottom (vertical) edge too.
 - **`crates/shell/src/menu.rs`** — `DebugCyclePanelDock` (`cmd-alt-shift-m`) and
   `DebugToggleDockZoom` (`cmd-alt-shift-z`) — temporary T17-002 debug
   affordances (no menu entry) to exercise `move_panel` / zoom until T18-003 /
@@ -4989,9 +4683,6 @@ one panel each) with a real three-dock model owned by the `Workspace`.
 
 ### State / Next
 - Branch `master`, committed on top of `792129e` (T17-001).
-- Concurrent-session files left unstaged / untouched:
-  `docs/adr/0001-crate-decomposition.md`, `bericht-workflow-rework.md`,
-  `zed-refrence/`.
 - **Next task: T17-003** (`StatusItem` trait & registry,
   `tasks/archive/phase-16-registries/`).
 
@@ -5015,9 +4706,6 @@ First code task of Phase 16. Replaces the `enum SidebarPanel` + `render_panel_bo
   - `AiChatView` → `"ai"`, Right, 380px
   Each panel crate gained a `labonair-panel` path dep (leaf crate: only
   `gpui` / `gpui-ext`, no cycle). `labonair-hosts-ui` has **no** `impl Panel`.
-- **`crates/workspace/src/workspace.rs`** — `panel_registry: PanelRegistry`
-  field + `panel_registry()` / `panel_registry_mut()` accessors (Zed hangs
-  docks off the workspace; same pattern).
 - **`crates/shell/src/app_shell.rs`** — deleted `enum SidebarPanel`, its
   `label`/`slug`/`from_slug`, `render_panel_body`, `render_tabs_panel`,
   `render_hosts_panel` (the compact Hosts-in-sidebar list is gone entirely).
@@ -5036,9 +4724,6 @@ First code task of Phase 16. Replaces the `enum SidebarPanel` + `render_panel_bo
   `T17-001`). `scripts/check-crate-deps.sh` green (20 crates, 87 edges, acyclic).
 
 ### Coordinator-forced deviations (recorded)
-- Concurrent-session edits left unstaged / not part of this commit:
-  `docs/adr/0001-crate-decomposition.md` (workflow-rework amendment),
-  `bericht-workflow-rework.md`, `zed-refrence/`.
 - `cargo test --workspace` is disk-banned on this VPS. Ran `cargo fmt --check` ✓,
   `cargo check --workspace --all-targets` ✓,
   `cargo clippy --workspace --all-targets -- -D warnings` ✓,
@@ -5109,8 +4794,6 @@ tooling, CI enforcement, docs and a baseline.
 ### State
 - Branch `master`. **Phase 15 (T16-001 … T16-010) is COMPLETE** — the crate
   graph stands: 20 crates, acyclic, CI-enforced.
-- Untracked concurrent-session edits left alone: `docs/adr/0001-crate-decomposition.md`
-  (modified by another session — NOT staged), `bericht-*.md`, `zed-refrence/`.
 
 ### Next Task
 **T17-001** — `tasks/archive/phase-16-registries/T17-001-panel-trait-and-registry.md`
@@ -5182,10 +4865,6 @@ T17-006).
   crate-split task).
 
 ### State / Next
-- Branch `master`, committed (see trailer). Working tree still carries the
-  parallel planning session's untracked `bericht-*.md` / `zed-refrence/` /
-  `tasks/archive/phase-1*/` and modified `tasks/archive/ROADMAP.md` / `docs/adr/0001` — left
-  untouched, not staged.
 - Disk: ~7.6 G free after this task (parallel session also building). `cargo
   clean` was run at task start per coordinator instructions.
 - **Next task:** T16-010 — build-hygiene + baseline.
@@ -5270,10 +4949,6 @@ placed **before** `crates/ui`:
 - `cargo tree` forbidden-edge audit — ✅ (see edges note above).
 
 ### State / Next
-- Branch `master`, committed (see commit trailer). Working tree also carries an
-  unrelated in-flight `docs/adr/0001-crate-decomposition.md` edit + untracked
-  `bericht-*.md` / `zed-refrence/` from the parallel planning session — left
-  untouched.
 - **Blocker for the next session:** host disk is full (`/` at 100%, ~20 MB
   free). A `cargo` full rebuild / `cargo test --workspace` will fail on linking
   until space is reclaimed (`target/debug/deps` is ~24 GB; `cargo clean` or a
@@ -5508,9 +5183,6 @@ Architektur-Rework integriert. T16-006 lief währenddessen → alles konzeptione
    Hosts**. `labonair-panel-hosts` entfällt aus dem Ziel-Graph →
    `labonair-hosts-ui` (kein Panel, kein `impl Panel`). `PanelIcon::Hosts`
    (aus T16-005) wird in T17-001 mit entfernt.
-3. **Settings-Redesign** — Zed-Settings-System wie geplant, **plus**
-   Design-Kontrakt (`docs/settings-guidelines.md`, T19-000), Kategorie→Abschnitt-
-   Disclosure-Navigation, erstklassiger Pfad für Custom-Top-Level-Kategorien.
 
 **Geändert:** `docs/architecture.md` (neuer §8 „Deviations"), `tasks/archive/ROADMAP.md`
 (Tabellen 15–18 + Workflow-Rework-Abschnitt + Erfolgskriterium 27), `T16-007`,
@@ -5533,27 +5205,6 @@ existing code migrated, no behaviour change.**
 ### What Was Done (T16-005)
 - **`crates/panel/`** (`labonair-panel`) created — lib root `src/panel.rs`
   (`[lib] name = "labonair_panel"`, `path = "src/panel.rs"`). Two modules:
-  * `src/dock.rs` — `DockPosition {Left,Right,Bottom}` (+ `ALL`, `next()`),
-    `PanelIcon` (small closed enum: `Explorer|SourceControl|GitGraph|Hosts|
-    Snippets|Ai` — deliberately NOT importing `labonair_ui_kit::IconName`, so
-    the crate stays a near-leaf; shell maps variants to real icons),
-    `PanelEvent {Activate,Close,ZoomIn,ZoomOut}`, `trait Panel: Focusable +
-    Render + Sized` (`persistent_name`, `title`, `icon`, `position`,
-    `position_is_valid`, `set_position`, `default_size`, `min_size`),
-    `trait PanelHandle: Send + Sync` + blanket `impl<T: Panel + 'static> for
-    Entity<T>` + `type AnyPanelHandle = Arc<dyn PanelHandle>` (Zed's
-    handle-wrapper pattern for object safety), `PanelConstructor` alias,
-    `PanelRegistration`, `PanelRegistry` (`register`/`iter`/`for_position`/
-    `get`/`len`/`is_empty`, `impl Global`).
-  * `src/status.rs` — `StatusSide {Left,Right}`, `StatusItemHide` (port of
-    Zed `HideStatusItem`; carries `Arc<dyn Fn(&mut App)>` — no serde/settings
-    dep yet, T18-005 swaps the body), `trait StatusItem: Render` (`id`,
-    `default_side`, `render_status` [named to avoid `Render::render`
-    collision], `hide`), `trait StatusItemHandle` + blanket impl +
-    `AnyStatusItemHandle`, `StatusItemConstructor`, `StatusItemRegistration`,
-    `StatusItemRegistry` (same method surface, `impl Global`).
-  * Every trait/enum has a doc comment citing the Zed source file and listing
-    the deliberate omissions vs. the Zed original.
 - **Deps** (`cargo tree -p labonair-panel`): `gpui`, `labonair-gpui-ext` only.
   `cargo tree` shows **no** edge to `labonair-workspace` / `labonair-shell` /
   any `labonair-panel-*` (none exist yet) — architecture §3 rule 1 satisfied.
@@ -5764,15 +5415,6 @@ behaviour change.** Rust toolchain is now installed on the VPS
   `text_field`, `InputEvent`, `InputState`, + `Badge`, `Switch`, `Tooltip` from
   `gpui-component`) plus the new `UiTheme`. Deps = gpui, gpui-component,
   labonair-theme, labonair-gpui-ext.
-- **`UiTheme` trait** (`crates/ui-kit/src/theme.rs`) — thin token accessor so
-  ui-kit does not depend on `crates/ui`'s runtime `ThemeStore` (a GPUI entity,
-  not pure-token → cannot move to `labonair-theme` yet; the Zed `ui`/`theme`
-  split, `docs/architecture.md` §2.1). One required method
-  `theme(&self) -> &labonair_theme::Theme`; `radius()` / `muted_foreground()` /
-  `border()` are defaulted 1:1 derivations. `button()` / `context_menu()` /
-  `colors()` now take `&impl UiTheme`. `crates/ui/src/theme.rs` gains
-  `impl labonair_ui_kit::UiTheme for ThemeStore`. Call sites (`self.theme.read(cx)`)
-  unchanged — they only satisfy the bound.
 - **`IconName::ALL`** promoted from `#[cfg(test)] const` to `pub const` so the
   icon→asset cross-check test can run from `crates/ui` (the SVG bundle stays in
   `crates/ui/src/assets.rs`, which is `labonair-app`-bound per the arch table).
@@ -5822,21 +5464,6 @@ Kicked off the architecture rework (roadmap phases 15–21). **Documentation onl
 no `crates/` change.**
 
 ### What Was Done (T16-001)
-- **`docs/architecture.md`** created — the authoritative target for every rework
-  task (T16-002 … T22-001). Seven sections: (1) philosophy + the four
-  principles; (2) target crate graph (7 → ~22 crates) with a per-crate purpose
-  sentence and a table mapping every current `crates/ui/src/*.rs` to its target
-  crate; (3) eight binding, CI-checkable dependency rules (`labonair-panel` has
-  no workspace-track dep; panel crates never depend on each other / `shell` /
-  `workspace`; `shell` is the only crate that knows concrete panels;
-  backend/ai/terminal/editor have no UI dep; `ui-kit` deps limited to
-  gpui/gpui-component/theme/gpui-ext; graph acyclic); (4) layout contract with
-  the ASCII diagram + explicit removals (header inline search, `⋯` app-menu
-  button, 44px activity rail, titlebar bar-item scope, `drain_pending_*`);
-  (5) Zed pattern catalog — table, each row a concrete `zed-refrence/zed/crates/`
-  path; (6) settings-layer overview default→user→OS→project→language;
-  (7) naming convention `labonair-<name>` / `crates/<name>/` / explicit
-  `[lib] path = crates/<name>/src/<name>.rs`.
 - **`docs/adr/0001-crate-decomposition.md`** created (new `docs/adr/` dir) —
   standard ADR format: Context (monolith numbers: ui ~48k lines, settings.rs
   5 957, workspace.rs 4 076, app_shell.rs 2 983; god-object, frame buffers,
@@ -5850,11 +5477,6 @@ no `crates/` change.**
 - **`tasks/archive/ROADMAP.md`** — "## Vision" gained a philosophy paragraph (parity is
   now the *minimum*, not the goal). The phases 15–21 section + rework success
   criteria 22–26 (present as an uncommitted change) are committed with this task.
-- This commit also stages the previously-untracked task dirs
-  `tasks/archive/phase-15-crate-split/` … `tasks/archive/phase-21-gpui-decision/`, plus the two
-  new planning reports `bericht-architektur-rework-roadmap.md` and
-  `vergleichsbericht-zed-vs-rust.md`. `zed-refrence/` left untracked (local Zed
-  checkout for API spelunking).
 
 ### Verification
 - Gates **not run**: this environment has no Rust toolchain (`cargo`/`rustc`
@@ -5904,8 +5526,6 @@ reopen is lossless).
   needs `cargo fmt --check` / `check` / `clippy -D warnings` / `test` on a dev
   box, but the change cannot affect compilation).
 
-Untracked `zed-refrence/` (local Zed source checkout for API spelunking) — not
-committed, not gitignored; leave as-is unless the user wants it ignored.
 
 ---
 
@@ -6515,7 +6135,6 @@ Ref: `reference-src/src/modules/ai/**`, `components/ai-elements/**`.
 - Host list auto-refresh on window focus (only 30s poll).
 
 
-
 ### What Was Done (branch `master`, commit after `c58652e`)
 
 **T16-015 — SSH connecting state machine + screen (new)**
@@ -6783,7 +6402,6 @@ Ref: `reference-src/src/modules/ai/**`, `components/ai-elements/**`.
 
 ---
 
-## Prior Session: 2026-09-02 (Block C cont. 1/2 — separate window + section tree) → commit 47f6127
 
 ## Prior Session: 2026-09-02 (Block C — Settings: full preference model)
 
@@ -7327,10 +6945,6 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - **T15-005 ✅ Done.** Native reimplementation of the Tauri updater flow
   (port of `reference-src/src/modules/updater/`), on top of the T15-004
   manifest module.
-  - **Decision:** custom minimal updater, **not Sparkle** — the app already
-    publishes a Tauri-shaped `latest.json` with minisign signatures, so reusing
-    that avoids a Swift shim + a 2nd signing system (Zed does the same).
-    Documented in `docs/RELEASE.md`.
   - **`crates/backend/src/modules/updater/install.rs`** (new, +7 tests,
     backend 186→193):
     - `fetch_manifest(endpoint)` — reqwest GET + `UpdateManifest::parse`.
@@ -7782,7 +7396,6 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - **Next task:** Phase 13 is complete. Next is **Phase 14 — Testing & Polish**,
   starting with **T15-001** — Visual parity (`tasks/archive/phase-14-testing/`).
 
-### (previous) T13-004 — Shortcut configuration
 
 ### What Was Done
 - **T13-004 ✅ Done.** Persistent, user-editable keyboard-shortcut bindings
@@ -7835,7 +7448,6 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - **Next task:** first unstarted task after phase-12 — check `tasks/archive/ROADMAP.md`
   (Phase 13: Session-Persistence & Scrollback).
 
-### (previous) T13-003 — Terminal & Editor settings
 
 ### What Was Done
 - **T13-003 ✅ Done.** Terminal / Editor preference fields wired so changes
@@ -7888,7 +7500,6 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   apply to newly-spawned sessions, not already-running PTYs.
 - **Next task:** T13-004 — Shortcut configuration.
 
-### (previous) T13-002 — Appearance & theme settings
 
 ### What Was Done
 - **T13-002 ✅ Done.** Appearance pane in the settings modal, wiring the
@@ -7931,7 +7542,6 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   from `reference-src` `ThemeMarketplace.tsx` is not part of this task.
 - **Next task:** T13-003 — Terminal & Editor settings.
 
-### (previous) T13-001 — Settings structure & preferences
 
 ### What Was Done
 - **T13-001 ✅ Done.** Central preferences model + store + settings window,
@@ -8730,10 +8340,6 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   seams are unit-tested (10 tests incl. feature-branch merge, octopus merge,
   lane reuse, linear history). The backend git log/numstat/diff fns have their
   own coverage from T09-00x.
-- Rail edges are div segments, not bezier paths — merge/branch connectors are
-  drawn as an L (vertical + horizontal + vertical), not a curve. Visually
-  close enough; revisit with `gpui::canvas` + `PathBuilder` if the Zed source
-  yields a confirmed path-painting API.
 - `git_get_log` is always called with `all_branches = true` (matches the
   reference `git.getLog(path, limit, true, …)`), so row 0 is the newest commit
   across *all* refs, not necessarily HEAD — the `HEAD` badge is driven by

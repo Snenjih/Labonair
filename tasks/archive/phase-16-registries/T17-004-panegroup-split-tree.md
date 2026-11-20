@@ -10,10 +10,6 @@
 T16-006 (`labonair-workspace`), T17-002 (`Dock`-Modell)
 
 ## Ziel
-Das heutige Split-Layout (flacher `SplitAxis` + eine Split-Ebene) durch einen
-echten rekursiven Split-Baum nach Zed-Vorbild ersetzen: beliebig tief
-verschachtelte horizontale/vertikale Splits, mit Größen-Verhältnissen und
-vollständiger Persistenz.
 
 **Zusätzlich (Thema 1):** Die Wurzel des Baums ist **optional**. Ein Workspace
 ohne offene Tabs hat *keinen* Pane-Baum (`root: None`) und rendert nichts bzw.
@@ -26,13 +22,6 @@ Siehe `docs/architecture.md §8.2`.
   `enum SplitAxis`, ein Split-Container. `Workspace::active_has_split`,
   `act_split_right`/`act_split_down`/`act_close_pane` in `app_shell.rs`.
   Vermutlich nur eine Split-Ebene (kein Baum).
-- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/pane_group.rs` —
-  `enum Member { Pane(Entity<Pane>), Axis(PaneAxis) }`,
-  `struct PaneAxis { axis: Axis, members: Vec<Member>, flexes: Vec<f32>,
-  bounding_boxes: … }`, `PaneGroup::{split, remove, swap, resize}`,
-  `SplitDirection` (`Up`/`Down`/`Left`/`Right`).
-  `zed-refrence/zed/crates/workspace/src/persistence.rs` +
-  `persistence/model.rs` — `SerializedPaneGroup` (rekursiv).
 - Session-Persistenz heute: `crates/workspace/src/session.rs` (aus T16-006) —
   Tab-/Layout-Snapshot; T14-001 hat das eingeführt.
 
@@ -128,9 +117,6 @@ Siehe `docs/architecture.md §8.2`.
   (env cannot link test binaries — see above).
 
 ## Notizen
-- Zeds `pane_group.rs` ist die beste Vorlage — Struktur 1:1 übernehmen,
-  Zed-spezifische Teile (Collab-Cursor, `bounding_boxes` für Drag-Drop von
-  Items) weglassen, bis sie gebraucht werden.
 - Terminal-Panes dürfen beim Split ihre Prozesse **nicht** verlieren
   (bestehende Regel aus T04-001/T03-005).
 

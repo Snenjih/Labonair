@@ -347,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    /// Tests for https://github.com/zed-industries/zed/issues/30259
+    /// Tests that repeated multi-keystroke bindings can be disabled.
     fn test_multiple_keystroke_binding_disabled() {
         let bindings = [
             KeyBinding::new("space w w", ActionAlpha {}, Some("workspace")),

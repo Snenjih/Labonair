@@ -3,8 +3,6 @@
 ## Status
 ✅ Done
 
-## Phase
-18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
 T17-007 (`CommandRegistry`), T19-002 (`SettingsStore`)
@@ -23,29 +21,9 @@ Tastaturkürzel von der hartkodierten `enum ShortcutId` + flacher
   Keine Kontexte, keine Chords.
 - T17-007: `CommandRegistry` — Kommandos haben `id: CommandId` +
   `default_key: Option<&'static str>`. Keymap-Dispatch läuft über `CommandId`.
-- Zed-Vorbild (die Blaupause):
-  `zed-refrence/zed/crates/settings/src/keymap_file.rs` — `KeymapFile`,
-  `KeymapBlock { context: Option<String>, bindings: Map<String, ActionSequence> }`,
-  Chord-Parsing, `KeyBindingValidator`, `KeybindSource`
-  (Default/BaseKeymap/User).
-  `zed-refrence/zed/crates/settings/src/base_keymap_setting.rs` — Basis-Keymaps.
-  `zed-refrence/zed/assets/keymaps/default-macos.json`,
-  `.../default-linux.json` — Format-Vorlage.
-  GPUI-Seite: `zed-refrence/zed/crates/gpui/` — `KeyBindingContextPredicate`,
-  `KeymapVersion`, `cx.bind_keys(...)`, `KeyContext`.
 
 ## Anweisungen zur Umsetzung
 1. **`keymap.json`-Format** festlegen (JSONC, kommentiert):
-   ```jsonc
-   [
-     { "context": "Workspace", "bindings": {
-         "cmd-t": "tab::NewTerminal",
-         "cmd-shift-p": "command_palette::Toggle",
-         "cmd-k cmd-s": "zed::OpenKeymap"        // Chord-Beispiel
-     }},
-     { "context": "Editor", "bindings": { "cmd-f": "search::Toggle" } }
-   ]
-   ```
    Action-Namen = `CommandId`-String (`<namespace>::<Name>`).
 2. **`labonair-keymap` (Crate oder Modul in `labonair-settings`)** — Port von
    `keymap_file.rs`, reduziert:
@@ -135,11 +113,6 @@ Tastaturkürzel von der hartkodierten `enum ShortcutId` + flacher
   Blocker für diese Task laut deren eigenen Prioritäts-Vorgaben.
 
 ## Warnungen
-- ⚠️ GPUI 0.2.2: prüfen, welche Keymap-/Kontext-APIs (`KeyBindingContextPredicate`,
-  `cx.bind_keys`, Chord-`Keystroke`-Parsing) die veröffentlichte Version
-  exportiert. Fehlt etwas → in `zed/crates/gpui` nachsehen und entweder ein
-  reduziertes Prädikat selbst bauen oder als Blocker für T22-001 (vendored
-  gpui) vermerken.
 - ⚠️ macOS-Menü-Accelerators (`menu.rs`) müssen mit der Keymap konsistent
   bleiben — die Menü-Items ihre Anzeige aus der gemergten Keymap ziehen.
 - ⚠️ Fokus-Kontext (`KeyContext`) muss von den Views korrekt gesetzt werden

@@ -23,9 +23,6 @@ sucht — ohne permanente Chrome-Fläche.
   (adaptiv Terminal vs. Editor).
 - Terminal-Suche: `crates/terminal/` (Scrollback-Suche) / `Workspace`.
   Editor-Suche: `crates/editor/src/search.rs`.
-- Zed-Vorbild: `zed-refrence/zed/crates/search/` (Buffer-Search-Bar als
-  Toolbar-Item über dem Editor) — bei uns leichter: ein Overlay, kein
-  Toolbar-Slot.
 
 ## Anweisungen zur Umsetzung
 1. **`SearchOverlay`** (Entity, in `labonair-workspace` — es kennt den aktiven
