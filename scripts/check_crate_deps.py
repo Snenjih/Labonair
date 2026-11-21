@@ -52,7 +52,7 @@ for name in sorted(ws_members):
     if name not in allowed:
         errors.append(
             f"{name}: no architecture manifest entry — add the owner, role, "
-            "layer, and allowed edges in docs/architecture/graph.toml."
+            "layer, and allowed edges in scripts/crate-graph.toml."
         )
 
 # 1. Per-crate manifest check.
@@ -149,12 +149,12 @@ if errors:
     print("crate dependency check FAILED:", file=sys.stderr)
     for error in errors:
         print(f"  ✗ {error}", file=sys.stderr)
-    print(f"\n{len(errors)} violation(s). See docs/architecture/graph.toml.", file=sys.stderr)
+    print(f"\n{len(errors)} violation(s). See scripts/crate-graph.toml.", file=sys.stderr)
     sys.exit(1)
 
 print(
     f"crate dependency check OK — {len(graph)} workspace crates, "
     f"{sum(len(dependencies) for dependencies in graph.values())} internal edges, "
     "acyclic, no untracked boundary violations. Transitional edges remain "
-    "documented in docs/audits/architecture-inventory.md."
+    "documented in scripts/crate-graph.toml."
 )

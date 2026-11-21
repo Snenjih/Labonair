@@ -12,7 +12,7 @@ from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "docs" / "architecture" / "graph.toml"
+MANIFEST = ROOT / "scripts" / "crate-graph.toml"
 
 
 def load_manifest() -> dict[str, Any]:

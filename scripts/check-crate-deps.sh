@@ -8,7 +8,7 @@
 #
 #   * a per-crate ALLOW-LIST of workspace deps — any workspace dep that is not
 #     on the list for that crate fails the build; transitional edges are
-#     explicit and documented in docs/audits/architecture-inventory.md;
+#     explicit and documented in scripts/crate-graph.toml;
 #   * the graph is acyclic (rule 8);
 #   * transitive "must-not-reach" invariants — e.g. no `labonair-panel-*` may
 #     reach `labonair-shell` or another `labonair-panel-*` even indirectly

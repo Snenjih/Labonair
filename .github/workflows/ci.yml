@@ -14,29 +14,6 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  knowledge:
-    name: Repository knowledge and architecture contracts
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Check repository knowledge contracts
-        run: python3 scripts/verify.py --scope knowledge
-
-  visual:
-    name: Visual evidence registry
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check deterministic visual evidence index
-        run: python3 scripts/verify.py --scope visual
-
   macos:
     name: macOS (fmt · check · clippy · test)
     runs-on: macos-latest
@@ -52,8 +29,8 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
-      - name: Run canonical Rust verification scope
-        run: python3 scripts/verify.py --scope rust
+      - name: Run canonical verification
+        run: scripts/check.sh
 
   linux:
     name: Linux (check only, informational)
