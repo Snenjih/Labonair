@@ -1,109 +1,25 @@
-# Active Rework Tasks
+# Open tasks
 
-These tasks are derived from [`docs/rework-roadmap.md`](../../docs/rework-roadmap.md) and follow the ownership rules in [`docs/modules.md`](../../docs/modules.md). This directory is the active implementation queue; the older `tasks/archive/phase-*` directories are historical.
+Open work only. Finished tasks (R00–R08 done, R11-001) live in [`../archive/rework-done/`](../archive/rework-done/); everything older is in git history (tag `pre-cleanup-2026-11-21`).
+This is a backlog, not a gate: a direct user request always takes precedence. Status below comes from a code/commit audit on 2026-11-21 — "code exists" is not the same as natively verified.
 
-Each task must define its owning module, public contracts, allowed dependency changes, registry contributions, UI-kit usage, persistence/migration impact, tests, and full verification gates.
+| Task | State | What is left |
+|---|---|---|
+| R07-001 product-surface acceptance | Partial | Native visual-state matrix (one open box); gate for R07-004/005/006/007 |
+| R07-004 explorer host contract | Done structurally | Native visual evidence (folds into R07-001) |
+| R07-005 background presentation boundary | Done structurally | Native visual evidence (folds into R07-001) |
+| R07-006 documentation knowledge system | Obsolete | Superseded by the 2026-11-21 docs consolidation; archive |
+| R07-007 transitional-edge review | Open | Review remaining transitional edges in `scripts/crate-graph.toml` |
+| R07-008 multi-instance / detached sessions | Partial | Code landed (4cc0d575); all acceptance boxes unchecked, needs two-process tests |
+| R08-010 actionable notifications | Deferred | `action.id` support exists, no consumer; reassess |
+| R09-001 editor E0 text model | Likely done | Spot-check acceptance list, then close |
+| R09-002 editor E1 file lifecycle | Likely done | Spot-check, then close |
+| R09-003 editor E2 editing/splits | Partial | Spec outdated: editor view groups replaced internal splits (cbd41bc9) |
+| R09-004 editor E3 display/search/nav | Likely done | Spot-check, then close |
+| R09-005 editor E4 language services | Likely done | Spot-check, then close |
+| R09-006 editor E5 git gutter/review | Partial | Beyond scope in code; reconcile with task text |
+| R09-007 editor E6 persistence/polish | Partial | Verify autosave / versioned persistence |
+| R10-001 Ciel design system | Partial | Light theme + Gallery visual check, view sweep, gates |
+| R10-002 UI overhaul | Partial | workspace tests, `check-crate-deps.sh`, `git diff --check` boxes |
 
-The active sequence is:
-
-0. `R00-001-documentation-reset.md` — Done
-1. `R01-001-backend-boundaries-and-contracts.md` — Done
-2. `R01-002-ssh-sftp-capability-contracts.md` — Done
-3. `R01-003-typed-transfer-registry.md` — Done
-4. `R01-004-command-palette-keymap-registry.md` — Done
-5. `R01-005-settings-ownership-and-reduction.md` — Done
-6. `R01-006-background-capability-boundary.md` — Done
-7. `R01-007-hosts-ui-capability-boundary.md` — Done
-8. `R01-008-notification-surface-owner.md` — Done
-9. `R01-009-inline-error-notification-adoption.md` — Done
-10. `R02-001-global-menu-and-theme-entrypoints.md` — Done
-11. `R02-002-shell-composition-and-standalone-workspaces.md` — Done
-12. `R02-003-project-entry-and-workspace-transitions.md` — Done
-13. `R03-001-command-palette-provider-registry.md` — Done
-14. `R03-002-keymap-runtime-and-editor.md` — Done
-15. `R04-001-static-theme-registries-and-preview.md` — Done
-16. `R04-002-host-management-and-connection-pickers.md` — Done
-17. `R05-001-settings-audit-and-value-normalization.md` — Done
-18. `R06-001-backend-adapter-eradication.md` — Done
-19. `R07-001-product-surface-acceptance.md` — Planned
-20. `R07-002-owner-registered-surface-contributions.md` — Done
-21. `R07-003-settings-legacy-warning-disposition.md` — Done
-22. `R07-004-explorer-host-contract.md` — Planned (structural migration landed early; visual evidence folds into R07-001)
-23. `R07-005-background-presentation-boundary.md` — Planned (structural migration landed early; visual evidence folds into R07-001)
-24. `R07-006-documentation-knowledge-system.md` — Planned (blocked behind R07 acceptance)
-25. `R07-007-transitional-edge-review.md` — Planned (blocked behind R07-006)
-26. `R08-001-transfers-ui-workspace-decoupling.md` — Done
-27. `R08-002-remove-no-op-command-affordances.md` — Done
-28. `R08-003-panel-snippets-workspace-decoupling.md` — Done
-29. `R08-004-popover-trigger-bounds-anchoring.md` — Done
-30. `R08-005-theme-management-out-of-settings-ui.md` — Done
-31. `R08-006-appcomposition-accessors.md` — Done
-32. `R08-007-remove-legacy-shortcutid-model.md` — Done
-33. `R08-008-ui-kit-theme-token-extraction.md` — Done
-34. `R08-009-remove-notification-callback-adapter.md` — Done
-35. `R08-010-actionable-notifications.md` — Planned (no current consumer; reassess with product workflow review)
-36. `R08-011-defer-dormant-theme-import.md` — Done
-37. `R08-012-workspace-hosts-ui-decoupling.md` — Done
-38. `R09-001-editor-e0-text-model-contract.md` — Planned
-39. `R09-002-editor-e1-file-lifecycle.md` — Planned
-40. `R09-003-editor-e2-editing-and-splits.md` — Planned
-41. `R09-004-editor-e3-display-search-navigation.md` — Planned
-42. `R09-005-editor-e4-local-language-services.md` — Planned
-43. `R09-006-editor-e5-git-gutter-review-bridge.md` — Planned
-44. `R09-007-editor-e6-persistence-polish-and-p2.md` — Planned
-45. `R10-001-ciel-design-system-adoption.md` — Planned (user-directed; foundation landed, view sweep open)
-46. `R10-002-ui-overhaul-panes-tabs-settings.md` — Planned (user-directed; wave-orchestrated, tracked via its checklist)
-47. `R11-001-onboarding-module.md` — Planned (user-directed; new `labonair-onboarding` crate, ADR 0008)
-
-Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
-also connects the already-established theme registry to its intended palette
-surface. R02-002, R02-003, R03-001, R03-002, R04-001, R04-002, R05-001, and
-R06-001 are complete. R07-001 is the bounded Labonair product-surface
-acceptance audit; it may create follow-up tasks for discrepancies but must not
-silently expand product scope. R07-002 is complete and records the
-owner-registered dynamic palette action boundary that resolved one of those
-findings.
-
-R07-004 is the follow-up for boundary B01 in the remaining-boundary backlog.
-Its structural migration (the `labonair-explorer-host` contract crate, the
-removed `panel-explorer → workspace` edge, the Workspace adapter, and all
-code/dependency/test gates) has landed early. It stays `Planned` rather than
-`Done` only because its native Explorer visual-state evidence folds into
-R07-001's still-open visual acceptance matrix.
-
-R07-005 is the follow-up for boundary B02. Its structural migration (the
-`labonair-background-host` contract crate, the removed `workspace → background`
-edge, the `BackgroundHost` adapter, and all code/dependency/test gates) has
-also landed early, for the same reason and with the same `Planned` status
-pending the R07-001 visual matrix.
-
-R07-006 is the bounded follow-up for the repository knowledge system described
-in [`../../docs/reform/README.md`](../../docs/reform/README.md). Its foundation
-artifacts are already present, but the task remains Planned until R07 native
-acceptance permits the remaining descriptor and evidence work. It is not a
-parallel active queue and must not be started before the earlier R07 tasks.
-
-R07-007 is the planned architecture-policy follow-up for explicit
-transitional-edge review and expiry semantics. It is blocked behind R07-006
-and must not become a second active task.
-
-Only the earliest task whose dependencies are complete may be started.
-
-The Editor rework is planned after the acceptance gate as the ordered R09
-sequence:
-
-- R09-001 establishes Rope/anchors/transactions and immutable snapshots.
-- R09-002 establishes FileState, EOL/BOM/encoding, read-only, and conflict
-  safety.
-- R09-003 adds multi-selection editing and Editor-internal splits under
-  [ADR 0004](../../docs/adr/0004-editor-internal-splits.md).
-- R09-004 adds display mapping, folding, search/replace, and navigation.
-- R09-005 adds local-only language services before any remote LSP work.
-- R09-006 adds Git gutter decoration through a typed Git bridge while
-  preserving Project Diff as the canonical review surface.
-- R09-007 adds versioned persistence, opt-in autosave/format-on-save, and
-  the selected P2 polish.
-
-All R09 tasks remain Planned until R07-001 is complete. They are
-bounded implementation records, not evidence that the target Editor behavior
-exists in the current tree.
+New work: copy [`TASK-TEMPLATE.md`](TASK-TEMPLATE.md).
