@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: architecture and repository governance
-- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../modules.md)
 - Composition entry point: `docs/architecture/graph.toml` and
   `scripts/check_architecture.py`
 

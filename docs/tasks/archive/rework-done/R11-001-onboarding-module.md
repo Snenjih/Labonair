@@ -1,6 +1,6 @@
 # R11-001 — Onboarding module
 
-Decision record: [`ADR 0008`](../../docs/adr/0008-onboarding-module.md).
+Decision record: [`ADR 0008`](../../../adr/0008-onboarding-module.md).
 
 ## Status
 
@@ -11,7 +11,7 @@ Implemented directly, outside the task queue, at the owner's request.
 ## Owner
 
 - Module: `onboarding`
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition entry point: `labonair-shell` (`crates/shell/src/onboarding.rs`, wired in `bootstrap`)
 
 ## What exists

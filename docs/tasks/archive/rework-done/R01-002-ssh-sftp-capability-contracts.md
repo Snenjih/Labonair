@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: `ssh` and `sftp` (transport capabilities)
-- Capability matrix: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability matrix: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition root: `crates/shell/src/bootstrap.rs`
 
 ## Goal

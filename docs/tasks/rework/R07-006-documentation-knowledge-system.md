@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: repository documentation and application composition acceptance
-- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../modules.md)
 - Composition entry point: `scripts/verify.py` and `docs/README.md`
 
 ## Dependencies
@@ -20,7 +20,7 @@
 ## Goal
 
 Complete the remaining evidence and coverage work in
-[`docs/reform/README.md`](../../docs/reform/README.md) so an agent can navigate
+`docs/reform/README.md` so an agent can navigate
 from a capability or workflow to its owner, contract, implementation,
 evidence, and next safe task without relying on chat history.
 
@@ -35,11 +35,11 @@ evidence, and next safe task without relying on chat history.
 
 ## Contracts and ownership
 
-- Documentation authority: [`../../docs/README.md`](../../docs/README.md) and
-  [`../../docs/README.md`](../../docs/README.md)
-- Agent routes: [`../../docs/agents/routes.toml`](../../docs/agents/routes.toml)
-- Capability source: [`../../docs/capabilities/coverage.toml`](../../docs/capabilities/coverage.toml)
-- Evidence source: [`../../docs/evidence/scorecard.toml`](../../docs/evidence/scorecard.toml)
+- Documentation authority: [`../../docs/README.md`](../../README.md) and
+  [`../../docs/README.md`](../../README.md)
+- Agent routes: `../../docs/agents/routes.toml`
+- Capability source: `../../docs/capabilities/coverage.toml`
+- Evidence source: `../../docs/evidence/scorecard.toml`
 - Verification entry point: `python3 scripts/verify.py --scope all`
 
 ## Dependencies and migration

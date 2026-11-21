@@ -70,7 +70,7 @@ and the source/audit update are complete.
 
 - Add or update focused registry/contribution tests.
 - Run the full repository verification gates from
-  [`feature-lifecycle.md`](../../docs/feature-lifecycle.md).
+  [`feature-lifecycle.md`](../../../modules.md).
 - Recheck that no duplicate shell-wide command, panel, or status-item list
   remains and update the capability matrix and architecture inventory.
 

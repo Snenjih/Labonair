@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: `hosts` with transport actions delegated to `ssh` and `sftp`
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition entry point: `labonair-shell::bootstrap`
 
 ## Dependencies

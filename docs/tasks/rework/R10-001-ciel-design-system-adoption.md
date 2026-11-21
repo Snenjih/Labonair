@@ -8,7 +8,7 @@
 
 - Modules: `theme` (tokens/themes), `ui-kit` (primitives), `settings`
   (`appearance.translucentSurfaces`), view crates (consumer sweep)
-- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../modules.md)
 - Composition entry point: `labonair_theme_ui::apply_theme_metrics` /
   `window_background`
 

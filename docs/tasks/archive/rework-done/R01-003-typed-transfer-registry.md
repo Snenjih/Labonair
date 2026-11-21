@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: `transfers`
-- Capability matrix: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability matrix: [`../../docs/capabilities.md`](../../../modules.md)
 - Canonical surface: statusbar Transfers item and dropdown
 
 ## Goal

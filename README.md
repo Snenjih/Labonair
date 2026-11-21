@@ -6,7 +6,7 @@ The product supports both project workspaces and standalone use. It is an indepe
 
 ## Documentation
 
-Start at [`docs/README.md`](docs/README.md). Agent/contributor rules are in [`CLAUDE.md`](CLAUDE.md) (`AGENTS.md` is a symlink to it); open work is in [`tasks/rework/`](tasks/rework/README.md) and [`TODO.md`](TODO.md).
+Start at [`docs/README.md`](docs/README.md). Agent/contributor rules are in [`CLAUDE.md`](CLAUDE.md) (`AGENTS.md` is a symlink to it); open work is in [`docs/tasks/rework/`](docs/tasks/rework/README.md) and [`TODO.md`](TODO.md).
 
 The architectural invariant: one product capability, one owning module, one canonical capability crate. The shell composes registered capabilities; it does not implement them. User-visible messages go to the notification dropdown, and settings contain values only.
 

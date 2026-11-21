@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: `themes`
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition entry point: n/a (no wiring — that is the point)
 
 ## Goal

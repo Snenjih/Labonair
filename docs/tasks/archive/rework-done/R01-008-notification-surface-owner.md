@@ -8,7 +8,7 @@
 
 - Module: `notifications`
 - Canonical crates: `labonair-notifications-core`, `labonair-notifications`
-- Related matrix: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Related matrix: [`../../docs/capabilities.md`](../../../modules.md)
 
 ## Goal
 

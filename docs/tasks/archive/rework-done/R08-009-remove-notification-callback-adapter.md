@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: `notifications`
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition entry point: `labonair-notifications::init`
 
 ## Goal

@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: application composition and the capability owners being migrated
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition entry point: `labonair-shell::bootstrap`
 
 ## Dependencies
@@ -103,7 +103,7 @@ boundary still exists; that package must not become a second capability owner.
 ## Progress
 
 - [x] Export and consumer inventory recorded in
-      [`docs/audits/backend-facade-inventory.md`](../../docs/audits/backend-facade-inventory.md).
+      `docs/audits/backend-facade-inventory.md`.
 - [x] Structured error contract removed from the backend facade and consumed
       directly from `labonair-errors`.
 - [x] Stale `labonair-ai → labonair-backend` dependency removed; AI's native

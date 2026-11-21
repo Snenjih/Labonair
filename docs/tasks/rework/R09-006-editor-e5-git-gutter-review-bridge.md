@@ -57,7 +57,7 @@ evidence remains under the open R07-001 acceptance dependency.
 ## Owner
 
 - Module: editor for presentation; git for repository state and operations
-- Capability-matrix row: [Editor](../../docs/modules.md) and [Git / source control](../../docs/modules.md)
+- Capability-matrix row: [Editor](../../modules.md) and [Git / source control](../../modules.md)
 - Composition entry point: labonair-shell injects the Git snapshot/action bridge into the Editor view
 
 ## Dependencies

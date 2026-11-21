@@ -80,5 +80,4 @@ updater archive.
 
 - **Fonts** — Inter, JetBrains Mono, IBM Plex Sans, and Lilex; their OFL
   license texts are in `crates/theme/assets/fonts/` and shipped in the app.
-- **App icon** — project asset (`packaging/macos/AppIcon.icns`), copied from
-  the frozen `reference/` design reference.
+- **App icon** — project asset (`packaging/macos/AppIcon.icns`).

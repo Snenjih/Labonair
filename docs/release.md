@@ -1,256 +1,79 @@
-# Release & Packaging
+# Release and Packaging
 
-How Labonair-rust is built into a distributable artifact. macOS is the primary
-target; Linux is prepared but not yet a first-class release (see below).
+How Labonair is built into a distributable artifact. macOS is the only packaged target; Linux builds from source. There is no `tauri bundle`: `scripts/package-macos.sh` assembles the `.app` from a plain `--release` build.
 
-Unlike the original Tauri app there is no `tauri bundle`; the bundle is
-assembled by a script from a plain `--release` build.
+## 1. Version
 
-## Version — single source of truth
+Single source: `[workspace.package] version` in the root `Cargo.toml` (currently `1.0.0`); `crates/app` inherits it (`version.workspace = true`). The binary exposes it as `CARGO_PKG_VERSION`; the bundle gets `CFBundleShortVersionString` = version and `CFBundleVersion` = `git rev-list --count HEAD`. Release steps: bump the version, add a `CHANGELOG.md` section, tag `vX.Y.Z`.
 
-The version lives in **`crates/app/Cargo.toml`** (`[package] version`). Every
-other place derives from it:
+Known issue: `scripts/package-macos.sh` reads the version with an `awk` pattern on `crates/app/Cargo.toml` that expects `version = "..."`; with `version.workspace = true` it yields an empty string and the script exits with "could not read version". Packaging (and `scripts/smoke-test.sh`, which calls it, and thus the release workflow) fails until the script reads the workspace version. Not fixed here.
 
-- the binary exposes it as `CARGO_PKG_VERSION`
-  (`env!("CARGO_PKG_VERSION")` in the binary),
-- `scripts/package-macos.sh` reads it into `CFBundleShortVersionString`,
-- `CFBundleVersion` is set to the commit count (`git rev-list --count HEAD`).
+## 2. macOS build
 
-Bump it there, add a `CHANGELOG.md` section, tag `vX.Y.Z`.
-
-## macOS build
-
-Prerequisites: Xcode CLT + the Metal Toolchain
-(`xcodebuild -downloadComponent MetalToolchain`), stable Rust.
+Prerequisites: Xcode CLT, Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`), stable Rust, and `cargo-about` 0.9.3 on `PATH` (`cargo install --locked --version 0.9.3 --features cli cargo-about`; the script aborts on any other version).
 
 ```sh
-scripts/package-macos.sh            # -> target/release/bundle/macos/Labonair.app
-scripts/package-macos.sh --dmg      # also builds Labonair_<version>_<arch>.dmg
+scripts/package-macos.sh                      # -> target/release/bundle/macos/Labonair.app
+scripts/package-macos.sh --dmg                # also Labonair_<version>_<arch>.dmg
+scripts/package-macos.sh --target <triple>    # explicit cross-target (aarch64-/x86_64-apple-darwin)
 ```
 
-To run the native Rust application locally, use an explicit repository path:
+The script: builds `labonair` and `labonair-host` (package `labonair-terminal-host`, the detached session host, ADR 0009) in release mode; creates `Labonair.app/Contents/{MacOS,Resources}`; copies both binaries, `AppIcon.icns`, `LICENSE`, `ADDITIONAL-TERMS.md`, asset/vendor license texts (`Resources/Licenses/{Fonts,GPUI,Icons}`) and a `cargo-about` generated `THIRD-PARTY-LICENSES.txt`; writes a version-substituted `Info.plist` and `PkgInfo` and lints the plist; then runs the optional steps below and always emits the update tarball and `latest.json`. Fonts and Tree-sitter grammars are compiled into the binary. `packaging/macos/Info.plist` registers the `labonair` URL scheme (Settings field links); keep it aligned with the open-URL handler in `crates/app` ([settings.md](settings.md)). Bundle identifier: `com.labonair.rust`.
 
-```sh
-cargo run -p labonair
-# or, after packaging:
-target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair
-```
+A universal binary is not scripted; run the two `--target` builds and `lipo -create` the binaries manually.
 
-Do not use `open -a Labonair` for development or visual verification. The
-legacy Tauri application may be installed under the same display name, which
-would launch the wrong application.
+Run the native app locally with `cargo run -p labonair` or the absolute bundle path `target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair`. Never `open -a Labonair`: the legacy Tauri app has the same display name. Visual-verification rules: [testing.md](testing.md).
 
-The complete native visual-verification contract is in
-[`visual-verification.md`](testing.md). In particular, packaged
-checks must use the absolute Rust bundle path and an exact executable PID.
+## 3. Signing and notarization (conditional)
 
-The script:
+Both are optional and never block the build; without the env vars the bundle is unsigned (Gatekeeper: right-click Open, or `xattr -dr com.apple.quarantine`).
 
-1. builds `labonair` and `labonair-host` in release mode,
-2. creates `Labonair.app/Contents/{MacOS,Resources}`,
-3. copies both binaries, `AppIcon.icns`, `LICENSE`, `ADDITIONAL-TERMS.md`,
-   asset/vendor license texts, and a generated Cargo license report,
-4. writes a version-substituted `Info.plist` and `PkgInfo`, then checks the
-   plist with `plutil -lint`,
-5. optionally signs, builds a dmg, and notarizes (see below).
-
-### What's in the bundle
-
-The bundle contains the app and host binaries, `Info.plist`, app icon, the
-project license and additional terms, a generated `THIRD-PARTY-LICENSES.txt`,
-and readable license/notice files for bundled assets and vendored GPUI. Fonts
-(Inter, JetBrains Mono, IBM Plex Sans, and Lilex) and Tree-sitter grammars are
-compiled into the binary; their corresponding font license files are copied
-into `Contents/Resources/Licenses/Fonts/`.
-
-The release workflow installs `cargo-about` 0.9.3. Local packaging requires
-the same version on `PATH` (`cargo install --locked --version 0.9.3 --features
-cli cargo-about`).
-
-### Universal binary (optional)
-
-```sh
-scripts/package-macos.sh --target aarch64-apple-darwin
-scripts/package-macos.sh --target x86_64-apple-darwin
-lipo -create -output labonair-universal \
-  target/aarch64-apple-darwin/release/labonair \
-  target/x86_64-apple-darwin/release/labonair
-```
-
-## Code signing & notarization (macOS)
-
-Optional — **never blocks CI**. Without the env vars the script produces an
-unsigned bundle (Gatekeeper: right-click → Open, or `xattr -dr
-com.apple.quarantine`).
-
-| Env var | Meaning |
+| Env var | Effect |
 |---|---|
-| `LABONAIR_SIGN_IDENTITY` | `"Developer ID Application: NAME (TEAMID)"`, or `"-"` for ad-hoc |
-| `LABONAIR_NOTARY_PROFILE` | `xcrun notarytool` keychain profile (set up once with `notarytool store-credentials`) |
+| `LABONAIR_SIGN_IDENTITY` | `codesign --force --deep --options runtime --timestamp` with `packaging/macos/Labonair.entitlements`, then verify; also signs the dmg. `"-"` = ad-hoc. |
+| `LABONAIR_NOTARY_PROFILE` | With a signing identity: `xcrun notarytool submit --wait` + `stapler staple` on the dmg if `--dmg`, else on a zip of the `.app`. Profile is a keychain profile from `notarytool store-credentials`. |
+| `LABONAIR_UPDATER_KEY` / `LABONAIR_UPDATER_KEY_PASSWORD` | Path to a minisign secret key and its password; signs the update tarball (needs `minisign` on PATH). |
+
+The entitlements file declares keychain access group `com.labonair.rust` and disables the app sandbox (terminal/editor filesystem access, SSH/SFTP networking).  The update tarball is built from the `.app` after these steps (stapled only if notarization ran on the `.app`, i.e. without `--dmg`).
+
+## 4. Auto-update (`crates/updater`, UI in `crates/updater-ui`)
+
+Custom minimal updater, not Sparkle; it reuses a Tauri-compatible `latest.json` and minisign signatures.
+
+- Manifest at `DEFAULT_UPDATE_ENDPOINT` (`https://github.com/Snenjih/Labonair/releases/latest/download/latest.json`): `{ version, notes, pub_date, platforms: { "<os>-<arch>": { url, signature } } }`; `signature` is the base64 of the whole `.minisig` file.
+- Check: `fetch_manifest()`; an update is offered only for a strictly newer SemVer that has an artifact for this `UPDATE_TARGET`. Auto-check every `CHECK_INTERVAL` (6 h), last check tracked in `<config_dir>/updater-last-check`, gated by the `checkForUpdates` preference.
+- Download with progress, then `verify_update()`: minisign signature against `UPDATE_PUBLIC_KEY` (set in `crates/updater/src/install.rs`). Empty key or signature is a hard failure; updates are never applied unverified.
+- Apply (`apply_macos_update`): unpack `<name>.app.tar.gz`, atomically swap the running `.app` (old bundle moved aside, rolled back on failure), `relaunch()` via `open`.
+- UI: `UpdaterView` dialog (available/downloading/ready), a "Check for Updates..." app-menu/palette entry, failures through the notification system.
+- Signing the artifact: keypair via `minisign -G`; public key goes into `UPDATE_PUBLIC_KEY`; the secret key and password are the CI secrets `LABONAIR_UPDATER_PRIVATE_KEY` / `LABONAIR_UPDATER_KEY_PASSWORD`. The script writes `latest.json` next to the artifacts with the signature inline, or an empty signature if `LABONAIR_UPDATER_KEY` is unset (the app then refuses that update). Key rotation requires shipping a build with the new public key.
+- Each script run emits a single-arch manifest (`darwin-aarch64` or `darwin-x86_64`); a manifest serving both architectures must be merged by hand before upload.
+
+## 5. CI and release workflows
+
+- `.github/workflows/ci.yml`: macOS job runs `scripts/check.sh` (fmt, check, clippy `-D warnings`, test, `scripts/check-crate-deps.sh`); Linux job is `cargo check --workspace --all-targets`, informational.
+- `.github/workflows/release.yml`: on `v*` tags or manual dispatch, on `macos-latest`: installs `cargo-about` 0.9.3 and `minisign`, writes the updater key from secret `LABONAIR_UPDATER_PRIVATE_KEY` if present (otherwise the artifact stays unsigned), then runs `scripts/smoke-test.sh && scripts/package-macos.sh --dmg` with optional secrets `LABONAIR_SIGN_IDENTITY`, `LABONAIR_NOTARY_PROFILE`, `LABONAIR_UPDATER_KEY_PASSWORD`, and attaches `*.dmg`, `*.app.tar.gz`, `latest.json` to the release on tag pushes.
+
+## 6. Verifying a release
 
 ```sh
-xcrun notarytool store-credentials labonair-notary \
-  --apple-id you@example.com --team-id TEAMID --password <app-specific-pw>
-
-LABONAIR_SIGN_IDENTITY="Developer ID Application: … (TEAMID)" \
-LABONAIR_NOTARY_PROFILE=labonair-notary \
-  scripts/package-macos.sh --dmg
+scripts/smoke-test.sh                          # builds the bundle, checks structure, runs `cargo test -p labonair --test smoke`
+LABONAIR_SMOKE_LAUNCH=1 scripts/smoke-test.sh  # also launches the bundled app by absolute path for 5 s
 ```
 
-Signing uses `--options runtime` (hardened runtime) with
-`packaging/macos/Labonair.entitlements` (keychain access group
-`com.labonair.rust`, sandbox disabled — needed for terminal/editor filesystem
-access, network client for SSH/SFTP). Notarization zips the `.app` (or signs
-the dmg), submits with `--wait`, then staples.
+Structure checks: bundle dir, executable, Info.plist (present, lints, version substituted, identifier `com.labonair.rust`), icon, PkgInfo, and the signature when `LABONAIR_SIGN_IDENTITY` is set. Release evidence records the exact target, artifact digest, smoke command, signing result and any intentional unsigned state. A Linux container build never closes macOS packaging or visual evidence.
 
-## Linux (prepared, not yet released)
+## 7. Artifacts and platforms
 
-The binary builds on Linux (`cargo build --release -p labonair`, GPUI Vulkan
-renderer, needs Vulkan loader + `libxkbcommon`, `wayland`/`xcb`, `fontconfig`,
-`openssl` dev libs). Packaging is intentionally not automated yet; when it is,
-the intended path is an **AppImage** (bundle the binary + a `.desktop` file +
-`packaging/macos/icon.png` re-used as the app icon) and/or a **Flatpak**
-manifest. Keep platform packaging behind `scripts/package-<os>.sh` so the
-release workflow stays a per-OS switch.
-
-## Auto-update (T15-005)
-
-**Decision — custom minimal updater, not Sparkle.** Sparkle would need an
-`objc2`/framework binding or a Swift shim plus its own signed-appcast tooling;
-the predecessor already publishes a compatible `latest.json` (T15-004) and
-its updater used **minisign** signatures. Reusing that wire format keeps the
-release pipeline unchanged and avoids a second signing system, so the native
-updater reimplements the same four steps without any Tauri runtime dependency.
-
-`labonair-updater` (`crates/updater/`):
-
-- **Manifest** — predecessor-compatible `latest.json` at
-  `DEFAULT_UPDATE_ENDPOINT`
-  (`…/releases/latest/download/latest.json`). Shape: `{ version, notes,
-  pub_date, platforms: { "<os>-<arch>": { url, signature } } }`. `signature` is
-  the base64 of the whole `.minisig` file.
-- **Check** — `fetch_manifest()` GETs it; `UpdateManifest::available()` returns
-  an `AvailableUpdate` only for a strictly-newer `SemVer` *with* an artifact for
-  this `UPDATE_TARGET`. Auto-cadence: `CHECK_INTERVAL` (6 h), tracked in
-  `~/.config/labonair/updater-last-check`.
-- **Download** — `download_update()` streams the artifact with progress
-  callbacks.
-- **Verify** — `verify_update()` checks the minisign (Ed25519, pre-hashed)
-  signature against `UPDATE_PUBLIC_KEY`. An empty key or empty signature is a
-  hard failure — the update is **never** applied unverified.
-- **Apply** — `apply_macos_update()` unpacks the `<name>.app.tar.gz` and
-  atomically swaps the running `.app` bundle (moves the old one aside, rolls
-  back on failure); `relaunch()` re-opens it via `open` and exits.
-
-UI: `crates/updater-ui/src/` (`UpdaterView`) — the native GPUI dialog
-(available / downloading / ready), auto-check at startup when the
-`checkForUpdates` preference is on, and a **Check for Updates…** entry in the
-app menu and command palette. Failures go through the notification system.
-
-### Signing the update artifact
-
-1. Generate a minisign keypair once: `minisign -G -p updater.pub -s updater.key`.
-2. Put the **public** key's second line into
-   `crates/updater/src/install.rs::UPDATE_PUBLIC_KEY`.
-3. Store the **secret** key + its password as the CI secrets
-   `LABONAIR_UPDATER_PRIVATE_KEY` / `LABONAIR_UPDATER_KEY_PASSWORD`.
-
-`scripts/package-macos.sh` then emits `Labonair_<version>_<arch>.app.tar.gz`,
-signs it (`<tarball>.minisig`) and writes `latest.json` with the base64
-signature inline. Until step 2 is done, `UPDATE_PUBLIC_KEY` is empty and the
-in-app updater refuses every update (safe default).
-
-> A universal `latest.json` needs both `darwin-aarch64` and `darwin-x86_64`
-> entries; the per-arch runs each produce a single-arch manifest — merge them
-> (or run the arm64 build last and hand-add the x86_64 block) before upload.
-
-## Distributed artifacts
-
-| Platform | Artifact | Notes |
+| Platform | Artifact | Status |
 |---|---|---|
-| macOS (Apple Silicon) | `Labonair_<version>_arm64.dmg` | primary |
-| macOS (Intel) | `Labonair_<version>_x86_64.dmg` | via `--target` |
-| macOS | `Labonair_<version>_<arch>.app.tar.gz` (+ `.minisig`) | auto-update payload |
-| macOS | `latest.json` | update manifest |
-| Linux | — | prepared, not released (see above) |
+| macOS Apple Silicon | `Labonair_<version>_arm64.dmg` | primary |
+| macOS Intel | `Labonair_<version>_x86_64.dmg` | via `--target` build |
+| macOS | `Labonair_<version>_<arch>.app.tar.gz`, `latest.json` | update payload and manifest |
+| Linux | none | builds from source (`cargo build --release -p labonair`; needs Vulkan loader, `libxkbcommon`, wayland/xcb, `fontconfig`, openssl dev libs); no packaging, no updater. Candidate formats AppImage/Flatpak behind a future `scripts/package-<os>.sh`. |
+| Windows | none | out of scope |
 
-## Known limitations vs. the original app
+Limitations vs. the original Tauri app: no in-app web/URL preview (GPUI cannot embed a WebView; markdown rendering and open-in-system-browser instead); no Windows; auto-update macOS only.
 
-- **No in-app web/URL preview** — GPUI cannot embed a WebView. Replaced by
-  native markdown rendering + "open in system browser".
-- **macOS / Linux only** — no Windows.
-- Auto-update: macOS only. Linux update (AppImage/Flatpak/repo) is still TODO.
-- Linux has no packaged release yet (builds from source).
+## 8. Rollback and support
 
-## Verifying a release
-
-```sh
-scripts/smoke-test.sh        # builds the bundle, structurally verifies it,
-                             # runs `cargo test -p labonair --test smoke`
-LABONAIR_SMOKE_LAUNCH=1 scripts/smoke-test.sh   # also opens the app for 5s
-```
-
-## Packaging Contract
-
-**Related:** [`README.md`](README.md), [`../RELEASE.md`](release.md), [`../testing/evidence-model.md`](testing.md)
-
-The package source of truth is `crates/app/Cargo.toml` for the version and
-`scripts/package-macos.sh` for the native bundle. The release path is:
-
-```text
-cargo build --release -p labonair
-→ Labonair.app (binaries, Info.plist, icon, compiled resources, license texts)
-→ optional signing/notarization
-→ optional DMG and signed updater artifact
-→ smoke test and artifact verification
-```
-
-Never commit signing keys, notarization profiles, updater private keys, or
-bearer tokens. Package evidence records the exact target, artifact digest,
-smoke command, signing result, and any intentional unsigned state.
-
-The macOS bundle registers the `labonair` URL scheme for Settings field links;
-keep that declaration in `packaging/macos/Info.plist` aligned with the native
-open-URL handler in `crates/app` and the route contract in `docs/settings.md`.
-
-## Platform Policy
-
-**Related:** [`README.md`](README.md), [`../RELEASE.md`](release.md), [`../visual-verification.md`](testing.md)
-
-- macOS Apple Silicon is the primary packaged target.
-- macOS Intel is supported through an explicit cross-target build.
-- Linux is build-prepared but not a first-class packaged release until its
-  AppImage/Flatpak decision and smoke evidence are accepted.
-- Windows is outside the current supported product scope.
-
-Platform claims require a native build, launch/smoke result, and support
-decision. A successful Linux container build does not close macOS visual or
-packaging evidence.
-
-## Release Rollback
-
-**Related:** [`README.md`](README.md), [`../RELEASE.md`](release.md), [`../automation/limits.md`](automation.md)
-
-The macOS updater verifies a minisign signature before applying an artifact
-and atomically swaps the app bundle with rollback on failure. An empty or
-invalid public key/signature must fail closed and never apply an update.
-
-For a failed release:
-
-1. stop distribution of the affected artifact/manifest;
-2. retain logs and artifact digests without secrets;
-3. restore the previous signed bundle or publish the last known-good manifest;
-4. verify launch, settings/session recovery, and updater state;
-5. record the incident and next release gate in the release evidence record.
-
-## Support Policy
-
-**Related:** [`README.md`](README.md), `platforms.md`, [`../documentation-governance.md`](README.md)
-
-A release is supportable only when its platform, packaging, visual, smoke,
-security, and rollback evidence is explicit. Unsupported or unmeasured states
-remain visible as `Pending` or `N/A`; they are not described as verified.
-
-Support handoff must include version, target, artifact, commit, known
-limitations, recovery path, and the next evidence action. User data and
-credentials never belong in a handoff artifact.
+The updater fails closed on a bad key/signature and rolls back a failed bundle swap. For a bad release: stop distributing the artifact/manifest; keep logs and digests (no secrets); restore the previous signed bundle or republish the last known-good `latest.json`; verify launch, settings/session recovery and updater state; record the incident and next gate. A release is supportable only when platform, packaging, visual, smoke, security and rollback evidence is explicit; unmeasured states stay `Pending`/`N/A`. Support handoffs include version, target, artifact, commit, known limitations, recovery path and next action, never user data or credentials. Never commit signing keys, notarization profiles, updater private keys or bearer tokens.

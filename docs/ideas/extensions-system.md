@@ -228,8 +228,8 @@ This idea, if accepted, would eventually need:
   registry's ID namespace, lifecycle, and snapshot contract;
 - a new top-level settings category entry once phase 2 lands, per
   `docs/settings-guidelines.md`;
-- roadmap/task entries under `docs/rework-roadmap.md` /
-  `tasks/rework/README.md` when phase 1 is scheduled for implementation.
+- roadmap/task entries under `docs/tasks/rework/README.md` /
+  `docs/archive/rework-roadmap.md` when phase 1 is scheduled for implementation.
 
 None of these documents are edited by this idea file itself — per
 `docs/documentation-governance.md`, an idea becomes binding only once

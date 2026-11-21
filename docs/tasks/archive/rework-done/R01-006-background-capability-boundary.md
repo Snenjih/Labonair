@@ -8,7 +8,7 @@
 
 - Module: `backgrounds`
 - Canonical crate: `labonair-background`
-- Related matrix: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Related matrix: [`../../docs/capabilities.md`](../../../modules.md)
 
 ## Goal
 

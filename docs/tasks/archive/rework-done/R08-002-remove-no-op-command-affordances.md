@@ -7,7 +7,7 @@
 ## Owner
 
 - Modules: `workspace`, `editor`, `command-palette`, `shell` (menu/composition)
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition entry point: `labonair-shell::commands` / `labonair-shell::menu`
 
 ## Goal

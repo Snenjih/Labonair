@@ -9,8 +9,8 @@
 - Modules: `shell`, `command-palette`, and `themes`
 - Canonical crates: `labonair-shell`, `labonair-command-palette-core`,
   `labonair-command-palette`, and `labonair-theme`
-- Related contracts: [`../../docs/architecture.md`](../../docs/architecture.md),
-  [`../../docs/design-system.md`](../../docs/design-system.md)
+- Related contracts: [`../../docs/architecture.md`](../../../architecture.md),
+  [`../../docs/design-system.md`](../../../design-system.md)
 
 ## Goal
 

@@ -10,11 +10,11 @@
   settings widgets, floating tabs), `settings` / `settings-ui` (page tree,
   widgets, new keys), `theme` (light+dark requirement), `background`
   (visibility, inline surface)
-- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../modules.md)
 - Composition entry point: `labonair_workspace::Workspace` (layout),
   `labonair_settings_ui::pages` (Settings tree)
-- Decisions: [ADR 0005](../../docs/adr/0005-universal-panes.md),
-  [ADR 0006](../../docs/adr/0006-settings-hosts-owner-surfaces-inline.md)
+- Decisions: [ADR 0005](../../adr/0005-universal-panes.md),
+  [ADR 0006](../../adr/0006-settings-hosts-owner-surfaces-inline.md)
 - Plan: orchestrated in waves by role (K = kit/chrome/motion,
   S = settings/themes, P = panes); the orchestrator alone edits this file.
 
@@ -91,7 +91,7 @@ Gates run by the orchestrator after every wave.
 
 - Checked boxes mean implemented, compiled and unit-tested. **No wave was
   verified visually or interactively** (screenshots were black in the agent
-  environment): run [`../../docs/qa/r10-002-visual-checklist.md`](../../docs/qa/r10-002-visual-checklist.md)
+  environment): run `../../docs/qa/r10-002-visual-checklist.md`
   before closing this task.
 - Editor panes: only the focused pane of a document is interactive; other
   panes of the same document are read-only mirrors until clicked (two

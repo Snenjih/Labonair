@@ -8,7 +8,7 @@
 
 - Module: `hosts`
 - Canonical crates: `labonair-hosts`, `labonair-hosts-ui`
-- Related matrix: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Related matrix: [`../../docs/capabilities.md`](../../../modules.md)
 
 ## Goal
 

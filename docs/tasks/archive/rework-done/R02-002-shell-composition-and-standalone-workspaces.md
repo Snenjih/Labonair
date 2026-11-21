@@ -8,8 +8,8 @@
 
 - Modules: `workspace` and application composition
 - Canonical crates: `labonair-workspace` and `labonair-shell`
-- Related contracts: [`../../docs/architecture.md`](../../docs/architecture.md),
-  [`../../docs/workspace-model.md`](../../docs/workspace-model.md)
+- Related contracts: [`../../docs/architecture.md`](../../../architecture.md),
+  [`../../docs/workspace-model.md`](../../../workspace-model.md)
 
 ## Goal
 

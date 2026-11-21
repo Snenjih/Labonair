@@ -10,10 +10,10 @@
   revisions, leases, persistence, migration, and Workspace UI. Terminal owns
   host-side session attachments, PTYs, input sequencing, resize control,
   output fanout, and Terminal status. Shell only composes both contracts.
-- Capability-matrix rows: [`../../docs/modules.md`](../../docs/modules.md)
+- Capability-matrix rows: [`../../docs/modules.md`](../../modules.md)
 - Composition entry point: existing Workspace construction and Terminal
   `SessionHost` registration in `labonair-shell`
-- Architecture decision: [`../../docs/adr/0010-shared-workspaces-and-multi-client-detached-sessions.md`](../../docs/adr/0010-shared-workspaces-and-multi-client-detached-sessions.md)
+- Architecture decision: [`../../docs/adr/0010-shared-workspaces-and-multi-client-detached-sessions.md`](../../adr/0010-shared-workspaces-and-multi-client-detached-sessions.md)
 
 ## Goal
 
@@ -69,14 +69,14 @@ target behavior below is already implemented.
   connection sends `Detached(Stolen)` to the first, and input/resize are
   accepted only from the connection currently in that sink. The regression
   contract is captured by
-  [`second_attach_steals_the_session`](../../crates/terminal-host/tests/host.rs).
+  [`second_attach_steals_the_session`](../../../crates/terminal-host/tests/host.rs).
   The server already has a bounded Outbox per connection with per-session
   overflow/resync, so multi-client output can build on that isolation; the
   current gap is that a session routes output to only one connection. See
-  [`server.rs`](../../crates/terminal-host/src/server.rs) and
-  [`spawn.rs`](../../crates/terminal-host/src/spawn.rs).
+  [`server.rs`](../../../crates/terminal-host/src/server.rs) and
+  [`spawn.rs`](../../../crates/terminal-host/src/spawn.rs).
 - The wire protocol currently declares `PROTO_VERSION = 1` and
-  `MIN_COMPAT = 1` in [`protocol.rs`](../../crates/terminal-host/src/protocol.rs).
+  `MIN_COMPAT = 1` in [`protocol.rs`](../../../crates/terminal-host/src/protocol.rs).
   Thus multi-process host reuse exists, but independent attachments and the
   v2 compatibility contract in this task do not.
 - V1 input uses an unacknowledged `DataKind::Input` byte frame. `HostClient::input`
@@ -87,19 +87,19 @@ target behavior below is already implemented.
   explicit admission/rejection, reconnect deduplication, and visible writer
   failure. The existing `Message::Error` is handled by the v1 client and can
   report legacy writer errors without adding a v1-unreadable event. See
-  [`client.rs`](../../crates/terminal-host/src/client.rs),
-  [`server.rs`](../../crates/terminal-host/src/server.rs), and
-  [`protocol.rs`](../../crates/terminal-host/src/protocol.rs).
+  [`client.rs`](../../../crates/terminal-host/src/client.rs),
+  [`server.rs`](../../../crates/terminal-host/src/server.rs), and
+  [`protocol.rs`](../../../crates/terminal-host/src/protocol.rs).
 - Host startup already avoids replacing any listening daemon: `ensure_daemon`
   returns when the socket is reachable, then the client handshake exposes an
   incompatible status and session count. The existing `restart` action sends
   `Shutdown` and starts a replacement; host shutdown kills every session.
   Compatibility recovery must therefore be a separate idle-only path and
   must not call that restart flow while sessions or jobs remain. See
-  [`spawn.rs`](../../crates/terminal-host/src/spawn.rs),
-  [`client.rs`](../../crates/terminal-host/src/client.rs),
-  [`background_host_service.rs`](../../crates/shell/src/background_host_service.rs),
-  and [`server.rs`](../../crates/terminal-host/src/server.rs).
+  [`spawn.rs`](../../../crates/terminal-host/src/spawn.rs),
+  [`client.rs`](../../../crates/terminal-host/src/client.rs),
+  [`background_host_service.rs`](../../../crates/shell/src/background_host_service.rs),
+  and [`server.rs`](../../../crates/terminal-host/src/server.rs).
 - Terminal lifecycle currently distinguishes local pane close from releasing
   a process's hosted sessions. `TerminalRegistry::close` terminates a hosted
   session through `Control::kill` (host `Kill` removes it globally), while
@@ -109,10 +109,10 @@ target behavior below is already implemented.
   kills all sessions. Consequently, a shared tab close must remove Workspace
   references first and only issue global Kill when no retained reference
   remains; ordinary process teardown must preserve detach semantics. See
-  [`registry.rs`](../../crates/terminal/src/registry.rs),
-  [`daemon_host.rs`](../../crates/terminal/src/daemon_host.rs),
-  [`workspace.rs`](../../crates/workspace/src/workspace.rs), and
-  [`server.rs`](../../crates/terminal-host/src/server.rs).
+  [`registry.rs`](../../../crates/terminal/src/registry.rs),
+  [`daemon_host.rs`](../../../crates/terminal/src/daemon_host.rs),
+  [`workspace.rs`](../../../crates/workspace/src/workspace.rs), and
+  [`server.rs`](../../../crates/terminal-host/src/server.rs).
 - Workspace terminal handles also have two identity layers. Each process has
   a local `TerminalRegistry` session ID; the snapshot stores the Detached
   Host's `host_session_id` plus the pane's `scrollback_id`. Host restore says
@@ -122,17 +122,17 @@ target behavior below is already implemented.
   Workspace record must preserve the durable terminal/pane key and resolve a
   process-local handle per attachment; it cannot treat either process-local
   registry IDs or the daemon's numeric ID alone as a durable reference. See
-  [`session_io.rs`](../../crates/workspace/src/session_io.rs),
-  [`host_restore.rs`](../../crates/workspace/src/host_restore.rs),
-  [`daemon_host.rs`](../../crates/terminal/src/daemon_host.rs), and
-  [`registry.rs`](../../crates/terminal/src/registry.rs).
+  [`session_io.rs`](../../../crates/workspace/src/session_io.rs),
+  [`host_restore.rs`](../../../crates/workspace/src/host_restore.rs),
+  [`daemon_host.rs`](../../../crates/terminal/src/daemon_host.rs), and
+  [`registry.rs`](../../../crates/terminal/src/registry.rs).
 - Runtime `SpaceId` is `u64`, seeded at `1`, and allocated by each in-memory
-  [`SpaceStore`](../../crates/workspace/src/spaces.rs). The v3 persisted
-  [`SpaceEntryV3`](../../crates/workspace/src/session_v3.rs) stores a name and
+  [`SpaceStore`](../../../crates/workspace/src/spaces.rs). The v3 persisted
+  [`SpaceEntryV3`](../../../crates/workspace/src/session_v3.rs) stores a name and
   session only; the active Space is stored as an array index. The single
   `session.json` path still accepts v3, v2, and the pre-Spaces flat format, and
   writes snapshots directly with best-effort `std::fs::write` in
-  [`session.rs`](../../crates/workspace/src/session.rs). The migration target
+  [`session.rs`](../../../crates/workspace/src/session.rs). The migration target
   must preserve this compatibility while introducing stable shared IDs and
   transactional storage.
 - The existing explicit Space entry point is the titlebar Spaces popover,
@@ -141,18 +141,18 @@ target behavior below is already implemented.
   plus button creates a local Standalone Space. There is no occupied-Space
   state or join action today. Add explicit join and occupancy to this existing
   picker, and claim the target before changing the local active Space. See
-  [`spaces_ui.rs`](../../crates/workspace/src/spaces_ui.rs),
-  [`tab_strip.rs`](../../crates/workspace/src/tab_strip.rs), and
-  [`workspace.rs`](../../crates/workspace/src/workspace.rs).
+  [`spaces_ui.rs`](../../../crates/workspace/src/spaces_ui.rs),
+  [`tab_strip.rs`](../../../crates/workspace/src/tab_strip.rs), and
+  [`workspace.rs`](../../../crates/workspace/src/workspace.rs).
 - Runtime `Tab.id` and `PaneId` values come from the `pane::next_id` process-
   local counter. A v3 session records tab order by list position and pane-tree
   IDs only to restore the active leaf; restore deliberately mints new pane IDs.
   Thus the current snapshot preserves structure and pane state, not stable Tab
   or Pane identity across processes or restarts. See
-  [`tabs.rs`](../../crates/workspace/src/tabs.rs),
-  [`pane.rs`](../../crates/workspace/src/pane.rs),
-  [`session_v3.rs`](../../crates/workspace/src/session_v3.rs), and
-  [`session_io.rs`](../../crates/workspace/src/session_io.rs).
+  [`tabs.rs`](../../../crates/workspace/src/tabs.rs),
+  [`pane.rs`](../../../crates/workspace/src/pane.rs),
+  [`session_v3.rs`](../../../crates/workspace/src/session_v3.rs), and
+  [`session_io.rs`](../../../crates/workspace/src/session_io.rs).
 - The app-wide `labonair.db` is opened by `AppComposition` through
   `labonair-persistence::initialize_database`; `Database` wraps a process-local
   `Arc<Mutex<Connection>>`, and the foundation crate initializes the shared
@@ -161,10 +161,10 @@ target behavior below is already implemented.
   separate Workspace-owned `workspace.db` alongside that snapshot, opened and
   migrated by `labonair-workspace-storage`; this avoids adding Workspace
   schema lifecycle to the shared foundation crate. See
-  [`composition.rs`](../../crates/shell/src/composition.rs),
-  [`persistence/src/lib.rs`](../../crates/persistence/src/lib.rs),
-  [`main.rs`](../../crates/app/src/main.rs), and
-  [`session.rs`](../../crates/workspace/src/session.rs).
+  [`composition.rs`](../../../crates/shell/src/composition.rs),
+  [`persistence/src/lib.rs`](../../../crates/persistence/src/lib.rs),
+  [`main.rs`](../../../crates/app/src/main.rs), and
+  [`session.rs`](../../../crates/workspace/src/session.rs).
 - Workspace cleanup passes only the current instance's pane scrollback IDs to
   `scrollback::cleanup`, which deletes every `.ansi.gz` file absent from that
   list. Pane retirement immediately deletes its file. The Detached Host uses
@@ -173,10 +173,10 @@ target behavior below is already implemented.
   session capture also writes its client emulator under that same key. Since
   new Detached clients mirror the same terminal, those two writers can race on
   one file. See
-  [`scrollback.rs`](../../crates/terminal-core/src/scrollback.rs),
-  [`workspace.rs`](../../crates/workspace/src/workspace.rs),
-  [`session_io.rs`](../../crates/workspace/src/session_io.rs), and
-  [`server.rs`](../../crates/terminal-host/src/server.rs).
+  [`scrollback.rs`](../../../crates/terminal-core/src/scrollback.rs),
+  [`workspace.rs`](../../../crates/workspace/src/workspace.rs),
+  [`session_io.rs`](../../../crates/workspace/src/session_io.rs), and
+  [`server.rs`](../../../crates/terminal-host/src/server.rs).
 - SSH and transfer events currently have no responsible-client ownership.
   `SubscribeEvents` replays host-key warnings and transfer state to each
   subscriber, and live bus events are broadcast to all subscribers. A
@@ -186,14 +186,14 @@ target behavior below is already implemented.
   multiple app clients this can show duplicate prompts and permits competing
   answers. Add host-issued request identity, single-client ownership, and
   at-most-once resolution before broadcasting any actionable prompt. See
-  [`ssh_host.rs`](../../crates/terminal-host/src/server/ssh_host.rs),
-  [`server.rs`](../../crates/terminal-host/src/server.rs),
-  [`protocol.rs`](../../crates/terminal-host/src/protocol.rs), and
-  [`transfers/src/lib.rs`](../../crates/transfers/src/lib.rs).
+  [`ssh_host.rs`](../../../crates/terminal-host/src/server/ssh_host.rs),
+  [`server.rs`](../../../crates/terminal-host/src/server.rs),
+  [`protocol.rs`](../../../crates/terminal-host/src/protocol.rs), and
+  [`transfers/src/lib.rs`](../../../crates/transfers/src/lib.rs).
 - `general.sessionRestore` defaults to `false`; when enabled, the current
   Workspace captures all its Spaces to that one snapshot. Current scrollback
   cleanup derives its retained IDs from that Workspace's local panes in
-  [`workspace.rs`](../../crates/workspace/src/workspace.rs). These lifecycle
+  [`workspace.rs`](../../../crates/workspace/src/workspace.rs). These lifecycle
   paths are local to one process and need a cross-process last-lease rule and
   shared reference accounting before they can safely own shared state. On
   window close, `bootstrap.rs` clears the snapshot when the preference is off

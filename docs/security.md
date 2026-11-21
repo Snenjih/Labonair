@@ -1,173 +1,88 @@
 # Security
 
-## Automation and Remote Threat Model
+Scope: the local MCP bridge, AI/agent access, SSH/SFTP sessions, credentials, the detached session host, and filesystem-adjacent integrations. Tool-level grants, limits and the tool list live in [automation.md](automation.md).
 
-**Related:** [`trust-boundaries.md`](security.md), [`secrets.md`](security.md), [`remote-access.md`](security.md), [`../automation/tools.toml`](automation.md)
+## 1. Assets and actors
 
-This threat model covers the local MCP bridge, AI/agent access, SSH/SFTP
-sessions, credentials, and filesystem-adjacent feature integrations.
+Assets: bearer token, stored credentials, private keys, passwords, host metadata, session identifiers, local file content, visible terminal I/O, remote hosts/sessions/tunnels/transfers, and the user's trust that agent actions are visible, scoped and revocable.
 
-### Assets
-
-- bearer tokens and stored credentials;
-- private keys, passwords, host metadata, and session identifiers;
-- local filesystem content and visible terminal input/output;
-- remote hosts, sessions, tunnels, and transfer targets;
-- user trust that agent actions are visible, scoped, and revocable.
-
-### Actors and boundaries
-
-| Actor | Trust level | Boundary |
+| Actor | Trust | Boundary |
 |---|---|---|
-| User | Decision authority | Grants/revokes tab access and chooses hosts/actions. |
-| Labonair UI | Trusted application process | Owns capability state and presents visible actions. |
-| MCP client/agent | Untrusted-by-default caller | Must authenticate and hold explicit session grants. |
-| Local bridge | Narrow privileged adapter | Loopback bearer endpoint; rechecks policy per tool call. |
-| SSH/SFTP remote | External/untrusted system | Reached only through typed transport contracts and host policy. |
-| Secret store | Sensitive platform boundary | Returns credential material only to the narrow authentication path. |
+| User | Decision authority | Grants/revokes tab access; chooses hosts and actions. |
+| Labonair UI | Trusted process | Owns capability state, presents actions. |
+| MCP client/agent | Untrusted by default | Must present the bearer token and hold an explicit session grant. |
+| MCP bridge | Narrow adapter | Loopback endpoint; rechecks policy on each tool call. |
+| SSH/SFTP remote | Untrusted external | Reached only via typed transport contracts and host policy. |
+| Secret store | Sensitive | Returns material only to the authentication path. |
 
-### Threats and controls
+The bridge is not a sandbox. The safety model is: user grant, host policy, secret boundary, visible terminal, explicit denial. Any stronger isolation claim needs its own ADR.
 
-| Threat | Required control | Residual evidence |
-|---|---|---|
-| Unauthenticated tool call | Disabled-by-default bridge, loopback binding, bearer token. | Negative authentication test required. |
-| Stale tab grant | Recheck current grant and host block flag at execution time. | Grant expiry and blocked-host tests. |
-| Agent reaches blocked host | `block_agent_access` denies open and active calls; revokes existing grants. | Host/MCP integration test. |
-| Secret exfiltration | No raw secrets in tool schema/output; secret files blocked by AI path guards. | Secret redaction and path-negative tests. |
-| Hidden command execution | Commands are typed into the visible granted terminal. | Visible-terminal integration evidence. |
-| Runaway command | Per-session lock and bounded timeout cap; partial result is explicit. | Timeout/cancellation tests. |
-| Remote path or host confusion | Saved-host identity and typed SSH/SFTP contracts; no arbitrary tool host input. | Host/transport contract tests. |
-| Log/notification leakage | Structured details and source; never record credentials/tokens. | Review and redaction tests. |
-
-The bridge is not a general sandbox. The user grant, host policy, secret
-boundary, visible terminal, and explicit denial behavior are the safety model;
-any stronger isolation claim requires a separate architecture decision.
-
-## Trust Boundaries
-
-**Related:** [`threat-model.md`](security.md), [`../automation/grants.md`](automation.md), [`../architecture/composition-root.md`](architecture.md)
-
-The following boundaries must remain explicit in code and documentation:
+## 2. Ownership of boundaries
 
 ```text
-user decision
-    ├─ project/worktree trust decision
-    │      ↓ typed Workspace trust state
-    │   project settings / Editor language services / MCP integrations
-    └─ explicit tab/host grant
-           ↓
-        MCP loopback + bearer token
-           ↓ typed MCP contracts/events
-        composition root adapters
-           ↓ owner contracts
-        workspace / hosts / SSH / SFTP / terminal capabilities
-           ↓ narrow secret lookup
-        secret store and remote transport
+user decision -> explicit tab/host grant
+  -> MCP loopback + bearer token
+  -> typed MCP contracts/events
+  -> composition root adapters
+  -> owner contracts: workspace / hosts / SSH / SFTP / terminal
+  -> narrow secret lookup -> secret store, remote transport
 ```
 
-- `labonair-mcp-core` owns wire values and narrow service contracts.
-- `labonair-mcp-server` owns HTTP tools, grants, timeouts, and event adapters.
-- `labonair-shell` composes concrete state into `McpServerAccess`.
-- Workspace mirrors grants for visible UI; it does not own the authoritative
-  grant map.
-- Hosts owns host policy and `block_agent_access`; SSH/SFTP own transport.
-- Secrets owns keychain/secret material and is never a general data source.
+- `labonair-mcp-core`: wire values, preferences, narrow service contracts.
+- `labonair-mcp-server`: HTTP tools, grants, timeouts, event adapters; authoritative grant map.
+- `labonair-shell`: composes concrete state into `McpServerAccess`.
+- Workspace mirrors grants for UI only.
+- `labonair-hosts` owns host policy and `block_agent_access`; `labonair-ssh*` / `labonair-sftp*` own transport.
+- `labonair-secrets` owns secret material; it is never a general data source.
 
-### Project and worktree trust
+A change crossing one of these boundaries needs an owner, a typed contract, a negative-test decision, and an update here.
 
-- Workspace (`labonair-workspace`) owns the Restricted Mode decision,
-  path-scoped trust policy, persisted trust state, reset behavior, and
-  user-facing recovery. Settings stores values only; the global auto-trust
-  preference defaults to false, and Workspace owns its effect.
-- Untrusted project and single-file roots start restricted. Trust requires an
-  explicit user decision for the selected path or validated parent scope. Local
-  path trust and remote-host trust are isolated identities.
-- Project trust does not grant SSH host-key acceptance or MCP tab access. Each
-  remains a separate user decision with its existing owner and typed contract.
-- Project settings, Editor language services, Agent, Git, and MCP integrations
-  query a narrow typed Workspace trust contract before project-controlled
-  settings, skills, tools, repository workers, or services take effect.
-  Consumers do not read Settings, a shell trust table, or Workspace private
-  state directly.
-- A failed trust write must not be presented as durable. Report persistence
-  failures through the notification center, provide retry or recovery, and
-  return an unpersisted path to Restricted Mode when it is reopened.
+## 3. Threats and controls
 
-### Detached Host clients and decision prompts
+| Threat | Control | Evidence |
+|---|---|---|
+| Unauthenticated tool call | Bridge disabled by default, binds `127.0.0.1` only, `Authorization: Bearer <token>` required (401 otherwise). | Negative auth test still wanted. |
+| Stale tab grant | `block_agent_access` is re-read from the hosts DB at execution time (`ensure_grant_still_authorized`). | Blocked-host and expiry tests wanted. |
+| Agent reaches blocked host | `open_tab` and grant creation refuse blocked hosts; blocking a host revokes its grants (`revoke_agent_access`, emits `mcp_grant_expired`). | Host/MCP integration test wanted. |
+| Secret exfiltration | No secret values in tool schemas/outputs; `open_tab` only checks that a credential exists. AI tools additionally run path guards (see §5). | Redaction/path-negative tests. |
+| Hidden command execution | `run_command`/`send_keys` write into the visible granted terminal. | Visible-terminal integration evidence. |
+| Runaway command | Per-session lock; timeout capped by `max_command_timeout_secs`; timeout returns partial output with `still_running: true`. | Timeout/cancel tests. |
+| Host/path confusion | `open_tab` takes only a saved `host_id`; typed SSH/SFTP contracts. | Contract tests. |
+| Log/notification leakage | Structured details, never credentials/tokens. | Review, redaction tests. |
 
-- The Detached Host remains local to one OS user. Its private data directory,
-  Unix socket permissions, and peer-UID check are the trust boundary; the
-  multi-instance protocol does not add TCP or remote pairing.
-- Shared Workspace leases fence revisions and releases by Workspace instance
-  ID and lease generation. A stale or expired lease cannot mutate a Space or
-  release a later owner's claim.
-- Host-key and transfer decisions are bound to the socket connection that
-  started the operation. V2 responses must carry the current one-use prompt
-  ID; the host rejects stale and wrong-owner responses and serializes
-  concurrent answers. V1 transfer responses may omit the ID but remain
-  connection-fenced and one-use. Other v1 clients do not receive another
-  client's conflict prompt.
-- A parked transfer decision may be claimed by another v2 client only after
-  the original connection releases its owner lease. The host issues a new
-  prompt ID on takeover and exposes only read-only state to the other clients.
-- Workspace persistence stores no credentials or secret material. Detached
-  SSH secrets stay in memory in the host and are not written to SQLite or
-  event logs.
+## 4. Secrets
 
-An implementation change crossing one of these boundaries requires an owner,
-typed contract, negative-test decision, and scorecard evidence update.
+Secrets: passwords, private keys, bearer tokens, credential payloads, sensitive host/session values.
 
-## Secret Handling
+- Stored only via `labonair-secrets` (and the `labonair-credentials` owner). Host records hold references/metadata, not raw secrets. Lookups use `(service, account)` pairs, e.g. `labonair-cred`/`<credential id>`, `labonair-app`/`<host id>`, and `labonair-mcp`/`bearer-token` for the bridge token.
+- Storage is a local file in the app data dir, not the OS keychain: `secrets.json` (plain, relies on file permissions) by default, or `secrets.enc` (AES-256-GCM) when encryption is enabled in settings. The app-managed key `enc_key.bin` is generated once (mode 0600 on Unix); there is no master password. `SecretsState::in_memory()` is a RAM-only store.
+- Never place secrets in source, logs, notifications, SQLite fixtures, tests, docs, screenshots or commits. Test fixtures use synthetic credentials.
+- MCP tools may check that a credential exists, never return it. Tool schemas use host/session IDs, not raw password/key parameters.
+- Error details must not echo command input or credential material.
+- The bearer token and the update-signing private key are operator/CI secrets; only their storage contract belongs in the repo.
 
-**Related:** [`threat-model.md`](security.md), [`remote-access.md`](security.md), [`../automation/tools.toml`](automation.md)
+## 5. AI path and command guards
 
-Secrets include passwords, private keys, bearer tokens, keychain references,
-credential payloads, and sensitive host/session values.
+`crates/ai/src/tools/security.rs` (a defense layer, not a sandbox; user confirmation of write/exec is the real net): blocks reads of secret-like files (`.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.asc`, `*.gpg`, `id_rsa*`, `.aws/credentials`, `.ssh/`, `.git/`, ...), blocks writes into those plus system directories, offers symlink-resolving variants (`check_readable_resolved` / `check_writable_resolved`), and rejects catastrophic shell commands (`rm -rf /`, `chmod 777`, `dd` to block devices, disk formatting, commands referencing secret files). These guards apply to AI tool calls, not to MCP `run_command`, which is bounded by the grant instead.
 
-### Rules
+## 6. Remote access
 
-- Store secret material only through `labonair-secrets` and the credential
-  owner; host records may store references and metadata, not raw secrets.
-- Never place secrets in source, logs, notifications, SQLite fixtures, tests,
-  generated documentation, screenshots, or commits.
-- MCP tools may check that a credential exists, but must not return its value.
-- Tool schemas must use host/session IDs and typed references instead of raw
-  password/key parameters.
-- AI path guards reject obvious secret filenames/directories and protected
-  system paths; symlink-aware checks are required where a path is resolved.
-- Error details must be useful without echoing command input or credential
-  material.
-- Test fixtures use synthetic credentials and must be redacted before sharing
-  artifacts.
-
-The bearer token and update-signing private key are operator/CI secrets and do
-not belong in repository documentation. Only their storage contract and
-redaction behavior are documented here.
-
-## Remote Access Safety
-
-**Related:** [`threat-model.md`](security.md), [`secrets.md`](security.md), [`../capabilities.md`](modules.md), [`../audits/remaining-boundaries.md`](archive/audits/remaining-boundaries.md)
-
-Hosts owns saved-host identity and policy. SSH/SFTP own connection and session
-execution. Transfers, snippets, Explorer, Workspace, and MCP consume typed
-contracts or composition adapters; they must not reach into transport-private
-state.
-
-### Required behavior
+Hosts owns saved-host identity and policy; SSH/SFTP own connection and session execution. Transfers, snippets, Explorer, Workspace and MCP consume typed contracts or composition adapters, never transport-private state.
 
 - Use stable host IDs and typed `HostOpenRequest`/session contracts.
-- Keep jump hosts as SSH connection configuration, not a duplicate product
-  surface or status item.
-- Keep SFTP browsing and transfer lifecycle separate from SSH transport
-  implementation details.
-- Reject blocked-agent hosts for MCP open and active tool calls.
-- Treat connection, trust, authentication, timeout, and transfer failures as
-  structured owner notifications with safe details.
-- Make cancellation, reconnect, and stale-session behavior explicit in the
-  owning task and tests.
-- Never claim remote safety from a compile-only check; include allowed and
-  denied integration cases.
+- Jump hosts are SSH connection configuration, not a separate product surface.
+- SFTP browsing/transfer lifecycle stays separate from SSH transport internals (Explorer consumes `RemoteExplorerService`; the shell injects the SFTP adapter).
+- Connection, trust, authentication, timeout and transfer failures are structured owner notifications with safe details.
+- Cancellation, reconnect and stale-session behavior must be explicit in the owning task and tests.
+- Remote safety needs allowed and denied integration cases, not a compile-only check.
 
-The Explorer remote-directory contract is the current example of the desired
-boundary: the panel consumes `RemoteExplorerService`, while the shell injects
-the SFTP adapter.
+## 7. Detached session host
+
+- Local to one OS user: private data directory (0700), Unix socket, and a peer-UID check (`peer_cred`) are the trust boundary. No TCP, no remote pairing.
+- Workspace leases (`labonair-workspace-storage`) carry a generation that fences stale mutation, renewal, switch and release calls from a prior claim.
+- Detached SSH secrets stay in host memory; they are not written to SQLite or event logs. Workspace persistence stores no credentials.
+- Host-key and transfer decisions are bound to the connection that started the operation; takeover by another client issues a new prompt ID (design in ADR 0010; one-use prompt-ID enforcement not re-verified in code for this revision).
+
+## 8. Project trust
+
+Target (not yet true): a Workspace-owned Restricted Mode where untrusted project/single-file roots start restricted, trust is an explicit per-path decision (local and remote identities separate, never implying SSH host-key acceptance or MCP tab access), and project settings, language services, Agent, Git and MCP integrations query a typed trust contract before project-controlled settings, skills, tools or workers take effect; failed trust writes surface through notifications and reopen in Restricted Mode. No `WorkspaceTrust`/Restricted-Mode code exists today. What is true: project settings files are treated as untrusted input (`crates/settings/src/project.rs` warns that keys from a cloned repo must not be trusted blindly).

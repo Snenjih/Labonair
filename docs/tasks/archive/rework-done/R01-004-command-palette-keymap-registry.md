@@ -7,7 +7,7 @@
 ## Owner
 
 - Modules: `command-palette`, `keymap`
-- Capability matrix: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability matrix: [`../../docs/capabilities.md`](../../../modules.md)
 - Canonical surfaces: titlebar command menu, global palette, and Keymap settings
 
 ## Dependencies

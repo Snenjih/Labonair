@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: editor
-- Capability-matrix row: [Editor](../../docs/modules.md)
+- Capability-matrix row: [Editor](../../modules.md)
 - Composition entry point: labonair-shell composes the Editor session store and Workspace Editor tab adapter
 
 ## Dependencies

@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: editor
-- Capability-matrix row: [Editor](../../docs/modules.md)
+- Capability-matrix row: [Editor](../../modules.md)
 - Composition entry point: labonair-shell constructs local language-service processes and injects the Editor service boundary
 
 ## Dependencies

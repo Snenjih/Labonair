@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: `hosts`
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition entry point: `labonair-shell::bootstrap`
 
 ## Goal

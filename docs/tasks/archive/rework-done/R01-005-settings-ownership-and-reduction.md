@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: `settings`
-- Capability matrix: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability matrix: [`../../docs/capabilities.md`](../../../modules.md)
 - Canonical surfaces: Settings values window; module-owned Hosts, Themes,
   Keymap, Notifications, and Personalization surfaces
 

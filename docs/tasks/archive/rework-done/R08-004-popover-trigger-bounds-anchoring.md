@@ -8,7 +8,7 @@
 
 - Modules: `shell` (titlebar), `notifications`, `workspace` (status items),
   `settings-ui`
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/capabilities.md`](../../../modules.md)
 - Composition entry point: n/a — per-view rendering
 
 ## Goal
