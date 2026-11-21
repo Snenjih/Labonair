@@ -20,7 +20,8 @@
 //!
 //! The selected tile has a 2px `primary` ring and a bold label. The ring is a
 //! constant 2px border (transparent when idle), so selecting never shifts
-//! layout. A keyboard-focused unselected tile shows the focus ring colour.
+//! layout. An unselected keyboard-focused tile shows the focus ring colour;
+//! selecting it removes that focus fill.
 
 use std::rc::Rc;
 
@@ -242,7 +243,7 @@ impl IntoElement for PreviewTileGroup {
                 let click_key = tile.key.clone();
                 let keys = keys.clone();
                 let (light, dark) = tile_colors(&tile, &c);
-                let ring = if on { c.primary } else { c.ring };
+                let focus_ring = c.ring;
                 div()
                     .id(SharedString::from(format!("{id}-{}", tile.key)))
                     .flex()
@@ -271,7 +272,9 @@ impl IntoElement for PreviewTileGroup {
                     .when(!disabled, move |tile| {
                         tile.cursor_pointer()
                             .tab_index(0)
-                            .focus(move |style| style.bg(ring.opacity(0.12)))
+                            .when(!on, |tile| {
+                                tile.focus(move |style| style.bg(focus_ring.opacity(0.12)))
+                            })
                             .when_some(click, move |tile, handler| {
                                 tile.on_click(move |_: &ClickEvent, window, cx| {
                                     handler(&click_key, window, cx)
