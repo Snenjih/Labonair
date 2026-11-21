@@ -1,191 +1,44 @@
-# Testing and visual verification
+# Testing and Visual Verification
 
-## Native Visual Verification
+Related: [`architecture.md`](architecture.md) §11 (verification gates), [`design-system.md`](design-system.md) (review rule), [`performance.md`](performance.md).
 
+## 1. Automated gates
 
-Visual checks must prove that the native Rust application was rendered. A
-successful process launch or a screenshot of a window with the display name
-`Labonair` is not sufficient because the legacy Tauri application may be
-installed under the same name.
+`scripts/check.sh` is the canonical local and CI gate (`.github/workflows/ci.yml`, macOS job; a Linux check-only job is informational): `cargo fmt --check`, `cargo check --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and `scripts/check-crate-deps.sh` (crate-graph rules). Test the public contract and the user flow of what you change. A green build is evidence for the checks it ran only; it does not close visual, security, remote, or workflow verification, and it never proves a surface renders.
 
-### Canonical launch target
+`scripts/smoke-test.sh` builds the macOS bundle (`scripts/package-macos.sh`), verifies its structure (executable, `Info.plist` lint, icon, `PkgInfo`, version substituted, identifier `com.labonair.rust`, signature when `LABONAIR_SIGN_IDENTITY` is set), runs `cargo test -p labonair --test smoke` (native app init, PTY shell round-trip, update-manifest check), and with `LABONAIR_SMOKE_LAUNCH=1` opens the exact bundled Rust app for 5 s. A process-only smoke test proves startup and survival, not rendering.
 
-Use one of these explicit targets:
+## 2. Native visual verification
+
+A visual check must prove the **native Rust** app rendered. A successful launch, or a screenshot of a window named `Labonair`, is not enough: the legacy Tauri app (`/Applications/Labonair.app`) may be installed under the same display name.
+
+**Launch targets (explicit only):**
 
 ```text
 cargo run -p labonair
-target/release/bundle/macos/Labonair.app
+target/release/bundle/macos/Labonair.app        (built by scripts/package-macos.sh)
 ```
 
-Never use `open -a Labonair`. For a packaged macOS check, open the absolute
-bundle path with `open -n -W` and identify the resulting process by its exact
-executable path:
+Never use `open -a Labonair`. For a packaged check, open the absolute bundle path with `open -n -W`, or run the executable directly, and identify the process by its exact path `target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair` (the debug build is `target/debug/labonair`). The native bundle ID is `com.labonair.rust`; the legacy app uses a different one.
 
-```text
-target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair
-```
+**Fail closed.** A capture helper must find a layer-0 window owned by the exact Rust PID and never fall back to the application name or the frontmost unrelated window. Even an explicit PID must resolve to the exact native executable before capture.
 
-The native bundle uses `com.labonair.rust`; the legacy Tauri application uses
-a different bundle identity. A visual helper must fail closed when it cannot
-find a layer-0 window owned by the exact Rust PID. It must never fall back to
-the generic application name or to the frontmost unrelated window. Even an
-explicitly supplied PID must resolve to the exact native executable before a
-capture is attempted.
-
-### Required evidence
-
-For a shell or layout change, verify the relevant normal, narrow, focused,
-empty, loading, and error states. Record the absolute screenshot path and the
-Rust executable PID in the task handoff. A process-only smoke test proves
-startup and survival, but it does not replace a screenshot or equivalent
-rendered visual evidence.
-
-If macOS Screen Recording or Accessibility permission prevents interaction or
-capture, record that limitation explicitly and leave the visual acceptance
-criterion open. Do not accept a screenshot produced without exact process
-ownership, and do not infer visual success from a successful build. On macOS,
-grant Screen Recording access under **System Settings → Privacy & Security →
-Screen Recording** to the terminal or runner that executes
-`scripts/screenshot.sh`, then rerun the exact-bundle launch and capture
-sequence. Accessibility permission is separately required for keyboard/mouse
-interaction checks.
-
-### Repository helpers
+**Helpers:**
 
 - `scripts/package-macos.sh` builds the canonical bundle.
-- `scripts/smoke-test.sh` verifies the bundle, core smoke tests, and optionally
-  the exact Rust process with `LABONAIR_SMOKE_LAUNCH=1`.
-- `scripts/capture-macos-native.sh` launches the exact packaged Rust bundle,
-  resolves its new executable PID, and delegates to `scripts/screenshot.sh`.
-  The manual `.github/workflows/visual-native.yml` workflow builds that bundle
-  and uploads the capture plus launch log for reviewer inspection.
-- `scripts/visual_capture_path.py` accepts only a canonical surface/state and
-  resolves the exact commit-bound artifact path used by the registry.
-- `scripts/check_visual_capture_path.py` is run by the visual verification
-  scope and exercises every catalog state plus rejection cases before any
-  capture record can be accepted.
-- `scripts/screenshot.sh` accepts an explicit Rust PID and fails closed when
-  no matching native window can be captured. It also distinguishes an invalid
-  PID from a macOS Screen Recording permission failure.
+- `scripts/screenshot.sh [out.png] [rust_pid]` (default `shots/labonair.png`; PID also via `LABONAIR_RUST_PID`, else it looks for the debug/bundle executable) validates the PID against the native executable paths, resolves the layer-0 window with CoreGraphics, and captures it with `screencapture`. It distinguishes an invalid PID from a macOS Screen Recording permission failure.
+- `scripts/capture-macos-native.sh <out.png>` launches the packaged bundle with `open -n`, resolves its new PID, waits for the window, delegates to `screenshot.sh`, prints binary/PID/artifact, and kills the process. It infers no surface or state.
 
-These helpers are verification tools, not additional application behavior.
+**Permissions.** Grant Screen Recording (System Settings > Privacy & Security > Screen Recording) to the terminal or runner executing the scripts; Accessibility is separately required for keyboard/pointer interaction. If permission blocks capture or interaction, record the limitation and leave visual acceptance open; never accept a capture without exact process ownership or infer success from a build.
 
-An isolated Linux Xvfb launch may be used for supplemental layout diagnosis
-when a macOS window server is unavailable. It must record the exact Rust PID
-and remain clearly labeled as non-release evidence: Linux is build-prepared,
-not a first-class packaged target, and an Xvfb capture never closes the
-macOS-supported visual matrix.
+**Linux.** An isolated Xvfb launch may supplement layout diagnosis when no macOS window server is available. Record the exact PID and label it non-release evidence: Linux is build-prepared, not a packaged target, and an Xvfb capture never closes macOS visual acceptance.
 
-## Visual Evidence Matrix
+## 3. Capture procedure
 
-**Related:** [`../visual-verification.md`](testing.md), [`../audits/product-surface-acceptance.md`](archive/audits/product-surface-acceptance.md), [`evidence-model.md`](testing.md)
+Preconditions: a macOS host with a graphical session; a disposable application profile or fixture data (never real passwords, private keys, bearer tokens, host addresses, or other secrets); the bundle built from the commit under review; no legacy app, reference renderer, or generic frontmost-window screenshot.
 
-The product-surface audit is the canonical current-state matrix for native
-visual acceptance. This document defines how future surface descriptors link to
-that matrix.
-
-The machine-readable screenshot index is
-[`visual-evidence.toml`](testing.md), with its generated
-per-surface view at
-`../generated/visual-evidence.md`. Keep the
-state labels in that source aligned with `product/surfaces.toml`; the checker
-rejects aliases, missing states, and untracked surface records.
-
-### Required state coverage
-
-Each surface declares the states that apply to it. At minimum, applicable
-surfaces cover:
-
-- normal/ready;
-- focused/keyboard-focused;
-- empty/no-data;
-- narrow or constrained layout;
-- loading/in-progress;
-- error/failure;
-- expanded details or secondary interaction where applicable.
-
-Each matrix cell records the exact native binary, platform, window/PID scope,
-state label, artifact path, date, and result. Use `Pending` when the native
-capture environment is unavailable. Do not infer a screenshot from source
-inspection or a non-native web/reference rendering.
-
-The current R07 matrix remains open for native acceptance. Its pending cells
-are a deliberate visible limitation in the generated scorecard.
-
-## Evidence Model
-
-**Related:** [`../visual-verification.md`](testing.md), [`visual-matrix.md`](testing.md), `visual-evidence-schema.md`, `../capabilities/schema.md`, [`../evidence/scorecard.toml`](README.md)
-
-Evidence answers what a claim is based on. A status without an evidence
-reference is not a completion claim.
-
-### Evidence classes
-
-| Class | Proves | Does not prove by itself |
-|---|---|---|
-| `contract` | A typed owner boundary exists and is covered. | That every consumer is integrated. |
-| `unit` | Isolated domain behavior. | Native rendering or process/network behavior. |
-| `integration` | Real owner/adapter/consumer wiring. | Visual consistency or supported-platform packaging. |
-| `command` | A stable user action reaches its owner. | Correct visual availability in every context. |
-| `surface` | A canonical entry point exists and is owned. | State completeness without state evidence. |
-| `persistence` | Load/save/reload/migration behavior. | Secret safety unless explicitly tested. |
-| `notification` | User-visible success/failure routing and deduplication. | Native placement and anchoring. |
-| `visual` | A native binary renders the required state. | Backend correctness or architecture ownership. |
-| `security` | Trust, grant, path, secret, or denial behavior. | General product completeness. |
-| `performance` | A declared budget or baseline. | Functional correctness. |
-| `regression` | A previous bug or migration edge stays covered. | New behavior not represented by the regression. |
-
-Use `Verified`, `Partial`, `Pending`, or `N/A` for evidence state. Every
-`Pending` item records the exact blocker and a next action. A successful Rust
-build is evidence for its executed checks only; it does not close visual,
-security, remote, or workflow evidence.
-
-### Evidence record
-
-The structured scorecard in [`../evidence/scorecard.toml`](README.md)
-is the first repository-wide evidence index. Each item contains an ID, area,
-target, owner, status, exact source/artifact references, verification date,
-limitation, and next action. The generated projection is
-`../generated/scorecard.md`.
-
-Visual evidence is indexed separately in
-[`visual-evidence.toml`](testing.md). It owns the per-surface state
-labels and deterministic artifact paths; the scorecard links to that index
-instead of duplicating a second visual matrix.
-
-## Native Visual Capture Runbook
-
-
-This is the operator protocol for closing the native visual matrix. It does
-not add visual states: [`../product/surfaces.toml`](product.md)
-is the only state authority, and
-[`visual-evidence.toml`](testing.md) is the only evidence registry.
-The runbook explains how to prepare, inspect, capture, and record one state at
-a time on a supported macOS host.
-
-### Preconditions
-
-- Use a supported macOS host with a graphical window session.
-- Grant Screen Recording to the terminal or runner executing
-  [`../../scripts/screenshot.sh`](../scripts/screenshot.sh). Grant
-  Accessibility separately when keyboard or pointer interaction is required.
-- Use a disposable application profile or fixture data. Never enter real
-  passwords, private keys, bearer tokens, host addresses, or other secrets.
-- Build the exact native bundle from the commit being evidenced. Do not use
-  `open -a Labonair`, the legacy installed application, a reference renderer,
-  or a generic frontmost-window screenshot.
-- Capture one catalog state per artifact. If the state cannot be produced or
-  cannot be inspected truthfully, leave it `Pending` and record the blocker.
-
-### Capture protocol
-
-1. Check out the commit under review and build the bundle:
-
-   ```text
-   scripts/package-macos.sh
-   ```
-
-2. Launch the exact executable directly and retain its PID:
+1. Build: `scripts/package-macos.sh`.
+2. Launch the exact executable and keep its PID; the process must stay alive while you prepare the state:
 
    ```text
    BUNDLE_BINARY="$PWD/target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair"
@@ -193,242 +46,76 @@ a time on a supported macOS host.
    RUST_PID=$!
    ```
 
-   The process must remain alive while the state is prepared. The screenshot
-   helper validates the PID and resolves a layer-0 window before capturing.
+3. Prepare one state using section 4, and inspect the whole surface: focus, clipping, anchoring, loading/error copy, adjacent shell zones. Preparation is not evidence.
+4. Capture: `scripts/screenshot.sh <path>.png "$RUST_PID"`.
+5. Inspect the PNG. Reject it if the state is not visible, another app appears, a secret is visible, or the layout is clipped or mis-anchored.
+6. Record the absolute screenshot path, Rust PID, host, and commit in the task handoff. Capture one state per image. If a state cannot be produced or inspected truthfully, leave it pending with the blocker; do not force it with a mock overlay, and create a bounded task for the owner instead. A temporary `/tmp` image or terminal log is not a durable capture.
 
-3. Set the exact catalog identifiers and resolve the deterministic artifact:
+## 4. State coverage and preparation
 
-   ```text
-   SURFACE_ID="workspace.active"
-   STATE="home"
-   COMMIT="$(git rev-parse HEAD)"
-   ARTIFACT="$(python3 scripts/visual_capture_path.py \
-     --surface "$SURFACE_ID" --state "$STATE" --commit "$COMMIT")"
-   ```
+For a shell or layout change verify the applicable states: normal/ready, focused (keyboard), empty, narrow, loading, error, and expanded/secondary interaction. Use the canonical command or surface owner and a disposable fixture. The tables below are preparation guidance, not alternate state definitions.
 
-   The path helper rejects unknown states, wrong platform identifiers, invalid
-   commit identifiers, and a non-`narrow` viewport for the `narrow window`
-   state. Do not rename its output.
+### Titlebar (`crates/shell/src/titlebar.rs`)
 
-4. Prepare the state using the matrix below. Inspect the complete rendered
-   surface, including focus, clipping, anchoring, loading/error copy, and
-   adjacent shell zones. The preparation action is not evidence by itself.
-
-5. Capture the exact PID:
-
-   ```text
-   scripts/screenshot.sh "$ARTIFACT" "$RUST_PID"
-   ```
-
-6. Inspect the PNG on the supported host. Reject it when the expected state
-   is not visible, another application is present, secrets are visible, or
-   the layout is clipped or incorrectly anchored. Keep the artifact below
-   `artifacts/visual/` only after inspection.
-
-7. Add a matching `[[capture]]` record to
-   [`visual-evidence.toml`](testing.md), change exactly that state
-   to `Verified`, and retain the artifact in the same commit-bound path. The
-   record must include the exact executable path, Rust PID, layer-0 window ID,
-   platform, viewport, capture date, and commit. A temporary `/tmp` image,
-   terminal log, or process-only launch is not a durable capture.
-
-8. Regenerate and run the scoped gates before moving to the next state:
-
-   ```text
-   python3 scripts/gen_visual_evidence.py
-   python3 scripts/verify.py --scope visual
-   python3 scripts/check_documentation.py
-   ```
-
-   At the end of the session run `python3 scripts/verify.py --scope all` and
-   update the R07 task handoff with the host, commit, artifact count, and any
-   unavailable states.
-
-### State preparation and review matrix
-
-The actions below are bounded preparation guidance, not alternate state
-definitions. Use the canonical command/surface owner and a disposable
-fixture. If a proposed action does not produce the named state in the actual
-application, do not force it with a mock overlay; leave the cell pending and
-create a bounded task for the owner.
-
-#### `shell.titlebar` — Titlebar
-
-Source: [`../product/surfaces.toml`](product.md),
-[`../../crates/shell/src/titlebar.rs`](../crates/shell/src/titlebar.rs).
-
-| State | Preparation | Review assertion |
+| State | Preparation | Check |
 |---|---|---|
-| `normal` | Launch with one active workspace tab. | Titlebar, tab strip, global-menu trigger, and window controls render without overlap. |
-| `focused tab` | Open at least two tabs and focus one through the canonical tab interaction. | The selected tab has the intended focus/selection treatment and neighboring tabs remain legible. |
-| `multiple tabs` | Create multiple terminal/tool tabs through registered commands. | Tab ordering, labels, close affordances, and overflow behavior remain coherent. |
-| `narrow window` | Resize the native window to the catalog narrow viewport. | Titlebar content remains usable; no permanent control is clipped or silently duplicated. |
-| `zen mode` | Invoke the canonical `ToggleZenMode` command. | Only the documented shell chrome changes and the active content remains usable. |
+| normal | One active workspace tab. | Titlebar, tab strip, global-menu trigger, window controls without overlap. |
+| focused tab / multiple tabs | Open several tabs via registered commands; focus one. | Selection treatment, ordering, labels, close affordances, overflow coherent. |
+| narrow window | Resize to a narrow viewport. | Content usable; no permanent control clipped or duplicated. |
+| zen mode | `ToggleZenMode`. | Only the documented chrome changes; content usable. |
 
-#### `shell.global-menu` — Global Menu
+### Global menu (`crates/shell/src/menu.rs`)
 
-Source: `../product/menu.toml`,
-[`../../crates/shell/src/menu.rs`](../crates/shell/src/menu.rs).
-
-| State | Preparation | Review assertion |
+| State | Preparation | Check |
 |---|---|---|
-| `closed` | Launch or dismiss the global menu. | The menu is absent and does not reserve an unexplained overlay region. |
-| `open` | Activate the titlebar global-menu button. | The menu opens at the trigger, stays inside the viewport, and exposes only catalog entries. |
-| `disabled item` | Open the menu in a context with a known unavailable command, such as no project/editor context. | The disabled row is visibly disabled and cannot execute a feature handler. |
-| `submenu` | Open a catalog branch such as View or Connections. | The submenu anchors to its parent, flips/clamps correctly, and preserves owner labels/actions. |
-| `keyboard navigation` | Focus the menu and navigate with the documented keymap, without relying on pointer hover. | Highlight, submenu traversal, activation, and Escape dismissal are visible and deterministic. |
+| closed / open | Dismiss / activate the titlebar menu button. | Absent without a reserved overlay region / anchored at the trigger inside the viewport. |
+| disabled item | Open without project/editor context. | Row visibly disabled; cannot execute. |
+| submenu | Open a branch (View, Connections). | Anchors to parent, flips/clamps, preserves owner labels/actions. |
+| keyboard navigation | Navigate with the keymap, no pointer. | Highlight, submenu traversal, activation, Escape deterministic. |
 
-#### `workspace.active` — Active Workspace
+### Workspace (`crates/workspace/src/workspace.rs`)
 
-Source: [`../product/surfaces.toml`](product.md),
-[`../../crates/workspace/src/workspace.rs`](../crates/workspace/src/workspace.rs).
-
-| State | Preparation | Review assertion |
+| State | Preparation | Check |
 |---|---|---|
-| `home` | Start with no project selected and the normal home/empty workspace route. | The home state is intentional, unclipped, and exposes the documented entry actions. |
-| `project workspace` | Open a disposable local fixture repository through `OpenProject`. | Project identity, active tab, docks, and statusbar agree on the selected root. |
-| `standalone` | Use `ReturnToStandalone` or create a standalone terminal/tool tab. | No stale project identity or project-only control remains. |
-| `empty pane` | Close the active leaf/tab through the canonical close path while retaining the workspace. | The empty pane state is rendered by Workspace and offers only valid recovery actions. |
-| `loading` | Trigger a real asynchronous project/session restore using a local fixture. | Loading indicator and disabled/actionable controls reflect actual in-flight work. |
-| `error` | Use a disposable invalid/inaccessible project fixture. | The error is actionable or routed to Notifications; no raw path/secret is leaked. |
-| `split panes` | Invoke `SplitRight` and `SplitDown` on a disposable workspace. | Split handles, focus, resizing, and close behavior preserve the layout tree. |
-| `shared Space join` | Launch two native app instances against one disposable profile. In the second instance, open the Spaces picker and join the Space occupied by the first. | The picker shows the participant count and explicit Join action; after joining, both windows identify the same Space. |
+| home | No project, normal home route. | Intentional, unclipped, documented entry actions. |
+| project workspace | Open a disposable local repo via `OpenProject`. | Project identity, tab, docks, statusbar agree on the root. |
+| standalone | `ReturnToStandalone` or a standalone terminal/tool tab. | No stale project identity or project-only control. |
+| empty pane | Close the active leaf/tab, keep the workspace. | Workspace-rendered empty state with only valid recovery actions. |
+| loading / error | Real async restore with a local fixture / an invalid or inaccessible fixture. | Truthful progress; actionable error or notification, no raw path or secret. |
+| split panes | `SplitRight`, `SplitDown`. | Handles, focus, resize, close preserve the layout tree. |
+| shared Space join | Two native instances on one disposable profile; in the second open the Spaces picker and join the first's Space. | Participant count and explicit Join action; both windows identify the same Space. |
 
-#### `workspace.docks` — Registered Docks and Panels
+### Docks and statusbar (`crates/workspace/src/dock.rs`, `status_bar.rs`, `status_items.rs`)
 
-Source: [`../../crates/workspace/src/dock.rs`](../crates/workspace/src/dock.rs),
-[`../../crates/panel/src/dock.rs`](../crates/panel/src/dock.rs).
-
-| State | Preparation | Review assertion |
+| State | Preparation | Check |
 |---|---|---|
-| `left dock` | Open a registered panel configured for the left dock. | The dock owns placement and the panel uses shared UI-kit controls. |
-| `right dock` | Open a registered panel configured for the right dock. | Right-dock width, focus, and close controls remain inside the workspace bounds. |
-| `bottom dock` | Open a registered panel configured for the bottom dock. | Bottom-dock resizing does not cover the statusbar or active content. |
-| `empty dock` | Close/hide all panels in one dock using canonical controls. | Empty dock chrome is either absent or intentionally represented by the contract. |
-| `focused panel` | Focus a panel and then move focus to its adjacent workspace pane. | Focus ring, keyboard routing, and panel actions follow the active owner. |
-| `narrow window` | Resize the window to the catalog narrow viewport with a dock open. | Dock collapse/overflow behavior is deterministic and no panel is silently duplicated. |
+| left / right / bottom dock | Open a registered panel for that edge. | Dock owns placement; kit controls; bounds, focus, close inside workspace; bottom resize never covers the statusbar. |
+| empty dock | Close all panels in a dock. | Chrome absent or intentional. |
+| focused panel | Focus a panel, then the adjacent pane. | Focus ring and keyboard routing follow the active owner. |
+| narrow + dock | Narrow viewport with a dock open. | Deterministic collapse; no duplicated panel. |
+| statusbar normal / hidden item | Standard items / hide one via its owner path. | Left controls and right info zones; only that item disappears. |
+| item context menu | Right-click a status item. | Anchored; only owner-registered actions. |
+| narrow / unread badge | Resize; publish a safe synthetic notification. | Items collapse without clipping; badge count and read state owned by the registry. |
 
-#### `workspace.statusbar` — Statusbar
+### Command palette (`crates/command-palette/src/palette.rs`) and dialogs (`crates/workspace/src/modal_layer.rs`, `crates/shell/src/modals.rs`)
 
-Source: [`../../crates/workspace/src/status_bar.rs`](../crates/workspace/src/status_bar.rs),
-[`../../crates/workspace/src/status_items.rs`](../crates/workspace/src/status_items.rs).
-
-| State | Preparation | Review assertion |
+| State | Preparation | Check |
 |---|---|---|
-| `normal` | Launch a normal workspace with standard registered status items. | Left controls and right information items occupy the documented zones. |
-| `hidden item` | Hide one optional status item through its canonical owner/settings path. | Only the selected item disappears; shell-wide feature state is not duplicated. |
-| `right-click menu` | Open the context menu on a status item. | The menu anchors to the item and contains only valid owner-registered actions. |
-| `narrow window` | Resize with status items present. | Items collapse or hide according to the documented rule without clipping. |
-| `unread notification badge` | Publish a safe synthetic notification through the notification fixture path. | Badge count/read state is visible and is owned by the notification registry. |
+| palette focused / empty / filtered | `OpenCommandPalette`; a non-matching query; a query matching an owner command. | Input focus and modal anchoring; explicit empty state with no invented action; ranking, labels, icons, keybinding hints match the registry. |
+| palette submenu / keyboard / dismissed | Open an owner-contributed submenu; navigate with the keymap; Escape. | Typed palette contract, within viewport; no pointer-only behavior; overlay and focus trap removed without stale dimming. |
+| dialog open / focused input | Trigger a documented decision dialog; focus its input. | Scrim, bounds, title, actions, visible focus; typing does not leak to the workspace. |
+| validation error | Submit an invalid value in a fixture. | Field-level correction path; no duplicate passive error. |
+| confirm / cancel | Inspect both without changing data. | Distinct, safe behavior. |
+| loading / failure | Real async dialog-owned operation; deterministic failing fixture. | In-flight state blocks duplicate submits; failure redacted, actionable, routed via notification. |
 
-#### `overlay.command-palette` — Command Palette
+### Hosts, notifications, settings, terminal
 
-Source: [`../../crates/command-palette/src/palette.rs`](../crates/command-palette/src/palette.rs),
-`../product/commands.toml`.
+Hosts is a full-page Settings surface ([ADR 0007](adr/0007-hosts-settings-page.md)), source `crates/hosts-ui/src/hosts.rs`; notifications `crates/notifications/src/status_item.rs`; settings `crates/settings-ui/src/window.rs`; terminal `crates/workspace/src/views/terminal.rs`.
 
-| State | Preparation | Review assertion |
+| Surface | States and preparation | Check |
 |---|---|---|
-| `focused` | Invoke `OpenCommandPalette` and leave focus in its input. | Input focus, caret, result ownership, and modal anchoring are clear. |
-| `empty` | Enter a query with no matching catalog command. | The empty-result state is explicit and does not invent an executable action. |
-| `filtered` | Enter a query matching a known owner command. | Ranking, labels, icons, and keybinding hints match the command catalog. |
-| `submenu` | Open an owner-contributed dynamic submenu. | Submenu actions cross the typed palette contract and anchor within the viewport. |
-| `keyboard navigation` | Navigate results and submenus with the keymap. | Selection, activation, and dismissal work without pointer-only behavior. |
-| `dismissed` | Press Escape or invoke the documented dismissal path. | The overlay and focus trap are removed without leaving stale dimming or state. |
-
-#### `workspace.dialogs` — Dialogs and Decision Overlays
-
-Source: [`../../crates/workspace/src/modal_layer.rs`](../crates/workspace/src/modal_layer.rs),
-[`../../crates/shell/src/modals.rs`](../crates/shell/src/modals.rs).
-
-| State | Preparation | Review assertion |
-|---|---|---|
-| `open` | Trigger a documented project/settings/feature decision dialog. | Scrim, bounds, title, actions, and focus target are visible and correctly owned. |
-| `focused input` | Focus a text/input control inside the dialog. | Keyboard focus is visible and typing does not leak to the underlying workspace. |
-| `validation error` | Submit a deliberately invalid value in a disposable fixture. | The field-level correction path is clear and no passive duplicate error surface appears. |
-| `confirm/cancel` | Open a decision dialog and inspect both actions without changing user data. | Confirm and cancel have distinct, safe behavior and dismiss/retain state correctly. |
-| `loading` | Trigger a real asynchronous dialog-owned operation. | Action controls reflect in-flight state and do not allow duplicate submissions. |
-| `failure` | Use a disposable fixture that deterministically fails the operation. | Failure is redacted, actionable, and routed through the documented owner/notification path. |
-
-#### `workspace.hosts-tab` — Hosts Management Tab
-
-Source: [`../../crates/hosts-ui/src/hosts.rs`](../crates/hosts-ui/src/hosts.rs),
-[`../security/remote-access.md`](security.md).
-
-| State | Preparation | Review assertion |
-|---|---|---|
-| `host list` | Open Hosts with a synthetic, non-secret saved-host fixture. | List rows, selection, actions, and empty/loading transitions use the Hosts owner. |
-| `empty` | Open Hosts in a disposable data directory with no saved hosts. | Empty actions are explicit and no host/credential from another profile appears. |
-| `host form` | Start a new host form without entering real credentials. | Form fields, scopes, and save/cancel actions follow the Hosts contract. |
-| `validation error` | Submit an invalid synthetic host/port value. | Validation identifies the field and never writes partial or secret data. |
-| `active tunnels` | Use a safe loopback fixture only if the tunnel registry reports an active tunnel. | Tunnel status/actions are owner-registered and do not expose credentials. |
-| `loading` | Trigger a real Hosts reload or connection-list operation with fixture data. | Loading state is truthful; if no observable loading phase exists, keep the cell pending. |
-
-#### `statusbar.notifications` — Notification Dropdown
-
-Source: [`../../crates/notifications/src/status_item.rs`](../crates/notifications/src/status_item.rs),
-[`../../crates/notifications-core/src/lib.rs`](../crates/notifications-core/src/lib.rs).
-
-| State | Preparation | Review assertion |
-|---|---|---|
-| `closed` | Publish a safe fixture notification and leave the dropdown closed. | Only the statusbar badge/item indicates unread state; no toast appears. |
-| `unread badge` | Publish one or more safe fixture messages. | Badge count and severity are visible without exposing fixture secrets. |
-| `open list` | Activate the notification status item. | Rows use shared UI-kit presentation and list ordering/deduplication is clear. |
-| `empty` | Clear the disposable notification registry. | Empty copy is explicit and no stale row remains. |
-| `expanded details` | Expand a fixture notification with structured detail text. | Detail expansion is bounded, readable, and does not render hidden payloads. |
-| `clear all` | Use the dropdown clear action on fixture messages. | All fixture rows leave the registry and read/badge state updates consistently. |
-
-#### `workspace.settings` — Settings Window
-
-Source: [`../../crates/settings-ui/src/window.rs`](../crates/settings-ui/src/window.rs),
-`../settings/persistence.md`.
-
-| State | Preparation | Review assertion |
-|---|---|---|
-| `normal` | Open Settings with a valid disposable settings profile. | Navigation, values, scopes, and shared controls render without capability-owned categories. |
-| `scope navigation` | Move between app/workspace/host/session scopes where the catalog permits. | Scope changes are explicit and the effective value source remains understandable. |
-| `search/filter` | Search for a known setting and then a no-match query. | Results are bounded, labels/path context are preserved, and no field is invented. |
-| `validation error` | Enter an invalid typed value and submit in the disposable profile. | Error state preserves the last valid value and exposes a corrective action. |
-| `save failure` | Use a disposable read-only or permission-denied settings fixture. | Write failure is visible, redacted, and does not claim persistence. |
-
-#### `workspace.standalone-terminal` — Standalone Terminal
-
-Source: [`../../crates/workspace/src/views/terminal.rs`](../crates/workspace/src/views/terminal.rs),
-[`../../crates/terminal/src`](../crates/terminal/src).
-
-| State | Preparation | Review assertion |
-|---|---|---|
-| `ready` | Open a local terminal tab and wait for the prompt. | Terminal input/output, focus, status, and shell integration are ready. |
-| `loading` | Capture only if the actual PTY/session startup visibly exposes a loading state. | Loading copy and controls represent real startup; otherwise keep pending. |
-| `empty` | Open a terminal state before output or clear it through the canonical command. | Empty presentation is intentional and does not imply a failed process. |
-| `process exit` | Run a disposable command such as `exit` in a fixture shell. | Exit state, restart/close actions, and retained output are truthful. |
-| `connection failure` | Use a synthetic invalid SSH/connection fixture without credentials. | Failure is redacted and actionable; no real network secret is used. |
-| `narrow window` | Resize the native window while the terminal is ready. | Grid, prompt, statusbar, and tab controls resize without clipping or input loss. |
-| `shared terminal controller` | With two native app instances joined to the same Space, open one Detached terminal tab and capture the view that currently owns resize control. | The terminal identifies multiple views, shows this view's resize control, and displays the shared session output. |
-| `shared terminal non-controller` | Keep the same two-instance session and capture the other app window. | The terminal shows the same tab and output, identifies the other view as resize controller, and remains usable without resizing the PTY. |
-
-### Recording contract
-
-For each accepted state, the matching `[[capture]]` record must use the exact
-path produced by `scripts/visual_capture_path.py` and the exact commit under
-review. Keep the state and capture record in the same change. A valid record
-has this shape (replace every placeholder with observed values):
-
-```toml
-[[capture]]
-surface_id = "workspace.active"
-state = "home"
-status = "Verified"
-artifact = "artifacts/visual/workspace-active--home--standard--macos--<commit>.png"
-platform = "macos"
-viewport = "standard"
-binary = "/absolute/path/to/Labonair.app/Contents/MacOS/labonair"
-pid = "<observed-rust-pid>"
-window = "<observed-layer-0-window-id>"
-captured_at = "YYYY-MM-DD"
-commit = "<lowercase-commit>"
-```
-
-The checker then requires the artifact to exist and rejects a `Verified` or
-`Partial` state without its matching capture record. Do not weaken that check
-to accommodate an unavailable host; use `Pending` and document the blocker in
-the active R07 task instead.
+| Hosts (Settings > Hosts) | list (synthetic non-secret fixture), empty (fresh data dir), new-host form (no real credentials), validation error (invalid host/port), active tunnels (loopback fixture only if the registry reports one), loading (keep pending if no observable phase) | Hosts owner renders list, selection, actions; no other profile's data; validation names the field and writes nothing partial or secret; tunnel actions expose no credentials. |
+| Notification dropdown | closed, unread badge, open list, empty, expanded details, clear all (all with safe fixtures) | Badge only, no toast; shared kit rows, ordering and deduplication; bounded readable details; clear-all updates badge and read state. |
+| Settings window | normal, scope navigation (User/Project), search/filter (match and no-match), validation error, save failure (read-only fixture) | No capability-owned categories; effective value source clear; bounded results, no invented field; last valid value kept with a corrective action; write failure visible, redacted, never claims persistence. |
+| Terminal | ready, loading (only if startup visibly shows it), empty, process exit (`exit` in a fixture shell), connection failure (invalid synthetic SSH, no credentials), narrow window | Input/output/focus/status ready; exit state, restart/close, retained output truthful; failure redacted; grid, prompt, statusbar, tabs resize without clipping or input loss. |
+| Shared terminal (two instances joined to one Space, one Detached terminal tab) | controller view, non-controller view | Both show the same tab and output; the controller shows its resize control; the other identifies the controller and stays usable without resizing the PTY. |

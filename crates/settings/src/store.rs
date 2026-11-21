@@ -28,7 +28,7 @@ use crate::settings_trait::Settings;
 /// folder settings) is the first real producer of `SettingsLayer::Project`
 /// entries; until then the variant exists so the enum's shape (and merge
 /// order) is fixed now, per the task's normative "merge order is defined in
-/// `docs/settings.md`, do not reorder" warning.
+/// `docs/settings.md` §2, do not reorder" warning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WorktreeId(pub u64);
 
