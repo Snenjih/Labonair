@@ -53,9 +53,9 @@ Prefer removal/deferral over a new framework when a feature has no current user 
 - Code, comments, commits, and normative docs are in English.
 - Never block the GPUI foreground thread: use async tasks, Tokio, or `spawn_blocking` for I/O.
 - No `unwrap()` for predictable runtime errors — return descriptive results.
-- Consult GPUI docs and the vendored GPUI source (`vendor/`, `reference/zed`) before relying on undocumented APIs. Non-obvious GPUI / alacritty_terminal / gpui-component discoveries go in `memory/bugs_and_fixes.md`.
+- Consult GPUI docs and the vendored GPUI source (`vendor/`, `reference/zed`) before relying on undocumented APIs. Non-obvious GPUI / alacritty_terminal / gpui-component discoveries go in `docs/gotchas.md`.
 - Never expose secrets in source, logs, SQLite, tests, or commits.
 
 ## Docs and tasks
 
-`docs/README.md` indexes the normative contracts (product, architecture, modules, registries, capabilities, settings, design system, release). Before changing a feature, identify its owning crate, public contract, settings, persistence, notifications and UI-kit components using `docs/capabilities.md`. Update the relevant doc or ADR when a contract changes. Open work is tracked in `tasks/`; `tasks/archive/` is historical and not instructions. `handshake.md` records session continuity only and is not an authority.
+`docs/README.md` indexes the normative contracts (product, architecture, modules, registries, settings, design system, release). Before changing a feature, identify its owning crate, public contract, settings, persistence, notifications and UI-kit components using the ownership matrix in `docs/modules.md`. Update the relevant doc or ADR when a contract changes. Open work is tracked in `tasks/`; `tasks/archive/` is historical and not instructions.

@@ -16,6 +16,7 @@ Authority order when sources disagree: the user's current decision → these doc
 | [performance.md](performance.md) | Budgets and baselines |
 | [testing.md](testing.md) | Visual verification and native capture runbook |
 | [release.md](release.md) | Versioning, packaging, signing, updater, rollback, platforms |
+| [gotchas.md](gotchas.md) | Non-obvious GPUI / alacritty_terminal / gpui-component API discoveries and fixes |
 | [LICENSES.md](LICENSES.md) | Third-party license notes |
 | [adr/](adr/) | Accepted architecture decision records |
 | [archive/](archive/) | Superseded ADRs, old roadmap and audits — historical only |
