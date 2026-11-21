@@ -6623,21 +6623,9 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let lines = terminal_settings(cx).detached_scrollback_lines();
-        let task = cx.background_executor().spawn(async move {
-            let data_dir = labonair_filesystem::paths::data_dir();
-            if let Ok(old) = DaemonHost::connect(&data_dir, lines, false) {
-                old.shutdown();
-            }
-            // The old host may still hold its socket for a moment: retry.
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
-            loop {
-                match DaemonHost::connect(&data_dir, lines, true) {
-                    Ok(_) => return Ok(()),
-                    Err(error) if std::time::Instant::now() >= deadline => return Err(error),
-                    Err(_) => std::thread::sleep(Duration::from_millis(250)),
-                }
-            }
-        });
+        let task = cx
+            .background_executor()
+            .spawn(async move { crate::host_sessions::restart_daemon_host(lines) });
         cx.spawn(async move |this, cx| {
             let result: Result<(), String> = task.await;
             this.update(cx, |this, cx| match result {

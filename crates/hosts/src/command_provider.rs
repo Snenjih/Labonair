@@ -56,7 +56,8 @@ impl CommandProvider for HostsCommandProvider {
     fn commands(&self) -> Vec<CommandDescriptor> {
         vec![
             CommandDescriptor::new(CommandId::OpenHosts, "Open Hosts", "Connections")
-                .with_icon(CommandIcon::Server),
+                .with_icon(CommandIcon::Server)
+                .with_submenu(CommandSubmenu::Hosts),
             CommandDescriptor::new(CommandId::NewSshTab, "New SSH Tab", "Connections")
                 .with_icon(CommandIcon::Terminal)
                 .with_submenu(CommandSubmenu::Hosts),

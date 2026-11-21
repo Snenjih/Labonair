@@ -59,7 +59,7 @@ ids = [
   "TerminalScrollPageUp", "TerminalScrollPageDown", "TerminalScrollLineUp",
   "TerminalScrollLineDown", "TerminalPasteText", "TerminalShowCharacterPalette",
   "TerminalRename", "TerminalRecoverBackgroundSessions", "TerminalQuitAndStopAllSessions",
-  "TerminalManage",
+  "TerminalRestartBackgroundHost", "TerminalManage",
   "ToggleCopyOnSelect", "ToggleRightClickPastes", "ToggleTerminalBell",
   "ToggleConfirmCloseTerminalTab", "ChangeTerminalCursorStyle",
 ]

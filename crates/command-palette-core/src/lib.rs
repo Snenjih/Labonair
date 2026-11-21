@@ -273,6 +273,8 @@ pub enum CommandId {
     // Detached session host (ADR 0009).
     TerminalRecoverBackgroundSessions,
     TerminalQuitAndStopAllSessions,
+    /// Stop the background host (ending its sessions) and start a fresh one.
+    TerminalRestartBackgroundHost,
     /// Submenu listing every terminal in the background host.
     TerminalManage,
 }
@@ -928,6 +930,10 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (
         CommandId::TerminalQuitAndStopAllSessions,
         "terminal::QuitAndStopAllSessions",
+    ),
+    (
+        CommandId::TerminalRestartBackgroundHost,
+        "terminal::RestartBackgroundHost",
     ),
     (CommandId::TerminalManage, "terminal::Manage"),
 ];

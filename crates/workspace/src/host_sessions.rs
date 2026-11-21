@@ -28,6 +28,24 @@ fn running_host(cx: &App) -> Option<DaemonHost> {
     .ok()
 }
 
+/// Stop the running background host (ending its sessions) and start a fresh
+/// one. Blocking: call it off the UI thread.
+pub(crate) fn restart_daemon_host(lines: u32) -> Result<(), String> {
+    let data_dir = labonair_filesystem::paths::data_dir();
+    if let Ok(old) = DaemonHost::connect(&data_dir, lines, false) {
+        old.shutdown();
+    }
+    // The old host may still hold its socket for a moment: retry.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match DaemonHost::connect(&data_dir, lines, true) {
+            Ok(_) => return Ok(()),
+            Err(error) if std::time::Instant::now() >= deadline => return Err(error),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(250)),
+        }
+    }
+}
+
 /// Every session of the running background host, empty when there is none.
 /// Blocking socket I/O: call it off the UI thread.
 pub fn list_background_sessions(scrollback_lines: u32) -> Vec<BackgroundSession> {
@@ -215,6 +233,38 @@ impl Workspace {
 }
 
 impl Workspace {
+    /// `Terminal: Restart Host`: stop the background host with all its
+    /// sessions and start a fresh one.
+    pub(crate) fn restart_host_command(&self, cx: &mut Context<Self>) {
+        if terminal_settings(cx).session_host() != SessionHostMode::Detached {
+            notification_center(cx).update(cx, |center, cx| {
+                center.push(
+                    Notification::info(
+                        "Background host is off",
+                        "Enable the detached session host in Settings first.",
+                    ),
+                    cx,
+                )
+            });
+            return;
+        }
+        let lines = terminal_settings(cx).detached_scrollback_lines();
+        let task = cx
+            .background_executor()
+            .spawn(async move { restart_daemon_host(lines) });
+        cx.spawn(async move |_this, cx| {
+            let note = match task.await {
+                Ok(()) => Notification::info("Background host restarted", "Started a fresh host."),
+                Err(error) => Notification::info("Restarting the host failed", error),
+            };
+            cx.update(|cx| {
+                notification_center(cx).update(cx, |center, cx| center.push(note, cx))
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// `Terminal: Quit and Stop All Sessions`: save the session snapshot like a
     /// normal window close, stop the background host with all its sessions,
     /// then quit. App-bound sessions end with the process as usual.

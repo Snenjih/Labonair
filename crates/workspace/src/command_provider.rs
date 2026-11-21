@@ -180,6 +180,11 @@ impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
         self.0
             .update(cx, |workspace, cx| workspace.quit_and_stop_all_sessions(cx));
     }
+
+    fn restart_background_host(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.restart_host_command(cx));
+    }
 }
 
 /// Adapt Workspace's active-pane operation to the terminal command contract.

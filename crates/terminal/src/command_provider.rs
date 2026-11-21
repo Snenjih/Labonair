@@ -35,6 +35,8 @@ pub trait TerminalCommandTarget {
     fn recover_background_sessions(&self, window: &mut gpui::Window, cx: &mut App);
     /// Stop the detached session host with all its sessions, then quit.
     fn quit_and_stop_all_sessions(&self, cx: &mut App);
+    /// Stop the detached session host (ending its sessions) and start a fresh one.
+    fn restart_background_host(&self, cx: &mut App);
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -120,6 +122,12 @@ impl CommandProvider for TerminalCommandProvider {
             CommandDescriptor::new(
                 CommandId::TerminalQuitAndStopAllSessions,
                 "Quit and Stop All Sessions",
+                "Terminal",
+            )
+            .with_icon(CommandIcon::Terminal),
+            CommandDescriptor::new(
+                CommandId::TerminalRestartBackgroundHost,
+                "Restart Host",
                 "Terminal",
             )
             .with_icon(CommandIcon::Terminal),
@@ -241,6 +249,12 @@ pub fn register_handlers(
             CommandId::TerminalQuitAndStopAllSessions,
             move |_window, cx| quit_target.quit_and_stop_all_sessions(cx),
         )
+        .expect("terminal command handler must have a unique id");
+    let restart_target = target.clone();
+    registry
+        .register(CommandId::TerminalRestartBackgroundHost, move |_window, cx| {
+            restart_target.restart_background_host(cx)
+        })
         .expect("terminal command handler must have a unique id");
     let rename_target = target.clone();
     registry
