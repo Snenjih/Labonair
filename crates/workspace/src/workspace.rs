@@ -6613,6 +6613,42 @@ impl Workspace {
         }
     }
 
+    /// Stop an incompatible background session host (ending its sessions),
+    /// start a fresh one, then retry the connection.
+    fn restart_background_host(
+        &mut self,
+        ssh_id: String,
+        is_sftp: bool,
+        tab_id: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
+        let lines = terminal_settings(cx).detached_scrollback_lines();
+        let task = cx.background_executor().spawn(async move {
+            let data_dir = labonair_filesystem::paths::data_dir();
+            if let Ok(old) = DaemonHost::connect(&data_dir, lines, false) {
+                old.shutdown();
+            }
+            // The old host may still hold its socket for a moment: retry.
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                match DaemonHost::connect(&data_dir, lines, true) {
+                    Ok(_) => return Ok(()),
+                    Err(error) if std::time::Instant::now() >= deadline => return Err(error),
+                    Err(_) => std::thread::sleep(Duration::from_millis(250)),
+                }
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let result: Result<(), String> = task.await;
+            this.update(cx, |this, cx| match result {
+                Ok(()) => this.retry_connection(&ssh_id, is_sftp, tab_id, cx),
+                Err(error) => tracing::warn!(%error, "restarting the background host failed"),
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn submit_prompt(&mut self, cx: &mut Context<Self>) {
         let Some(prompt) = self.ssh_prompt.take() else {
             return;
@@ -6868,6 +6904,10 @@ impl Workspace {
             ),
         };
 
+        let host_incompatible = entry
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("incompatible with this version"));
         let mut actions = div().flex().gap_2().justify_end().pt_1();
         match entry.state {
             ConnectionState::Error => {
@@ -6886,6 +6926,16 @@ impl Workspace {
                             move |this, _: &ClickEvent, _w, cx| this.open_hosts_settings(cx),
                         )),
                     )
+                    .when(host_incompatible, |d| {
+                        let ssh_id = ssh_id.clone();
+                        d.child(
+                            loading_btn("ssh-l-restart-host", "Restart host", c, false).on_click(
+                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.restart_background_host(ssh_id.clone(), is_sftp, tab_id, cx)
+                                }),
+                            ),
+                        )
+                    })
                     .child(
                         loading_btn("ssh-l-retry", "Retry", c, true).on_click(cx.listener(
                             move |this, _: &ClickEvent, _w, cx| {
