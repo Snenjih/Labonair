@@ -156,71 +156,74 @@ pub fn tab_tile_stack(specs: &[TabTileSpec], c: &Palette) -> Div {
     let Some((front, rest)) = specs.split_first() else {
         return div();
     };
-    let back = &rest[..rest.len().min(MAX_STACKED_TILES - 1)];
-    if back.is_empty() {
+    let behind = &rest[..rest.len().min(MAX_STACKED_TILES - 1)];
+    if behind.is_empty() {
         return tab_tile(*front, c);
     }
-    let mut stack = div()
-        .relative()
-        .flex_none()
-        .w(px(stack_width(specs.len())))
-        .h(px(TILE_SIZE));
-    for (i, spec) in back.iter().enumerate().rev() {
-        let inset = TILE_INSET * (i + 1) as f32;
-        stack = stack.child(
-            tile_box(*spec, c, TILE_SIZE - 2.0 * inset, false)
-                .absolute()
-                .left(px(TILE_STEP * (i + 1) as f32))
-                .top(px(inset)),
-        );
-    }
-    stack.child(
-        tile_box(*front, c, TILE_SIZE, true)
-            .absolute()
-            .left_0()
-            .top_0(),
-    )
-}
 
-fn tile_box(spec: TabTileSpec, c: &Palette, height: f32, glyph: bool) -> Div {
-    let radius = px(4.5);
-    let sheen_from = gpui::hsla(0.0, 0.0, 1.0, 0.18);
-    let sheen_to = gpui::hsla(0.0, 0.0, 1.0, 0.0);
+    // Paint the deepest tile first so nearer tiles overlap it.
+    let layers = behind.iter().enumerate().rev().map(|(depth, spec)| {
+        let level = (depth + 1) as f32;
+        let inset = TILE_INSET * level;
+        tile_box(*spec, c, TILE_SIZE - 2.0 * inset, false)
+            .absolute()
+            .left(px(TILE_STEP * level))
+            .top(px(inset))
+    });
+    let front_tile = tile_box(*front, c, TILE_SIZE, true)
+        .absolute()
+        .left_0()
+        .top_0();
+
     div()
         .relative()
         .flex_none()
-        .w(px(TILE_SIZE))
-        .h(px(height))
+        .w(px(stack_width(specs.len())))
+        .h(px(TILE_SIZE))
+        .children(layers)
+        .child(front_tile)
+}
+
+fn tile_box(spec: TabTileSpec, c: &Palette, height: f32, glyph: bool) -> Div {
+    let corner = px(4.5);
+    let border = if spec.outlined {
+        gpui::hsla(0.0, 0.0, 0.0, 0.12)
+    } else {
+        tile_rim(c)
+    };
+    // Soft white highlight fading out over the upper part of the tile.
+    let highlight = div()
+        .absolute()
+        .inset_0()
+        .rounded(corner)
+        .bg(linear_gradient(
+            180.0,
+            linear_color_stop(gpui::hsla(0.0, 0.0, 1.0, 0.18), 0.0),
+            linear_color_stop(gpui::hsla(0.0, 0.0, 1.0, 0.0), 0.6),
+        ));
+    let drop_shadow = gpui::BoxShadow {
+        color: gpui::hsla(0.0, 0.0, 0.0, 0.18),
+        offset: gpui::point(px(0.0), px(0.5)),
+        blur_radius: px(1.5),
+        spread_radius: px(0.0),
+    };
+
+    div()
+        .relative()
         .flex()
+        .flex_none()
         .items_center()
         .justify_center()
-        .rounded(radius)
+        .w(px(TILE_SIZE))
+        .h(px(height))
+        .rounded(corner)
         .bg(spec.bg)
         .border_1()
-        .border_color(if spec.outlined {
-            gpui::hsla(0.0, 0.0, 0.0, 0.12)
-        } else {
-            tile_rim(c)
-        })
-        .shadow(vec![gpui::BoxShadow {
-            color: gpui::hsla(0.0, 0.0, 0.0, 0.18),
-            offset: gpui::point(px(0.0), px(0.5)),
-            blur_radius: px(1.5),
-            spread_radius: px(0.0),
-        }])
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .rounded(radius)
-                .bg(linear_gradient(
-                    180.0,
-                    linear_color_stop(sheen_from, 0.0),
-                    linear_color_stop(sheen_to, 0.6),
-                )),
-        )
-        .when(glyph, |d| {
-            d.child(spec.glyph.svg(spec.fg).size(px(GLYPH_SIZE)))
+        .border_color(border)
+        .shadow(vec![drop_shadow])
+        .child(highlight)
+        .when(glyph, |tile| {
+            tile.child(spec.glyph.svg(spec.fg).size(px(GLYPH_SIZE)))
         })
 }
 

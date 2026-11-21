@@ -25,48 +25,46 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
+/// Member accessors (`name` or tuple index) of a struct, in declaration order.
+fn member_accessors(fields: &Fields) -> Vec<proc_macro2::TokenStream> {
+    match fields {
+        Fields::Named(named) => named
+            .named
+            .iter()
+            .filter_map(|field| field.ident.as_ref())
+            .map(|ident| quote!(#ident))
+            .collect(),
+        Fields::Unnamed(unnamed) => (0..unnamed.unnamed.len())
+            .map(|position| {
+                let index = syn::Index::from(position);
+                quote!(#index)
+            })
+            .collect(),
+        Fields::Unit => Vec::new(),
+    }
+}
+
 #[proc_macro_derive(MergeFrom)]
 pub fn derive_merge_from(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let body = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => {
-                let calls = fields.named.iter().map(|f| {
-                    let ident = f.ident.as_ref().expect("named field");
-                    quote! { self.#ident.merge_from(&other.#ident); }
-                });
-                quote! { #(#calls)* }
-            }
-            Fields::Unnamed(fields) => {
-                let calls = (0..fields.unnamed.len()).map(|i| {
-                    let idx = syn::Index::from(i);
-                    quote! { self.#idx.merge_from(&other.#idx); }
-                });
-                quote! { #(#calls)* }
-            }
-            Fields::Unit => quote! {},
-        },
-        _ => {
-            return syn::Error::new_spanned(
-                &input.ident,
-                "MergeFrom can only be derived for structs",
-            )
+    let Data::Struct(data) = &input.data else {
+        return syn::Error::new_spanned(&input.ident, "MergeFrom can only be derived for structs")
             .to_compile_error()
             .into();
-        }
     };
 
-    let expanded = quote! {
-        impl #impl_generics crate::MergeFrom for #name #ty_generics #where_clause {
+    let ty = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let members = member_accessors(&data.fields);
+
+    quote! {
+        impl #impl_generics crate::MergeFrom for #ty #ty_generics #where_clause {
             fn merge_from(&mut self, other: &Self) {
-                #body
+                #( crate::MergeFrom::merge_from(&mut self.#members, &other.#members); )*
             }
         }
-    };
-    expanded.into()
+    }
+    .into()
 }
 
 /// `#[derive(RegisterSetting)]` (T19-002) — submits an `inventory::submit!`

@@ -4657,8 +4657,6 @@ dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
- "tree-sitter",
- "tree-sitter-json",
  "unindent",
 ]
 

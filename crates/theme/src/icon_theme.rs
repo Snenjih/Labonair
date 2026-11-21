@@ -49,8 +49,8 @@
 use serde::Deserialize;
 
 pub use labonair_theme_tokens::{
-    ChevronIcons, DirectoryIcons, IconDefinition, IconThemeContent, BUILTIN_ICON_THEME_ID,
-    BUILTIN_ICON_THEME_NAME, DEFAULT_FILE_ICONS, DEFAULT_FILE_STEMS, DEFAULT_FILE_SUFFIXES,
+    ChevronIcons, DirectoryIcons, Glyph, IconDefinition, IconThemeContent, BUILTIN_GLYPHS,
+    BUILTIN_ICON_THEME_ID, BUILTIN_ICON_THEME_NAME,
 };
 
 /// The embedded built-in Labonair icon theme. Regenerate after editing the
@@ -108,21 +108,26 @@ impl IconThemeRegistry {
     /// A registry holding the embedded built-in themes. A broken Labonair
     /// asset falls back to [`IconThemeContent::default`].
     pub fn builtin() -> Self {
-        let labonair = IconThemeContent::from_json(BUILTIN_ICON_THEME_JSON).unwrap_or_else(|e| {
-            eprintln!("labonair-theme: embedded icon theme is invalid ({e}); using tables");
-            IconThemeContent::default()
-        });
-        let mut themes = vec![RegisteredIconTheme {
-            id: BUILTIN_ICON_THEME_ID.to_string(),
-            content: labonair,
-            builtin: true,
-        }];
-        match IconThemeContent::from_json(MATERIAL_ICON_THEME_JSON) {
-            Ok(content) => themes.push(RegisteredIconTheme {
-                id: MATERIAL_ICON_THEME_ID.to_string(),
+        let embedded = |id: &str, json: &str| {
+            IconThemeContent::from_json(json).map(|content| RegisteredIconTheme {
+                id: id.to_string(),
                 content,
                 builtin: true,
-            }),
+            })
+        };
+
+        let labonair =
+            embedded(BUILTIN_ICON_THEME_ID, BUILTIN_ICON_THEME_JSON).unwrap_or_else(|e| {
+                eprintln!("labonair-theme: embedded icon theme is invalid ({e}); using tables");
+                RegisteredIconTheme {
+                    id: BUILTIN_ICON_THEME_ID.to_string(),
+                    content: IconThemeContent::default(),
+                    builtin: true,
+                }
+            });
+        let mut themes = vec![labonair];
+        match embedded(MATERIAL_ICON_THEME_ID, MATERIAL_ICON_THEME_JSON) {
+            Ok(material) => themes.push(material),
             Err(e) => eprintln!(
                 "labonair-theme: embedded Material Icon Theme is invalid ({e}); skipping it"
             ),
@@ -138,66 +143,59 @@ impl IconThemeRegistry {
     pub fn load_user_icon_themes(&mut self, dir: &std::path::Path) -> Vec<String> {
         self.themes.retain(|t| t.builtin);
         let mut warnings = Vec::new();
-        let Ok(rd) = std::fs::read_dir(dir) else {
+        let Ok(entries) = std::fs::read_dir(dir) else {
             return warnings;
         };
-        let mut loaded: Vec<RegisteredIconTheme> = Vec::new();
-        for entry in rd.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|x| x.to_str()) != Some("json") {
-                continue;
-            }
+
+        let mut loaded = Vec::new();
+        for path in entries.flatten().map(|entry| entry.path()) {
+            let is_json = path.extension().is_some_and(|ext| ext == "json");
             let Some(stem) = path
                 .file_stem()
                 .and_then(|s| s.to_str())
-                .map(str::to_string)
+                .filter(|_| is_json)
             else {
                 continue;
             };
-            if self
-                .themes
-                .iter()
-                .any(|theme| theme.builtin && theme.id.eq_ignore_ascii_case(&stem))
-            {
+            // A user file may not shadow a built-in id.
+            if self.themes.iter().any(|t| t.id.eq_ignore_ascii_case(stem)) {
                 continue;
             }
-            let raw = match std::fs::read_to_string(&path) {
-                Ok(r) => r,
+            let parsed = std::fs::read_to_string(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|raw| parse_user_icon_theme_file(&raw));
+            let contents = match parsed {
+                Ok(contents) if !contents.is_empty() => contents,
+                Ok(_) => {
+                    warnings.push(format!("{}: no themes", path.display()));
+                    continue;
+                }
                 Err(e) => {
                     warnings.push(format!("{}: {e}", path.display()));
                     continue;
                 }
             };
-            match parse_user_icon_theme_file(&raw) {
-                Ok(themes) if !themes.is_empty() => {
-                    let multi = themes.len() > 1;
-                    for content in themes {
-                        if content.name.trim().is_empty() {
-                            warnings.push(format!("{}: missing name", path.display()));
-                            continue;
-                        }
-                        let id = if multi {
-                            format!("{stem}/{}", content.name)
-                        } else {
-                            stem.clone()
-                        };
-                        loaded.push(RegisteredIconTheme {
-                            id,
-                            content,
-                            builtin: false,
-                        });
-                    }
+
+            let is_family = contents.len() > 1;
+            for content in contents {
+                if content.name.trim().is_empty() {
+                    warnings.push(format!("{}: missing name", path.display()));
+                    continue;
                 }
-                Ok(_) => warnings.push(format!("{}: no themes", path.display())),
-                Err(e) => warnings.push(format!("{}: {e}", path.display())),
+                let id = if is_family {
+                    format!("{stem}/{}", content.name)
+                } else {
+                    stem.to_string()
+                };
+                loaded.push(RegisteredIconTheme {
+                    id,
+                    content,
+                    builtin: false,
+                });
             }
         }
-        loaded.sort_by(|a, b| {
-            a.content
-                .name
-                .to_lowercase()
-                .cmp(&b.content.name.to_lowercase())
-        });
+
+        loaded.sort_by_cached_key(|t| t.content.name.to_lowercase());
         self.themes.extend(loaded);
         warnings
     }
@@ -221,40 +219,40 @@ impl IconThemeRegistry {
 
     /// Look an icon theme up by its stable id (`""` / `"default"` → built-in).
     pub fn get(&self, id: &str) -> Result<&IconThemeContent, IconThemeNotFoundError> {
-        let id = if id.is_empty() {
+        let wanted = if id.is_empty() {
             BUILTIN_ICON_THEME_ID
         } else {
             id
         };
         self.themes
             .iter()
-            .find(|t| t.id.eq_ignore_ascii_case(id) || t.content.name.eq_ignore_ascii_case(id))
+            .find(|t| {
+                t.id.eq_ignore_ascii_case(wanted) || t.content.name.eq_ignore_ascii_case(wanted)
+            })
             .map(|t| &t.content)
-            .ok_or_else(|| IconThemeNotFoundError(id.to_string()))
+            .ok_or_else(|| IconThemeNotFoundError(wanted.to_string()))
     }
 
     /// The built-in icon theme — always present.
     pub fn builtin_theme(&self) -> &IconThemeContent {
-        &self
-            .themes
-            .iter()
-            .find(|t| t.builtin)
+        let first_builtin = self.themes.iter().find(|t| t.builtin);
+        &first_builtin
             .expect("registry always keeps the built-in icon theme")
             .content
     }
 }
 
+/// Parse a user icon-theme file: a family wrapper with a non-empty `themes`
+/// list, or else a single theme.
 fn parse_user_icon_theme_file(raw: &str) -> Result<Vec<IconThemeContent>, String> {
     #[derive(Deserialize)]
     struct Family {
         themes: Vec<IconThemeContent>,
     }
-    if let Ok(fam) = serde_json::from_str::<Family>(raw) {
-        if !fam.themes.is_empty() {
-            return Ok(fam.themes);
-        }
+    match serde_json::from_str::<Family>(raw) {
+        Ok(family) if !family.themes.is_empty() => Ok(family.themes),
+        _ => IconThemeContent::from_json(raw).map(|single| vec![single]),
     }
-    IconThemeContent::from_json(raw).map(|t| vec![t])
 }
 
 // ─────────────────────────── canonical built-in tables ──────────────────────

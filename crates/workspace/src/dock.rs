@@ -5,13 +5,10 @@
 //! registered panels with a single active one, plus open / size / zoom state
 //! and its own persistence record.
 //!
-//! The dock stores panels with one active index and supports
-//! `add_panel` / `remove_panel` / `activate_panel` /
-//! `toggle_open` / `toggle_panel`, resize with a per-active-panel `min_size`
-//! button strip (`docs/architecture.md` §5 — Labonair toggles live in the
-//! status bar, T18-003), the `Entity<Dock>` wrapper + `PanelEvent`
-//! subscriptions (no panel subscribes to its dock yet; zoom/close are driven
-//! from the shell), and the flexible-size / `initial_size_state` machinery.
+//! Panels live in one ordered list with at most one active entry. Toggle
+//! buttons for them live in the status bar (`docs/architecture.md` §5,
+//! T18-003); the shell drives zoom/close and the resize handle from this
+//! state.
 //!
 //! The `Dock` is a plain struct owned by [`crate::Workspace`]; the shell reads
 //! its state to render each dock and to drive the resize handle.
@@ -26,11 +23,11 @@ pub const RESIZE_HANDLE_SIZE: Pixels = px(6.0);
 /// Default size (width for L/R, height for bottom) of a freshly-created dock,
 /// before any persisted value or user resize.
 pub fn default_size(position: DockPosition) -> Pixels {
-    match position {
-        DockPosition::Left => px(260.0),
-        DockPosition::Right => px(380.0),
-        DockPosition::Bottom => px(320.0),
-    }
+    px(match position {
+        DockPosition::Left => 260.0,
+        DockPosition::Right => 380.0,
+        DockPosition::Bottom => 320.0,
+    })
 }
 
 /// Lower bound the resize handle must respect even if the active panel reports
@@ -63,12 +60,9 @@ pub fn position_slug(position: DockPosition) -> &'static str {
 
 /// Inverse of [`position_slug`].
 pub fn position_from_slug(slug: &str) -> Option<DockPosition> {
-    match slug {
-        "left" => Some(DockPosition::Left),
-        "right" => Some(DockPosition::Right),
-        "bottom" => Some(DockPosition::Bottom),
-        _ => None,
-    }
+    DockPosition::ALL
+        .into_iter()
+        .find(|position| position_slug(*position) == slug)
 }
 
 /// One edge dock.
@@ -130,44 +124,45 @@ impl Dock {
         &self.panels
     }
 
+    fn index_of(&self, name: &str) -> Option<usize> {
+        self.panels.iter().position(|p| p.persistent_name() == name)
+    }
+
     /// Add `panel` to the tail of this dock (no-op if a panel with the same
     /// [`persistent_name`](labonair_panel::PanelHandle::persistent_name) is
     /// already present). The first panel added becomes the active one.
     pub fn add_panel(&mut self, panel: AnyPanelHandle) {
-        let name = panel.persistent_name();
-        if self.panels.iter().any(|p| p.persistent_name() == name) {
+        if self.has_panel(panel.persistent_name()) {
             return;
         }
         self.panels.push(panel);
-        if self.active.is_none() {
-            self.active = Some(0);
-        }
+        self.active.get_or_insert(0);
     }
 
     /// Remove the panel named `name`, fixing up the active index. Returns the
     /// removed handle so a caller ([`crate::Workspace::move_panel`]) can move it
     /// to another dock.
     pub fn remove_panel(&mut self, name: &str) -> Option<AnyPanelHandle> {
-        let idx = self
-            .panels
-            .iter()
-            .position(|p| p.persistent_name() == name)?;
-        let removed = self.panels.remove(idx);
-        self.active = match self.active {
-            _ if self.panels.is_empty() => None,
-            Some(a) if a == idx => Some(a.min(self.panels.len() - 1)),
-            Some(a) if a > idx => Some(a - 1),
-            other => other,
-        };
+        let removed_at = self.index_of(name)?;
+        let removed = self.panels.remove(removed_at);
+        let last = self.panels.len().checked_sub(1);
+        self.active = last.and_then(|last| {
+            let active = self.active?;
+            Some(if active > removed_at {
+                active - 1
+            } else {
+                active.min(last)
+            })
+        });
         Some(removed)
     }
 
     pub fn has_panel(&self, name: &str) -> bool {
-        self.panels.iter().any(|p| p.persistent_name() == name)
+        self.index_of(name).is_some()
     }
 
     pub fn active_panel(&self) -> Option<&AnyPanelHandle> {
-        self.active.and_then(|i| self.panels.get(i))
+        self.panels.get(self.active?)
     }
 
     pub fn active_name(&self) -> Option<&'static str> {
@@ -177,13 +172,11 @@ impl Dock {
     /// Make `name` the active panel. Returns `false` if this dock has no such
     /// panel (the active index is then left unchanged).
     pub fn activate_panel(&mut self, name: &str) -> bool {
-        match self.panels.iter().position(|p| p.persistent_name() == name) {
-            Some(i) => {
-                self.active = Some(i);
-                true
-            }
-            None => false,
+        let found = self.index_of(name);
+        if found.is_some() {
+            self.active = found;
         }
+        found.is_some()
     }
 
     /// Status-bar-toggle semantics: clicking the already-active panel of an
@@ -201,9 +194,8 @@ impl Dock {
     /// `active_floor` is the active panel's own `min_size`, resolved by the
     /// caller (it has the `App` the handle needs).
     pub fn set_size(&mut self, size: Pixels, active_floor: Option<Pixels>) {
-        let floor = active_floor
-            .unwrap_or(min_size(self.position))
-            .max(min_size(self.position));
+        let base = min_size(self.position);
+        let floor = active_floor.map_or(base, |own| own.max(base));
         self.size = size.max(floor).min(max_size(self.position));
     }
 
@@ -249,11 +241,8 @@ impl Dock {
 
     /// Whether `panel` (already in this dock or not) may live at `to`.
     pub fn panel_allows(&self, name: &str, to: DockPosition, cx: &App) -> bool {
-        self.panels
-            .iter()
-            .find(|p| p.persistent_name() == name)
-            .map(|p| p.position_is_valid(to, cx))
-            .unwrap_or(false)
+        self.index_of(name)
+            .is_some_and(|i| self.panels[i].position_is_valid(to, cx))
     }
 
     /// Docks the panel `name` (which lives in this dock) may be moved to:

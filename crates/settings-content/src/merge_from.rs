@@ -9,35 +9,32 @@
 
 use std::collections::BTreeMap;
 
-/// Merge `other` into `self`. The default behaviour is:
-/// * `Option<T>`: `None` on `other` is ignored; `Some` recurses (or replaces
-///   if `self` was `None`).
-/// * `BTreeMap<K, V>`: merged key-wise, recursing per value.
-/// * Everything else (including `Vec<T>` and primitives): `other` replaces
-///   `self` wholesale.
+/// Layered-merge contract: fold a higher-priority layer into `self`.
+///
+/// * `Option<T>`: an absent layer leaves `self` untouched; a present layer is
+///   folded into an existing value, or adopted when `self` is empty.
+/// * `BTreeMap<K, V>`: entries are folded per key; unseen keys are adopted.
+/// * Scalars, `Vec<T>` and raw JSON values: the layer replaces `self`.
 pub trait MergeFrom {
     fn merge_from(&mut self, other: &Self);
 
     fn merge_from_option(&mut self, other: Option<&Self>) {
-        if let Some(other) = other {
-            self.merge_from(other);
-        }
+        other.into_iter().for_each(|layer| self.merge_from(layer));
     }
 }
 
-macro_rules! merge_from_overwrites {
-    ($($ty:ty),+ $(,)?) => {
-        $(
-            impl MergeFrom for $ty {
-                fn merge_from(&mut self, other: &Self) {
-                    *self = other.clone();
-                }
+/// Implements [`MergeFrom`] as plain replacement for each listed type.
+macro_rules! replace_on_merge {
+    ($($ty:ty),+ $(,)?) => {$(
+        impl MergeFrom for $ty {
+            fn merge_from(&mut self, other: &Self) {
+                self.clone_from(other);
             }
-        )+
-    };
+        }
+    )+};
 }
 
-merge_from_overwrites!(
+replace_on_merge!(
     bool,
     u16,
     u32,
@@ -50,37 +47,28 @@ merge_from_overwrites!(
     serde_json::Value,
 );
 
+impl<T: Clone> MergeFrom for Vec<T> {
+    fn merge_from(&mut self, other: &Self) {
+        self.clone_from(other);
+    }
+}
+
 impl<T: Clone + MergeFrom> MergeFrom for Option<T> {
     fn merge_from(&mut self, other: &Self) {
-        let Some(other) = other else {
-            return;
-        };
-        if let Some(this) = self {
-            this.merge_from(other);
-        } else {
-            self.replace(other.clone());
+        match (self.as_mut(), other) {
+            (_, None) => {}
+            (Some(current), Some(layer)) => current.merge_from(layer),
+            (None, Some(layer)) => *self = Some(layer.clone()),
         }
     }
 }
 
-impl<T: Clone> MergeFrom for Vec<T> {
+impl<K: Clone + Ord, V: Clone + MergeFrom> MergeFrom for BTreeMap<K, V> {
     fn merge_from(&mut self, other: &Self) {
-        *self = other.clone();
-    }
-}
-
-impl<K, V> MergeFrom for BTreeMap<K, V>
-where
-    K: Clone + Ord,
-    V: Clone + MergeFrom,
-{
-    fn merge_from(&mut self, other: &Self) {
-        for (key, value) in other {
-            if let Some(existing) = self.get_mut(key) {
-                existing.merge_from(value);
-            } else {
-                self.insert(key.clone(), value.clone());
-            }
+        for (key, layer) in other {
+            self.entry(key.clone())
+                .and_modify(|current| current.merge_from(layer))
+                .or_insert_with(|| layer.clone());
         }
     }
 }

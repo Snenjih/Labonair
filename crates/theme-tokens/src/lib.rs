@@ -27,8 +27,8 @@ pub use color::{oklch, oklch_a, parse_color, to_hex, to_rgb8, transparent};
 pub use contrast::{composite_over, contrast_ratio, relative_luminance};
 pub use font_families::{MONO_FONT_FALLBACKS, MONO_FONT_FAMILY, UI_FONT_FALLBACKS, UI_FONT_FAMILY};
 pub use icons::{
-    ChevronIcons, DirectoryIcons, IconDefinition, IconThemeContent, BUILTIN_ICON_THEME_ID,
-    BUILTIN_ICON_THEME_NAME, DEFAULT_FILE_ICONS, DEFAULT_FILE_STEMS, DEFAULT_FILE_SUFFIXES,
+    ChevronIcons, DirectoryIcons, Glyph, IconDefinition, IconThemeContent, BUILTIN_GLYPHS,
+    BUILTIN_ICON_THEME_ID, BUILTIN_ICON_THEME_NAME,
 };
 pub use metrics::{
     ActiveTheme, AnimationLevel, GlobalActiveTheme, PaneLayout, ThemeMetrics, UiDensity,

@@ -135,7 +135,7 @@ impl StatusItemHide {
 
     /// Run the hide action.
     pub fn apply(&self, cx: &mut App) {
-        (self.hide)(cx)
+        (self.hide)(cx);
     }
 }
 
@@ -289,7 +289,7 @@ impl<T: StatusItem + 'static> StatusItemHandle for Entity<T> {
     }
 
     fn to_any(&self) -> AnyView {
-        self.clone().into()
+        AnyView::from(self.clone())
     }
 }
 
@@ -338,10 +338,9 @@ impl StatusItemRegistry {
     /// Register a status-item type. A later registration with the same `id`
     /// replaces the earlier one.
     pub fn register(&mut self, registration: StatusItemRegistration) {
-        if let Some(slot) = self.items.iter_mut().find(|i| i.id == registration.id) {
-            *slot = registration;
-        } else {
-            self.items.push(registration);
+        match self.items.iter().position(|i| i.id == registration.id) {
+            Some(index) => self.items[index] = registration,
+            None => self.items.push(registration),
         }
     }
 
@@ -364,17 +363,16 @@ impl StatusItemRegistry {
     /// (T18-005), else its registered
     /// [`default_side`](StatusItemRegistration::default_side).
     pub fn resolve_side(&self, id: &str) -> StatusSide {
-        self.overrides.get(id).map(|p| p.side).unwrap_or_else(|| {
-            self.get(id)
-                .map(|r| r.default_side)
-                .unwrap_or(StatusSide::Right)
-        })
+        if let Some(placement) = self.overrides.get(id) {
+            return placement.side;
+        }
+        self.get(id).map_or(StatusSide::Right, |r| r.default_side)
     }
 
     /// Whether the user has hidden this item (T18-005). Items with no
     /// override are visible.
     pub fn is_hidden(&self, id: &str) -> bool {
-        self.overrides.get(id).map(|p| p.hidden).unwrap_or(false)
+        self.overrides.get(id).is_some_and(|p| p.hidden)
     }
 
     /// The user's raw override for `id`, if any.
@@ -397,18 +395,16 @@ impl StatusItemRegistry {
         side: Option<StatusSide>,
         hidden: Option<bool>,
     ) -> StatusPlacement {
-        let mut p = self.overrides.get(id).copied().unwrap_or(StatusPlacement {
+        let current = self.override_for(id).unwrap_or_else(|| StatusPlacement {
             side: self.resolve_side(id),
             hidden: self.is_hidden(id),
         });
-        if let Some(s) = side {
-            p.side = s;
-        }
-        if let Some(h) = hidden {
-            p.hidden = h;
-        }
-        self.overrides.insert(id.to_string(), p);
-        p
+        let updated = StatusPlacement {
+            side: side.unwrap_or(current.side),
+            hidden: hidden.unwrap_or(current.hidden),
+        };
+        self.overrides.insert(id.to_string(), updated);
+        updated
     }
 
     /// Number of registered status-item types.

@@ -36,11 +36,8 @@ impl DockPosition {
 
     /// The next position in [`DockPosition::ALL`] order, wrapping around.
     pub fn next(self) -> DockPosition {
-        match self {
-            DockPosition::Left => DockPosition::Right,
-            DockPosition::Right => DockPosition::Bottom,
-            DockPosition::Bottom => DockPosition::Left,
-        }
+        let here = Self::ALL.iter().position(|p| *p == self).unwrap_or(0);
+        Self::ALL[(here + 1) % Self::ALL.len()]
     }
 }
 
@@ -173,7 +170,7 @@ impl<T: Panel + 'static> PanelHandle for Entity<T> {
     }
 
     fn set_position(&self, position: DockPosition, window: &mut Window, cx: &mut App) {
-        self.update(cx, |this, cx| this.set_position(position, window, cx))
+        self.update(cx, |panel, cx| panel.set_position(position, window, cx));
     }
 
     fn default_size(&self, cx: &App) -> Pixels {
@@ -189,7 +186,7 @@ impl<T: Panel + 'static> PanelHandle for Entity<T> {
     }
 
     fn to_any(&self) -> AnyView {
-        self.clone().into()
+        AnyView::from(self.clone())
     }
 }
 
@@ -233,14 +230,13 @@ impl PanelRegistry {
     /// Register a panel type. A later registration with the same
     /// `persistent_name` replaces the earlier one.
     pub fn register(&mut self, registration: PanelRegistration) {
-        if let Some(slot) = self
+        match self
             .panels
-            .iter_mut()
-            .find(|p| p.persistent_name == registration.persistent_name)
+            .iter()
+            .position(|p| p.persistent_name == registration.persistent_name)
         {
-            *slot = registration;
-        } else {
-            self.panels.push(registration);
+            Some(index) => self.panels[index] = registration,
+            None => self.panels.push(registration),
         }
     }
 

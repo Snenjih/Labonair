@@ -4,9 +4,8 @@
 //! `trait Settings` — a feature-local, typed slice of the merged
 //! [`SettingsContent`] tree (T19-002 Anweisung #4).
 //!
-//! The `Settings` trait is trimmed to what this app needs: no `SettingsLocation`
-//! parameter (project-scoped reads land with T19-003; until then every
-//! `Settings` type resolves against the single global `merged` tree).
+//! Every `Settings` type resolves against the single global `merged` tree;
+//! project-scoped reads (T19-003) are not part of this contract yet.
 
 use gpui::App;
 
@@ -58,8 +57,7 @@ pub trait Settings: 'static + Sized {
     where
         Self: Sized,
     {
-        cx.try_global::<SettingsStore>()
-            .filter(|store| store.is_registered::<Self>())
-            .map(|store| store.get::<Self>())
+        let store = cx.try_global::<SettingsStore>()?;
+        store.is_registered::<Self>().then(|| store.get::<Self>())
     }
 }

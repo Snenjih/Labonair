@@ -4,8 +4,8 @@
 //! [`ModalLayer`] + [`ModalView`] — the workspace's single modal overlay slot
 //! (T17-005).
 //!
-//! to what Labonair needs: **one** active, focus-trapping modal (no modal
-//! stack, no reopenable-picker stash, no `DismissDecision`).
+//! Labonair needs exactly **one** active, focus-trapping modal at a time (no
+//! modal stack, no reopenable-picker stash, no dismiss-veto protocol).
 //!
 //! A [`ModalView`] is any `Render + Focusable + EventEmitter<DismissEvent>`
 //! view ([`gpui::ManagedView`]). [`ModalLayer::toggle_modal`] /
@@ -44,45 +44,20 @@ pub trait ModalView: ManagedView {
     }
 }
 
-/// Object-safe view over an `Entity<V: ModalView>` so [`ModalLayer`] can hold
-/// the active modal without being generic.
-trait ModalViewHandle {
-    fn on_dismiss(&self, window: &mut Window, cx: &mut App);
-    fn view(&self) -> AnyView;
-    fn focus_handle(&self, cx: &App) -> FocusHandle;
-    fn subscribe_dismiss(&self, window: &mut Window, cx: &mut Context<ModalLayer>) -> Subscription;
-    fn render_bare(&self, cx: &App) -> bool;
-}
+type DismissHook = Box<dyn Fn(&mut Window, &mut App)>;
+type BareProbe = Box<dyn Fn(&App) -> bool>;
 
-impl<V: ModalView> ModalViewHandle for Entity<V> {
-    fn on_dismiss(&self, window: &mut Window, cx: &mut App) {
-        self.update(cx, |this, cx| this.on_dismiss(window, cx));
-    }
-
-    fn view(&self) -> AnyView {
-        self.clone().into()
-    }
-
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
-        self.read(cx).focus_handle(cx)
-    }
-
-    fn subscribe_dismiss(&self, window: &mut Window, cx: &mut Context<ModalLayer>) -> Subscription {
-        cx.subscribe_in(self, window, |this, _, _: &DismissEvent, window, cx| {
-            this.hide_modal(window, cx);
-        })
-    }
-
-    fn render_bare(&self, cx: &App) -> bool {
-        self.read(cx).render_bare()
-    }
-}
-
-struct ActiveModal {
-    modal: Box<dyn ModalViewHandle>,
+/// The modal currently on screen, type-erased at construction time.
+struct Presented {
+    view: AnyView,
+    view_focus: FocusHandle,
+    /// Wrapper focus target used by the non-bare layout.
+    wrapper_focus: FocusHandle,
+    /// Focus owner to hand focus back to when the modal goes away.
+    return_focus: Option<FocusHandle>,
+    notify_dismiss: DismissHook,
+    is_bare: BareProbe,
     _subscriptions: [Subscription; 2],
-    previous_focus_handle: Option<FocusHandle>,
-    focus_handle: FocusHandle,
 }
 
 /// The single modal-overlay slot. Held as an [`Entity`] by the shell and
@@ -90,7 +65,7 @@ struct ActiveModal {
 /// are rendered by the statusbar dropdown instead.
 #[derive(Default)]
 pub struct ModalLayer {
-    active_modal: Option<ActiveModal>,
+    current: Option<Presented>,
     dismiss_on_focus_lost: bool,
 }
 
@@ -99,25 +74,18 @@ impl ModalLayer {
         Self::default()
     }
 
-    /// Toggle a modal of type `V`: if a modal of the same type is active it is
-    /// hidden; otherwise the current modal (if any) is replaced with the new
-    /// one. `build` receives the window so it can e.g. focus an input.
+    /// Toggle a modal of type `V`: a visible modal of the same type is closed;
+    /// otherwise any other modal is replaced by the freshly built one.
     pub fn toggle_modal<V, B>(&mut self, window: &mut Window, cx: &mut Context<Self>, build: B)
     where
         V: ModalView,
         B: FnOnce(&mut Window, &mut Context<V>) -> V,
     {
-        let mut previous_focus_handle = window.focused(cx);
-        if let Some(active) = &self.active_modal {
-            let is_same_type = active.modal.view().downcast::<V>().is_ok();
-            previous_focus_handle = active.previous_focus_handle.clone();
+        if self.active_modal::<V>().is_some() {
             self.hide_modal(window, cx);
-            if is_same_type {
-                return;
-            }
+        } else {
+            self.open_modal(window, cx, build);
         }
-        let new_modal = cx.new(|cx| build(window, cx));
-        self.show_modal(Box::new(new_modal), previous_focus_handle, window, cx);
     }
 
     /// Show `V` unconditionally, replacing any current modal. Used by modals
@@ -128,67 +96,63 @@ impl ModalLayer {
         V: ModalView,
         B: FnOnce(&mut Window, &mut Context<V>) -> V,
     {
-        let mut previous_focus_handle = window.focused(cx);
-        if let Some(active) = &self.active_modal {
-            previous_focus_handle = active.previous_focus_handle.clone();
-            self.hide_modal(window, cx);
-        }
-        let new_modal = cx.new(|cx| build(window, cx));
-        self.show_modal(Box::new(new_modal), previous_focus_handle, window, cx);
-    }
+        // Focus must return to what was focused before the *first* modal of a
+        // replacement chain, not to the modal being replaced.
+        let return_focus = match self.current.as_ref() {
+            Some(old) => old.return_focus.clone(),
+            None => window.focused(cx),
+        };
+        self.hide_modal(window, cx);
 
-    fn show_modal(
-        &mut self,
-        modal: Box<dyn ModalViewHandle>,
-        previous_focus_handle: Option<FocusHandle>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let focus_handle = cx.focus_handle();
-        let modal_focus_handle = modal.focus_handle(cx);
-        let dismiss_subscription = modal.subscribe_dismiss(window, cx);
-        self.active_modal = Some(ActiveModal {
-            modal,
-            _subscriptions: [
-                dismiss_subscription,
-                cx.on_focus_out(&focus_handle, window, |this, _event, window, cx| {
-                    if this.dismiss_on_focus_lost {
-                        this.hide_modal(window, cx);
-                    }
-                }),
-            ],
-            previous_focus_handle,
-            focus_handle,
+        let entity = cx.new(|cx| build(window, cx));
+        let view_focus = entity.read(cx).focus_handle(cx);
+        let wrapper_focus = cx.focus_handle();
+
+        let on_dismiss_event =
+            cx.subscribe_in(&entity, window, |this, _, _: &DismissEvent, window, cx| {
+                this.hide_modal(window, cx);
+            });
+        let on_focus_out = cx.on_focus_out(&wrapper_focus, window, |this, _, window, cx| {
+            if this.dismiss_on_focus_lost {
+                this.hide_modal(window, cx);
+            }
         });
-        cx.defer_in(window, move |_, window, _cx| {
-            window.focus(&modal_focus_handle);
+
+        let for_dismiss = entity.clone();
+        let for_bare = entity.clone();
+        self.current = Some(Presented {
+            view: entity.into(),
+            view_focus: view_focus.clone(),
+            wrapper_focus,
+            return_focus,
+            notify_dismiss: Box::new(move |window, cx| {
+                for_dismiss.update(cx, |modal, cx| modal.on_dismiss(window, cx));
+            }),
+            is_bare: Box::new(move |cx| for_bare.read(cx).render_bare()),
+            _subscriptions: [on_dismiss_event, on_focus_out],
         });
+
+        cx.defer_in(window, move |_, window, _| window.focus(&view_focus));
         cx.notify();
     }
 
     /// Hide the active modal (if any), restoring focus to whatever held it
     /// before the modal opened. Returns `true` when a modal was hidden.
     pub fn hide_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.active_modal.is_none() {
-            self.dismiss_on_focus_lost = false;
-            return false;
-        }
-        if let Some(active) = self.active_modal.as_ref() {
-            active.modal.on_dismiss(window, cx);
-        }
-        if let Some(active) = self.active_modal.take() {
-            if let Some(previous_focus) = active.previous_focus_handle {
-                // Bare modals (palette, updater) don't mount `active.focus_handle`,
-                // so also check the modal's own handle.
-                if active.focus_handle.contains_focused(window, cx)
-                    || active.modal.focus_handle(cx).contains_focused(window, cx)
-                {
-                    previous_focus.focus(window);
-                }
-            }
-            cx.notify();
-        }
         self.dismiss_on_focus_lost = false;
+        let Some(presented) = self.current.take() else {
+            return false;
+        };
+        (presented.notify_dismiss)(window, cx);
+
+        // Bare modals never mount the wrapper handle, so check the modal's own
+        // handle too before pulling focus back.
+        let held_focus = presented.wrapper_focus.contains_focused(window, cx)
+            || presented.view_focus.contains_focused(window, cx);
+        if let (true, Some(target)) = (held_focus, presented.return_focus.as_ref()) {
+            target.focus(window);
+        }
+        cx.notify();
         true
     }
 
@@ -199,16 +163,11 @@ impl ModalLayer {
 
     /// The active modal, if it is of type `V`.
     pub fn active_modal<V: 'static>(&self) -> Option<Entity<V>> {
-        self.active_modal
-            .as_ref()?
-            .modal
-            .view()
-            .downcast::<V>()
-            .ok()
+        self.current.as_ref()?.view.clone().downcast::<V>().ok()
     }
 
     pub fn has_active_modal(&self) -> bool {
-        self.active_modal.is_some()
+        self.current.is_some()
     }
 }
 
@@ -216,14 +175,22 @@ impl EventEmitter<DismissEvent> for ModalLayer {}
 
 impl Render for ModalLayer {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let Some(active) = &self.active_modal else {
+        let Some(presented) = &self.current else {
             return div().into_any_element();
         };
 
         // Bare modals paint their own scrim / positioning / key handling.
-        if active.modal.render_bare(cx) {
-            return active.modal.view().into_any_element();
+        if (presented.is_bare)(cx) {
+            return presented.view.clone().into_any_element();
         }
+
+        let panel = div()
+            .occlude()
+            .track_focus(&presented.wrapper_focus)
+            .on_mouse_down(MouseButton::Left, |_: &MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+            })
+            .child(presented.view.clone());
 
         div()
             .absolute()
@@ -240,15 +207,7 @@ impl Render for ModalLayer {
                     this.hide_modal(window, cx);
                 }),
             )
-            .child(
-                div()
-                    .occlude()
-                    .track_focus(&active.focus_handle)
-                    .on_mouse_down(MouseButton::Left, |_: &MouseDownEvent, _, cx| {
-                        cx.stop_propagation();
-                    })
-                    .child(active.modal.view()),
-            )
+            .child(panel)
             .into_any_element()
     }
 }

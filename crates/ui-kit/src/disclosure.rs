@@ -32,25 +32,25 @@ pub fn disclosure(
     muted: Hsla,
     fg: Hsla,
 ) -> Stateful<gpui::Div> {
-    // GPUI cannot rotate, so the two glyphs are stacked and crossfade; the
-    // motion tokens come from the active theme (no palette in this signature).
+    // GPUI cannot rotate, so both chevrons are layered and crossfaded; motion
+    // tokens come from the active theme (no palette in this signature).
+    const CHEVRON_SIZE: f32 = 12.0;
     let id = id.into();
-    let glyph = |icon: IconName, on: bool, key: &'static str| {
-        state_fade_ambient(
-            div()
-                .absolute()
-                .inset_0()
-                .child(icon.svg(muted).size(px(12.0))),
-            (id.clone(), key),
-            on,
-        )
+    let layer = |icon: IconName, visible: bool, suffix: &'static str| {
+        let glyph = div()
+            .absolute()
+            .inset_0()
+            .child(icon.svg(muted).size(px(CHEVRON_SIZE)));
+        state_fade_ambient(glyph, (id.clone(), suffix), visible)
     };
-    let chevron = div()
+
+    let chevrons = div()
         .relative()
         .flex_shrink_0()
-        .size(px(12.0))
-        .child(glyph(IconName::ChevronRight, collapsed, "right"))
-        .child(glyph(IconName::ChevronDown, !collapsed, "down"));
+        .size(px(CHEVRON_SIZE))
+        .child(layer(IconName::ChevronRight, collapsed, "right"))
+        .child(layer(IconName::ChevronDown, !collapsed, "down"));
+
     div()
         .id(id)
         .flex()
@@ -60,8 +60,8 @@ pub fn disclosure(
         .text_size(px(11.0))
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(muted)
-        .hover(move |s| s.text_color(fg))
-        .child(chevron)
+        .hover(move |style| style.text_color(fg))
+        .child(chevrons)
         .child(label.into())
 }
 

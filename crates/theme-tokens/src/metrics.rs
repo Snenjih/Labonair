@@ -55,11 +55,10 @@ impl UiDensity {
 
     /// Parse the settings token; unknown / empty falls back to [`UiDensity::Default`].
     pub fn from_str_or_default(s: &str) -> Self {
-        match s {
-            "compact" => UiDensity::Compact,
-            "comfortable" => UiDensity::Comfortable,
-            _ => UiDensity::Default,
-        }
+        Self::ALL
+            .into_iter()
+            .find(|density| density.as_str() == s)
+            .unwrap_or_default()
     }
 
     pub const ALL: [UiDensity; 3] = [
@@ -167,10 +166,10 @@ impl ThemeMetrics {
     /// Gap between panes in px: `0` in the compact layout, the density-scaled
     /// floating gap otherwise.
     pub fn pane_gap(&self) -> f32 {
-        match self.pane_layout {
-            PaneLayout::Comfortable => self.space(PANE_GAP_COMFORTABLE),
-            PaneLayout::Compact => 0.0,
+        if self.pane_layout == PaneLayout::Compact {
+            return 0.0;
         }
+        self.space(PANE_GAP_COMFORTABLE)
     }
 
     /// A spacing value (px) scaled by the active density.
@@ -204,17 +203,22 @@ pub struct ActiveTheme {
 impl ActiveTheme {
     /// Combine resolved colours with resolved metrics.
     pub fn new(colors: Theme, metrics: ThemeMetrics) -> Self {
-        let radius = metrics.scaled_radius(colors.radius);
-        let mut animation = colors.animation;
-        if metrics.reduce_motion && metrics.animations != AnimationLevel::Reduced {
-            animation.dur_fast = Duration::ZERO;
-            animation.dur_base = Duration::ZERO;
-            animation.dur_slow = Duration::ZERO;
-        }
+        // Reduced motion keeps fades, so only the hard "off" case zeroes timings.
+        let mute_motion = metrics.reduce_motion && metrics.animations != AnimationLevel::Reduced;
+        let animation = if mute_motion {
+            Animation {
+                dur_fast: Duration::ZERO,
+                dur_base: Duration::ZERO,
+                dur_slow: Duration::ZERO,
+                ..colors.animation
+            }
+        } else {
+            colors.animation
+        };
         Self {
+            radius: metrics.scaled_radius(colors.radius),
             colors,
             metrics,
-            radius,
             animation,
         }
     }
