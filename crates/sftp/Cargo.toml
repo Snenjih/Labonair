@@ -1,0 +1,10 @@
+[package]
+name = "labonair-sftp"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+labonair-errors = { path = "../errors" }
+labonair-ssh = { path = "../ssh" }
+serde = { workspace = true }

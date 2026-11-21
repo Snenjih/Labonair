@@ -1,0 +1,92 @@
+[package]
+name = "labonair-shell"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_shell"
+path = "src/shell.rs"
+
+[features]
+# Forwards to the ui-kit component gallery (T20-004). The gallery is always
+# compiled in debug builds; this only matters for release-build `cargo check
+# --features gallery`.
+gallery = ["labonair-ui-kit/gallery"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSApplication",
+    "NSResponder",
+    "NSEvent",
+    "NSWindow",
+] }
+
+[dependencies]
+gpui = { workspace = true }
+gpui-component = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rust-embed = { workspace = true }
+tracing = { workspace = true }
+dirs = { workspace = true }
+tokio = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-theme-ui = { path = "../theme-ui" }
+labonair-background = { path = "../background" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-gpui-ext = { path = "../gpui-ext" }
+labonair-activity-ui = { path = "../activity-ui" }
+labonair-notifications = { path = "../notifications" }
+labonair-command-palette = { path = "../command-palette" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+labonair-keymap = { path = "../keymap" }
+labonair-keymap-ui = { path = "../keymap-ui" }
+labonair-panel = { path = "../panel" }
+labonair-explorer-host = { path = "../explorer-host" }
+labonair-workspace = { path = "../workspace" }
+labonair-hosts = { path = "../hosts" }
+labonair-hosts-host = { path = "../hosts-host" }
+labonair-hosts-ui = { path = "../hosts-ui" }
+labonair-editor = { path = "../editor" }
+labonair-editor-ui = { path = "../editor-ui" }
+labonair-git = { path = "../git" }
+labonair-git-transport = { path = "../git-transport" }
+labonair-snippets = { path = "../snippets" }
+labonair-snippets-ssh = { path = "../snippets-ssh" }
+labonair-snippets-host = { path = "../snippets-host" }
+labonair-settings-ui = { path = "../settings-ui" }
+labonair-panel-explorer = { path = "../panel-explorer" }
+labonair-panel-scm = { path = "../panel-scm" }
+labonair-panel-git-graph = { path = "../panel-git-graph" }
+labonair-panel-snippets = { path = "../panel-snippets" }
+labonair-terminal = { path = "../terminal" }
+# Composition root of the detached session host proxies (ADR 0009).
+labonair-terminal-host = { path = "../terminal-host" }
+labonair-persistence = { path = "../persistence" }
+labonair-ssh = { path = "../ssh" }
+labonair-ssh-transport = { path = "../ssh-transport" }
+labonair-sftp = { path = "../sftp" }
+labonair-sftp-ssh = { path = "../sftp-ssh" }
+labonair-transfers = { path = "../transfers" }
+labonair-transfers-ssh = { path = "../transfers-ssh" }
+labonair-transfers-ui = { path = "../transfers-ui" }
+labonair-filesystem = { path = "../filesystem" }
+# T19-008: the shell owns the concrete `menu::` GPUI Actions, so it is the
+# only crate that can actually turn a merged `keymap.json` into real
+# `gpui::KeyBinding`s / live fs-watch.
+labonair-settings = { path = "../settings" }
+labonair-mcp-core = { path = "../mcp-core" }
+labonair-mcp-server = { path = "../mcp-server" }
+labonair-updater = { path = "../updater" }
+labonair-updater-ui = { path = "../updater-ui" }
+labonair-onboarding = { path = "../onboarding" }
+labonair-secrets = { path = "../secrets" }
+labonair-events = { path = "../events" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+labonair-errors = { path = "../errors" }

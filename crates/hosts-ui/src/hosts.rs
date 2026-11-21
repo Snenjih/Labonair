@@ -1,0 +1,3417 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Host-Manager dashboard — the "Home" tab (T07-001).
+//!
+//! Lives in `labonair-hosts-ui` since T16-008 (moved out of `labonair-workspace`,
+//! which only briefly hosted it after T16-006). `Workspace` still owns the
+//! `Entity<HostManagerView>` and drives connecting via [`HostManagerEvent`].
+//!
+//! Ports `reference-src/src/modules/hosts/*` behaviour: hosts grouped by group,
+//! a status indicator per host, connect / edit / duplicate / delete actions, a
+//! host add/edit form and a credential manager. Persistence uses the host,
+//! credential, and snippet capability stores (SQLite + the app secret store);
+//! secrets are never shown in clear text here.
+//!
+//! Connecting is delegated to the `Workspace`:
+//! this view emits [`HostManagerEvent::Open`] and the workspace opens the
+//! SSH terminal tab and drives the trust / auth prompts.
+
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ListAlignment,
+    ListState, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
+};
+use labonair_credentials::{self, Credential};
+use labonair_hosts::store::{HostCreateRequest, HostEventHandler, HostUpdateRequest};
+use labonair_hosts::{
+    store as host_store, Group, Host, HostOpenRequest, HostPickerRow, ReorderItem,
+};
+use labonair_persistence::Database;
+use labonair_secrets::SecretsState;
+use labonair_snippets::store as snippet_store;
+use labonair_ssh::{
+    ImportConflict, SshConfigEntry, SshConfigService, SshConnectionTester, SshTestResult,
+};
+use tokio::runtime::Handle as TokioHandle;
+
+use crate::theme::ThemeStore;
+use labonair_notifications::{notification_center, Notification};
+use labonair_ui_kit::{
+    button, caret, checkbox, context_menu, icon_button_builder, indicator, search_clear_button,
+    search_field, search_input, text_field, text_field_surface, text_input, BlinkCursor,
+    ButtonSize, ButtonVariant, IconName, IndicatorSize, InputEvent, InputState, ListItem, MenuItem,
+    Palette, SelectOption, TextFieldState,
+};
+
+mod page;
+
+/// Connection status + the active-tunnel row shape moved to the leaf
+/// `labonair-hosts-host` contract in R08-012; re-exported so existing
+/// `labonair_hosts_ui::{HostStatus, ActiveTunnelRow}` call sites keep working.
+pub use labonair_hosts_host::{ActiveTunnelRow, HostStatus};
+
+/// Emitted to the workspace to drive an action it owns.
+pub enum HostManagerEvent {
+    /// Open the requested transport for a saved host.
+    Open(HostOpenRequest),
+}
+
+/// Drag payload for reordering host list items / dropping them onto a group
+/// filter chip.
+#[derive(Debug, Clone)]
+struct DraggedHost {
+    id: String,
+}
+
+/// Minimal drag ghost for a host row.
+struct HostDragGhost;
+
+impl Render for HostDragGhost {
+    fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div().w(px(180.0)).h(px(2.0))
+    }
+}
+
+/// Per-row data of one host row — see [`HostManagerView::host_row_data`].
+struct HostRowData {
+    name: String,
+    subtitle: String,
+    icon: IconName,
+    pin_to_top: bool,
+    status: HostStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthMethod {
+    Password,
+    Key,
+    /// Auth via a saved [`Credential`] (key or password). The persisted
+    /// auth_method string is `"credential"` — matches `reference-src` and
+    /// `ssh::client` / `config_parser` which special-case that exact value.
+    Credential,
+    None,
+}
+
+impl AuthMethod {
+    fn as_str(self) -> &'static str {
+        match self {
+            AuthMethod::Password => "password",
+            AuthMethod::Key => "key",
+            AuthMethod::Credential => "credential",
+            AuthMethod::None => "none",
+        }
+    }
+    fn from_str(s: &str) -> Self {
+        match s {
+            "key" => AuthMethod::Key,
+            // `"agent"` is the legacy pre-Block-E spelling of this mode.
+            "credential" | "agent" => AuthMethod::Credential,
+            "none" => AuthMethod::None,
+            _ => AuthMethod::Password,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum HostField {
+    Name,
+    Address,
+    Port,
+    Username,
+    KeyPath,
+    DefaultPath,
+    DefaultPathSftp,
+    Password,
+    SudoPassword,
+    KeepAliveInterval,
+    KeepAliveTries,
+    Notes,
+    TunnelLocalPort(usize),
+    TunnelRemoteHost(usize),
+    TunnelRemotePort(usize),
+}
+
+/// One editable local-forward row in the host form's Tunnels section.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct TunnelDraft {
+    id: String,
+    local_port: String,
+    remote_host: String,
+    remote_port: String,
+}
+
+impl TunnelDraft {
+    fn new() -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            local_port: String::new(),
+            remote_host: String::new(),
+            remote_port: String::new(),
+        }
+    }
+}
+
+/// Parse the `hosts.tunnels` JSON column into editable drafts.
+fn parse_tunnels(raw: &Option<String>) -> Vec<TunnelDraft> {
+    let Some(s) = raw.as_deref().filter(|s| !s.trim().is_empty()) else {
+        return Vec::new();
+    };
+    let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(s) else {
+        return Vec::new();
+    };
+    arr.iter()
+        .map(|t| TunnelDraft {
+            id: t
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            local_port: t
+                .get("local_port")
+                .and_then(|v| v.as_u64())
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
+            remote_host: t
+                .get("remote_host")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            remote_port: t
+                .get("remote_port")
+                .and_then(|v| v.as_u64())
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
+        })
+        .collect()
+}
+
+/// Serialize the drafts back to the `hosts.tunnels` JSON shape, dropping any
+/// row that is not a complete `local:<port> → host:<port>` forward.
+fn serialize_tunnels(drafts: &[TunnelDraft]) -> String {
+    let list: Vec<serde_json::Value> = drafts
+        .iter()
+        .filter_map(|d| {
+            let lp: u16 = d.local_port.trim().parse().ok()?;
+            let rp: u16 = d.remote_port.trim().parse().ok()?;
+            let rh = d.remote_host.trim();
+            if rh.is_empty() {
+                return None;
+            }
+            Some(serde_json::json!({
+                "id": d.id,
+                "type": "local",
+                "local_port": lp,
+                "remote_host": rh,
+                "remote_port": rp,
+            }))
+        })
+        .collect();
+    serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// Backing state of the add/edit-host form.
+#[derive(Clone)]
+struct HostForm {
+    editing_id: Option<String>,
+    name: String,
+    address: String,
+    port: String,
+    username: String,
+    auth: AuthMethod,
+    key_path: String,
+    default_path: String,
+    default_path_sftp: String,
+    password: String,
+    /// Sudo-password autofill — persisted to the OS keychain, never SQLite.
+    /// Empty string on load (the host store never returns the plaintext); only
+    /// written when the user types a replacement.
+    sudo_password: String,
+    /// `true` once a sudo password is on file for this host (drives the
+    /// "(set)" placeholder). From `Host::sudo_password_set`.
+    sudo_password_set: bool,
+    /// Remove the stored sudo password on the next save.
+    sudo_clear: bool,
+    keep_alive_interval: String,
+    keep_alive_tries: String,
+    notes: String,
+    pin_to_top: bool,
+    /// Id of the saved credential this host authenticates with.
+    credential: Option<String>,
+    /// Id of the host's group.
+    group: Option<String>,
+    /// Id of the bastion host to route through. The host being edited is
+    /// never a valid choice.
+    jump_host: Option<String>,
+    /// Configured local port-forwards (ProxyJump-independent).
+    tunnels: Vec<TunnelDraft>,
+    /// "Block AI Agent Access" — when set, the MCP bridge refuses to grant a
+    /// tab for this host and any live grant is revoked immediately (T11-006).
+    block_agent_access: bool,
+    /// Host avatar icon key (see [`HOST_ICONS`]); `None` = default server glyph.
+    icon: Option<String>,
+    /// Snippet to run on connect (`hosts.startup_snippet_id`).
+    snippet_id: Option<String>,
+    /// `"execute"` (run it) or `"inject"` (type it, don't press enter).
+    snippet_mode: String,
+    /// Which of the 4 form tabs is showing.
+    tab: FormTab,
+    /// Fallback edit target for a stale tunnel-field index (never rendered).
+    scratch: String,
+}
+
+/// The 4 host-form tabs — ports `HostFormPanel.tsx:550`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormTab {
+    General,
+    Ssh,
+    Sftp,
+    Tunnels,
+}
+
+impl FormTab {}
+
+/// Curated host-avatar icon set (`lib/icons/` in the reference). Key stored in
+/// `hosts.icon`.
+const HOST_ICONS: [(&str, IconName); 11] = [
+    ("server", IconName::Server),
+    ("laptop", IconName::Laptop),
+    ("monitor", IconName::Monitor),
+    ("mac-studio", IconName::MacStudio),
+    ("terminal", IconName::Terminal),
+    ("globe", IconName::Globe),
+    ("shield", IconName::Shield),
+    ("zap", IconName::Zap),
+    ("home", IconName::Home),
+    ("git", IconName::GitBranch),
+    ("cloud", IconName::Sparkles),
+];
+
+/// Glyph of a stored host-icon key (default: server).
+pub fn host_icon(key: Option<&str>) -> IconName {
+    key.and_then(|k| HOST_ICONS.iter().find(|(n, _)| *n == k))
+        .map(|(_, i)| *i)
+        .unwrap_or(IconName::Server)
+}
+
+impl HostForm {
+    fn blank() -> Self {
+        Self {
+            editing_id: None,
+            name: String::new(),
+            address: String::new(),
+            port: "22".into(),
+            username: String::new(),
+            auth: AuthMethod::Password,
+            key_path: String::new(),
+            default_path: String::new(),
+            default_path_sftp: String::new(),
+            password: String::new(),
+            sudo_password: String::new(),
+            sudo_password_set: false,
+            sudo_clear: false,
+            keep_alive_interval: String::new(),
+            keep_alive_tries: String::new(),
+            notes: String::new(),
+            pin_to_top: false,
+            credential: None,
+            group: None,
+            jump_host: None,
+            tunnels: Vec::new(),
+            block_agent_access: false,
+            icon: None,
+            snippet_id: None,
+            snippet_mode: "execute".into(),
+            tab: FormTab::General,
+            scratch: String::new(),
+        }
+    }
+
+    fn from_host(h: &Host) -> Self {
+        Self {
+            editing_id: Some(h.id.clone()),
+            name: h.name.clone(),
+            address: h.host_address.clone(),
+            port: h.port.to_string(),
+            username: h.username.clone(),
+            auth: AuthMethod::from_str(&h.auth_method),
+            key_path: h.private_key_path.clone().unwrap_or_default(),
+            default_path: h.default_path_ssh.clone().unwrap_or_default(),
+            default_path_sftp: h.default_path_sftp.clone().unwrap_or_default(),
+            password: String::new(),
+            sudo_password: String::new(),
+            sudo_password_set: h.sudo_password_set,
+            sudo_clear: false,
+            keep_alive_interval: h
+                .keep_alive_interval
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            keep_alive_tries: h
+                .keep_alive_tries
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            notes: h.notes.clone().unwrap_or_default(),
+            pin_to_top: h.pin_to_top,
+            credential: h.credential_id.clone(),
+            group: h.group_id.clone(),
+            jump_host: h.jump_host_id.clone().filter(|jid| *jid != h.id),
+            tunnels: parse_tunnels(&h.tunnels),
+            block_agent_access: h.block_agent_access,
+            icon: h.icon.clone(),
+            snippet_id: h.startup_snippet_id.clone(),
+            snippet_mode: h
+                .startup_snippet_mode
+                .clone()
+                .unwrap_or_else(|| "execute".into()),
+            tab: FormTab::General,
+            scratch: String::new(),
+        }
+    }
+
+    fn field_mut(&mut self, f: HostField) -> &mut String {
+        match f {
+            HostField::Name => &mut self.name,
+            HostField::Address => &mut self.address,
+            HostField::Port => &mut self.port,
+            HostField::Username => &mut self.username,
+            HostField::KeyPath => &mut self.key_path,
+            HostField::DefaultPath => &mut self.default_path,
+            HostField::DefaultPathSftp => &mut self.default_path_sftp,
+            HostField::Password => &mut self.password,
+            HostField::SudoPassword => &mut self.sudo_password,
+            HostField::KeepAliveInterval => &mut self.keep_alive_interval,
+            HostField::KeepAliveTries => &mut self.keep_alive_tries,
+            HostField::Notes => &mut self.notes,
+            HostField::TunnelLocalPort(i)
+            | HostField::TunnelRemoteHost(i)
+            | HostField::TunnelRemotePort(i)
+                if i >= self.tunnels.len() =>
+            {
+                &mut self.scratch
+            }
+            HostField::TunnelLocalPort(i) => &mut self.tunnels[i].local_port,
+            HostField::TunnelRemoteHost(i) => &mut self.tunnels[i].remote_host,
+            HostField::TunnelRemotePort(i) => &mut self.tunnels[i].remote_port,
+        }
+    }
+
+    fn field(&self, f: HostField) -> &str {
+        match f {
+            HostField::Name => &self.name,
+            HostField::Address => &self.address,
+            HostField::Port => &self.port,
+            HostField::Username => &self.username,
+            HostField::KeyPath => &self.key_path,
+            HostField::DefaultPath => &self.default_path,
+            HostField::DefaultPathSftp => &self.default_path_sftp,
+            HostField::Password => &self.password,
+            HostField::SudoPassword => &self.sudo_password,
+            HostField::KeepAliveInterval => &self.keep_alive_interval,
+            HostField::KeepAliveTries => &self.keep_alive_tries,
+            HostField::Notes => &self.notes,
+            HostField::TunnelLocalPort(i) => self
+                .tunnels
+                .get(i)
+                .map(|tunnel| tunnel.local_port.as_str())
+                .unwrap_or(&self.scratch),
+            HostField::TunnelRemoteHost(i) => self
+                .tunnels
+                .get(i)
+                .map(|tunnel| tunnel.remote_host.as_str())
+                .unwrap_or(&self.scratch),
+            HostField::TunnelRemotePort(i) => self
+                .tunnels
+                .get(i)
+                .map(|tunnel| tunnel.remote_port.as_str())
+                .unwrap_or(&self.scratch),
+        }
+    }
+}
+
+fn cycle_conflict(c: ImportConflict) -> ImportConflict {
+    match c {
+        ImportConflict::Skip => ImportConflict::Overwrite,
+        ImportConflict::Overwrite => ImportConflict::Rename,
+        ImportConflict::Rename => ImportConflict::Skip,
+    }
+}
+
+fn conflict_label(c: ImportConflict) -> &'static str {
+    match c {
+        ImportConflict::Skip => "skip",
+        ImportConflict::Overwrite => "overwrite",
+        ImportConflict::Rename => "rename",
+    }
+}
+
+/// Backing state of the "Import from ~/.ssh/config" dialog.
+struct ImportState {
+    loading: bool,
+    entries: Vec<SshConfigEntry>,
+    /// Selected entries, keyed by alias.
+    selected: HashSet<String>,
+    conflict: ImportConflict,
+    error: Option<String>,
+}
+
+/// Backing state of the "Export to ~/.ssh/config" dialog.
+struct ExportState {
+    /// Selected host ids.
+    selected: HashSet<String>,
+    error: Option<String>,
+}
+
+/// Host-list sort order — ports `HomeDashboard.tsx`'s sort dropdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostSort {
+    LastConnected,
+    NameAsc,
+    NameDesc,
+}
+
+impl HostSort {
+    fn label(self) -> &'static str {
+        match self {
+            HostSort::LastConnected => "Last connected",
+            HostSort::NameAsc => "A \u{2192} Z",
+            HostSort::NameDesc => "Z \u{2192} A",
+        }
+    }
+}
+
+/// Per-host reachability probe result (`startPingWorker` in the reference).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Ping {
+    #[default]
+    Checking,
+    Online,
+    Offline,
+}
+
+/// Autosave lifecycle indicator (`SaveStatusIcon`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum SaveState {
+    #[default]
+    Idle,
+    Pending,
+    Saving,
+    Saved,
+    Error,
+}
+
+/// Which hand-rolled focus region currently owns keyboard input — tracked by
+/// the `cx.on_focus`/`cx.on_blur` listeners wired once in `render()` for the
+/// remaining string-backed drafts and rename fields.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FocusRegion {
+    Group,
+    GroupRename,
+}
+
+/// Fields of the credential form that are real text inputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum CredField {
+    Name,
+    KeyPath,
+    Secret,
+}
+
+/// Key of one lazily created text input: a field of the host or credential form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum FieldKey {
+    Host(HostField),
+    Cred(CredField),
+}
+
+/// The Hosts | Credentials switch beside the search field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PageMode {
+    Hosts,
+    Credentials,
+}
+
+/// Editable state of one credential (the credential detail sub-page).
+#[derive(Debug, Clone, PartialEq)]
+struct CredForm {
+    editing_id: Option<String>,
+    name: String,
+    is_key: bool,
+    key_path: String,
+    key_type: Option<String>,
+    public_key: Option<String>,
+    /// Password (password credentials) or passphrase (key credentials). Empty
+    /// means "unchanged": the secret store never hands the value back.
+    secret: String,
+    has_secret: bool,
+    /// Remove the stored secret on the next save.
+    secret_clear: bool,
+    /// Host form that opened this one through "Create new credential"; going
+    /// back re-opens it with this credential selected.
+    origin_host: Option<String>,
+}
+
+impl CredForm {
+    fn blank(origin_host: Option<String>) -> Self {
+        Self {
+            editing_id: None,
+            name: String::new(),
+            is_key: false,
+            key_path: String::new(),
+            key_type: None,
+            public_key: None,
+            secret: String::new(),
+            has_secret: false,
+            secret_clear: false,
+            origin_host,
+        }
+    }
+
+    fn from_credential(c: &Credential) -> Self {
+        Self {
+            editing_id: Some(c.id.clone()),
+            name: c.name.clone(),
+            is_key: c.cred_type == "key",
+            key_path: c.key_path.clone().unwrap_or_default(),
+            key_type: c.key_type.clone(),
+            public_key: c.public_key.clone(),
+            secret: String::new(),
+            has_secret: c.has_secret,
+            secret_clear: false,
+            origin_host: None,
+        }
+    }
+
+    fn field(&self, f: CredField) -> &str {
+        match f {
+            CredField::Name => &self.name,
+            CredField::KeyPath => &self.key_path,
+            CredField::Secret => &self.secret,
+        }
+    }
+
+    fn field_mut(&mut self, f: CredField) -> &mut String {
+        match f {
+            CredField::Name => &mut self.name,
+            CredField::KeyPath => &mut self.key_path,
+            CredField::Secret => &mut self.secret,
+        }
+    }
+}
+
+/// Which select list is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DropdownKind {
+    Group,
+    Credential,
+    JumpHost,
+    Snippet,
+    Sort,
+}
+
+/// The open select list: its options, current value and anchor.
+struct Dropdown {
+    kind: DropdownKind,
+    at: Point<Pixels>,
+    options: Vec<SelectOption>,
+    selected: String,
+}
+
+/// A destructive action waiting for confirmation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Confirm {
+    DeleteHost(String),
+    DeleteCredential(String),
+}
+
+pub struct HostManagerView {
+    database: Database,
+    secrets: std::sync::Arc<SecretsState>,
+    data_dir: std::path::PathBuf,
+    host_event_handler: Option<std::sync::Arc<HostEventHandler<'static>>>,
+    ssh_tester: std::sync::Arc<dyn SshConnectionTester>,
+    ssh_config: std::sync::Arc<dyn SshConfigService>,
+    tokio: TokioHandle,
+    theme: Entity<ThemeStore>,
+    hosts: Vec<Host>,
+    groups: Vec<Group>,
+    credentials: Vec<Credential>,
+    snippets: Vec<(String, String)>,
+    statuses: Vec<(String, HostStatus)>,
+    active_tunnels: Vec<ActiveTunnelRow>,
+    /// The host detail sub-page, `Some` while a host is open.
+    form: Option<HostForm>,
+    /// The credential detail sub-page, `Some` while a credential is open.
+    cred_form: Option<CredForm>,
+    mode: PageMode,
+    /// One real text input per form field, created lazily on first render and
+    /// dropped whenever a different form is opened.
+    inputs: HashMap<FieldKey, (Entity<InputState>, Subscription)>,
+    /// The field whose input currently has keyboard focus (focus ring).
+    focused_input: Option<FieldKey>,
+    dropdown: Option<Dropdown>,
+    dropdown_list: ListState,
+    confirm: Option<Confirm>,
+    /// Anchor of the open Import/Export overflow menu.
+    more_menu: Option<Point<Pixels>>,
+    /// The mode the search placeholder currently describes.
+    search_hint_mode: PageMode,
+    /// `Some(true)` = key credentials only, `Some(false)` = passwords only.
+    cred_filter: Option<bool>,
+    /// Inline "new group" buffer, `Some` while the field is open.
+    group_draft: Option<String>,
+    group_focus: FocusHandle,
+    /// SSH-config import dialog, `Some` while open.
+    import: Option<ImportState>,
+    /// SSH-config export dialog, `Some` while open.
+    export: Option<ExportState>,
+    /// Open host list-item right-click menu: `(host id, cursor)`.
+    host_menu: Option<(String, Point<Pixels>)>,
+    /// Open group-chip right-click menu: `(group id, group name, cursor)`.
+    group_menu: Option<(String, String, Point<Pixels>)>,
+    /// In-progress inline group rename: `(group id, buffer)`.
+    group_rename: Option<(String, String)>,
+    group_rename_focus: FocusHandle,
+    // ── master/detail state (T16-014) ──────────────────────────────────────
+    /// Left-pane search / quick-connect box.
+    search: String,
+    search_input: Option<Entity<InputState>>,
+    _search_input_subscription: Option<Subscription>,
+    search_input_focused: bool,
+    sort: HostSort,
+    /// `None` = all groups; `Some("")` = ungrouped only; `Some(id)` = that group.
+    group_filter: Option<String>,
+    /// Per-host reachability, refreshed by the ping worker.
+    ping: HashMap<String, Ping>,
+    save_state: SaveState,
+    /// Whether the host-icon picker is open.
+    icon_picker_open: bool,
+    /// Bumped on every `Saved` transition so the saved badge replays its
+    /// entrance animation and the idle reset ignores stale timers.
+    saved_gen: u64,
+    /// Bumped on every field edit; the debounced autosave task no-ops if it
+    /// changed while the task was sleeping.
+    edit_gen: u64,
+    _ping_task: Task<()>,
+    focus_handle: FocusHandle,
+    /// Shared blink driver for every hand-rolled field's caret (only one is
+    /// ever focused at a time); repaints on every tick via `_blink_obs`.
+    blink: Entity<BlinkCursor>,
+    _blink_obs: Subscription,
+    /// The per-field `cx.on_focus`/`cx.on_blur` listeners need a `Window`,
+    /// which `new()` doesn't have — wired lazily on first render instead.
+    blink_focus_wired: bool,
+    _blink_focus_subs: Vec<Subscription>,
+    /// Which region a `cx.on_focus` listener last fired for; `None` once its
+    /// matching `cx.on_blur` fires. See [`FocusRegion`].
+    focused_region: Option<FocusRegion>,
+}
+
+impl EventEmitter<HostManagerEvent> for HostManagerView {}
+
+impl HostManagerView {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        database: Database,
+        secrets: std::sync::Arc<SecretsState>,
+        data_dir: std::path::PathBuf,
+        host_event_handler: Option<std::sync::Arc<HostEventHandler<'static>>>,
+        ssh_tester: std::sync::Arc<dyn SshConnectionTester>,
+        ssh_config: std::sync::Arc<dyn SshConfigService>,
+        tokio: TokioHandle,
+        theme: Entity<ThemeStore>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        let ping_task = cx.spawn(async move |this, cx| loop {
+            cx.background_executor()
+                .timer(Duration::from_secs(30))
+                .await;
+            if this.update(cx, |this, cx| this.refresh_ping(cx)).is_err() {
+                break;
+            }
+        });
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
+        let this = Self {
+            database,
+            secrets,
+            data_dir,
+            host_event_handler,
+            ssh_tester,
+            ssh_config,
+            tokio,
+            theme,
+            hosts: Vec::new(),
+            groups: Vec::new(),
+            credentials: Vec::new(),
+            snippets: Vec::new(),
+            statuses: Vec::new(),
+            active_tunnels: Vec::new(),
+            form: None,
+            cred_form: None,
+            mode: PageMode::Hosts,
+            inputs: HashMap::new(),
+            focused_input: None,
+            dropdown: None,
+            dropdown_list: ListState::new(0, ListAlignment::Top, px(320.0)),
+            confirm: None,
+            more_menu: None,
+            search_hint_mode: PageMode::Hosts,
+            cred_filter: None,
+            group_draft: None,
+            group_focus: cx.focus_handle(),
+            import: None,
+            export: None,
+            host_menu: None,
+            group_menu: None,
+            group_rename: None,
+            group_rename_focus: cx.focus_handle(),
+            search: String::new(),
+            search_input: None,
+            _search_input_subscription: None,
+            search_input_focused: false,
+            sort: HostSort::LastConnected,
+            group_filter: None,
+            ping: HashMap::new(),
+            save_state: SaveState::Idle,
+            icon_picker_open: false,
+            saved_gen: 0,
+            edit_gen: 0,
+            _ping_task: ping_task,
+            focus_handle: cx.focus_handle(),
+            blink,
+            _blink_obs,
+            blink_focus_wired: false,
+            _blink_focus_subs: Vec::new(),
+            focused_region: None,
+        };
+        this.reload(cx);
+        this
+    }
+
+    /// Update a host's live connection status (called by the workspace).
+    pub fn set_status(&mut self, host_id: &str, status: HostStatus, cx: &mut Context<Self>) {
+        if let Some(entry) = self.statuses.iter_mut().find(|(id, _)| id == host_id) {
+            entry.1 = status;
+        } else {
+            self.statuses.push((host_id.to_string(), status));
+        }
+        cx.notify();
+    }
+
+    /// Replace the active-tunnel snapshot (called by the workspace each poll
+    /// tick). Only notifies when the set actually changed.
+    pub fn set_active_tunnels(&mut self, rows: Vec<ActiveTunnelRow>, cx: &mut Context<Self>) {
+        if self.active_tunnels != rows {
+            self.active_tunnels = rows;
+            cx.notify();
+        }
+    }
+
+    /// All known host ids (for session restore — T14-001).
+    pub fn host_ids(&self) -> Vec<String> {
+        self.hosts.iter().map(|h| h.id.clone()).collect()
+    }
+
+    /// Display name for a host id, if known.
+    pub fn host_name(&self, host_id: &str) -> Option<String> {
+        self.hosts
+            .iter()
+            .find(|h| h.id == host_id)
+            .map(|h| h.name.clone())
+    }
+
+    /// Canonical host rows consumed by command-palette providers.
+    pub fn picker_rows(&self) -> Vec<HostPickerRow> {
+        self.hosts.iter().map(Host::picker_row).collect()
+    }
+
+    /// Canonical recent-host rows consumed by new-tab and palette pickers.
+    pub fn recent_picker_rows(&self, n: usize) -> Vec<HostPickerRow> {
+        let mut hosts: Vec<&Host> = self.hosts.iter().collect();
+        hosts.sort_by(|a, b| {
+            b.last_connected_at
+                .cmp(&a.last_connected_at)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+        hosts.into_iter().take(n).map(Host::picker_row).collect()
+    }
+
+    /// Display name of the jump host a given host routes through, if any.
+    pub fn jump_host_label(&self, host_id: &str) -> Option<String> {
+        let host = self.hosts.iter().find(|h| h.id == host_id)?;
+        let jid = host.jump_host_id.as_deref()?;
+        self.hosts
+            .iter()
+            .find(|c| c.id == jid)
+            .map(|c| c.name.clone())
+    }
+
+    fn status_of(&self, host_id: &str) -> HostStatus {
+        self.statuses
+            .iter()
+            .find(|(id, _)| id == host_id)
+            .map(|(_, s)| *s)
+            .unwrap_or_default()
+    }
+
+    /// Reload hosts / groups / credentials from their capability stores.
+    pub fn reload(&self, cx: &mut Context<Self>) {
+        let database = self.database.clone();
+        let jh = self.tokio.spawn(async move {
+            let hosts = host_store::hosts_get_all(&database)
+                .await
+                .map_err(|error| error.to_string())?;
+            let groups = host_store::groups_get_all(&database)
+                .await
+                .map_err(|error| error.to_string())?;
+            let creds = labonair_credentials::credentials_get_all(&database)
+                .await
+                .map_err(|error| error.to_string())?;
+            let snippets = snippet_store::snippets_get_all(&database)
+                .await
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .map(|s| (s.id, s.name))
+                .collect::<Vec<_>>();
+            Ok::<_, String>((hosts, groups, creds, snippets))
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(Ok((h, g, c, s))) => {
+                    this.hosts = h;
+                    this.groups = g;
+                    this.credentials = c;
+                    this.snippets = s;
+                    this.refresh_ping(cx);
+                    cx.notify();
+                }
+                Ok(Err(error)) => {
+                    this.notify_error("Load hosts failed", error, "hosts:reload", cx);
+                }
+                Err(error) => {
+                    this.notify_error("Load hosts failed", error.to_string(), "hosts:reload", cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Fire a TCP reachability probe at every host (`host:port`, 2s timeout)
+    /// and fold the results back in. Runs on load + every 30s.
+    fn refresh_ping(&mut self, cx: &mut Context<Self>) {
+        let targets: Vec<(String, String, u16)> = self
+            .hosts
+            .iter()
+            .map(|h| (h.id.clone(), h.host_address.clone(), h.port as u16))
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        for (id, _, _) in &targets {
+            self.ping.entry(id.clone()).or_insert(Ping::Checking);
+        }
+        let jh = self.tokio.spawn(async move {
+            let mut out = Vec::with_capacity(targets.len());
+            for (id, addr, port) in targets {
+                let ok = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    tokio::net::TcpStream::connect((addr.as_str(), port)),
+                )
+                .await
+                .map(|r| r.is_ok())
+                .unwrap_or(false);
+                out.push((id, if ok { Ping::Online } else { Ping::Offline }));
+            }
+            out
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(results) = jh.await {
+                let _ = this.update(cx, |this, cx| {
+                    for (id, state) in results {
+                        this.ping.insert(id, state);
+                    }
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn notify(&self, title: &str, body: String, cx: &mut Context<Self>) {
+        let n = Notification::info(title.to_string(), body);
+        notification_center(cx).update(cx, |c, cx| {
+            c.push(n, cx);
+        });
+    }
+
+    fn notify_error(
+        &self,
+        title: &'static str,
+        details: String,
+        dedupe_key: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
+        notification_center(cx).update(cx, |center, cx| {
+            center.push(
+                Notification::error(title, "The host operation could not be completed.")
+                    .source("hosts")
+                    .details(details)
+                    .dedupe_key(dedupe_key.into()),
+                cx,
+            );
+        });
+    }
+
+    // ── mutations ───────────────────────────────────────────────────────────
+
+    /// Debounced autosave of the open host or credential: bump the generation,
+    /// mark the form dirty, and after 800ms save it — unless the user kept
+    /// typing (generation moved on) or a save is still in flight.
+    fn schedule_autosave(&mut self, cx: &mut Context<Self>) {
+        let ready = if let Some(form) = self.form.as_ref() {
+            // A new host is only created once it has an address.
+            form.editing_id.is_some() || !form.address.trim().is_empty()
+        } else if let Some(form) = self.cred_form.as_ref() {
+            form.editing_id.is_some() || !form.name.trim().is_empty()
+        } else {
+            false
+        };
+        if !ready {
+            return;
+        }
+        self.edit_gen = self.edit_gen.wrapping_add(1);
+        self.save_state = SaveState::Pending;
+        let gen = self.edit_gen;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(800))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.edit_gen != gen {
+                    return;
+                }
+                if this.save_state == SaveState::Saving {
+                    // A create is in flight; saving now would create twice.
+                    this.schedule_autosave(cx);
+                } else {
+                    this.save_open_form(cx);
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Save whichever detail form is open.
+    fn save_open_form(&mut self, cx: &mut Context<Self>) {
+        if self.form.is_some() {
+            self.submit_form(cx);
+        } else if self.cred_form.is_some() {
+            self.submit_cred_form(cx);
+        }
+    }
+
+    /// Mark the save finished and, after a moment, fade the badge back to idle.
+    fn finish_save(&mut self, ok: bool, cx: &mut Context<Self>) {
+        self.save_state = if ok {
+            SaveState::Saved
+        } else {
+            SaveState::Error
+        };
+        self.saved_gen = self.saved_gen.wrapping_add(1);
+        if !ok {
+            return;
+        }
+        let gen = self.saved_gen;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(2200))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.saved_gen == gen && this.save_state == SaveState::Saved {
+                    this.save_state = SaveState::Idle;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Persist a pending edit before the open form goes away.
+    fn flush_open_form(&mut self, cx: &mut Context<Self>) {
+        if self.save_state == SaveState::Pending {
+            self.save_open_form(cx);
+        }
+    }
+
+    fn submit_form(&mut self, cx: &mut Context<Self>) {
+        let Some(form) = self.form.clone() else {
+            return;
+        };
+        self.save_state = SaveState::Saving;
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let host_event_handler = self.host_event_handler.clone();
+        let icon = Some(form.icon.clone().unwrap_or_default());
+        let snippet_id = Some(form.snippet_id.clone().unwrap_or_default());
+        let snippet_mode = Some(form.snippet_mode.clone());
+        let port: i64 = form.port.trim().parse().unwrap_or(22);
+        let name = if form.name.trim().is_empty() {
+            form.address.clone()
+        } else {
+            form.name.clone()
+        };
+        let auth = form.auth.as_str().to_string();
+        let key_path = (!form.key_path.trim().is_empty()).then(|| form.key_path.trim().to_string());
+        let default_path =
+            (!form.default_path.trim().is_empty()).then(|| form.default_path.trim().to_string());
+        let password = (!form.password.is_empty()).then(|| form.password.clone());
+        // On edit: only send `Some(_)` when the user actually typed a new
+        // sudo password (the host store interprets `Some("")` as "clear").
+        let sudo_password = if form.sudo_clear {
+            Some(String::new())
+        } else {
+            (!form.sudo_password.is_empty()).then(|| form.sudo_password.clone())
+        };
+        let default_path_sftp = Some(form.default_path_sftp.trim().to_string());
+        let keep_alive_interval: Option<i64> = form.keep_alive_interval.trim().parse().ok();
+        let keep_alive_tries: Option<i64> = form.keep_alive_tries.trim().parse().ok();
+        let notes = Some(form.notes.trim().to_string());
+        let pin_to_top = form.pin_to_top;
+        let group_id = form.group.clone();
+        let cred_id = form.credential.clone();
+        let jump_host_id = form.jump_host.clone();
+        let tunnels_json = serialize_tunnels(&form.tunnels);
+        let block_agent_access = form.block_agent_access;
+        let editing = form.editing_id.clone();
+        let addr = form.address.trim().to_string();
+        let user = form.username.trim().to_string();
+
+        let create_request = HostCreateRequest {
+            name,
+            host_address: addr,
+            port,
+            username: user,
+            auth_method: auth,
+            private_key_path: key_path,
+            group_id,
+            tags: None,
+            password,
+            sudo_password,
+            default_path_ssh: default_path,
+            default_path_sftp,
+            pin_to_top: Some(pin_to_top),
+            keep_alive_interval,
+            keep_alive_tries,
+            sort_order: None,
+            tunnels: Some(tunnels_json),
+            startup_snippet_id: snippet_id,
+            startup_snippet_mode: snippet_mode,
+            credential_id: cred_id,
+            jump_host_id,
+            notes,
+            icon,
+            block_agent_access: Some(block_agent_access),
+        };
+        let jh = self.tokio.spawn(async move {
+            match editing {
+                Some(id) => {
+                    let request = HostUpdateRequest {
+                        id,
+                        name: Some(create_request.name.clone()),
+                        host_address: Some(create_request.host_address.clone()),
+                        port: Some(create_request.port),
+                        username: Some(create_request.username.clone()),
+                        auth_method: Some(create_request.auth_method.clone()),
+                        private_key_path: create_request.private_key_path.clone(),
+                        group_id: create_request.group_id.clone(),
+                        tags: create_request.tags.clone(),
+                        password: create_request.password.clone(),
+                        sudo_password: create_request.sudo_password.clone(),
+                        default_path_ssh: create_request.default_path_ssh.clone(),
+                        default_path_sftp: create_request.default_path_sftp.clone(),
+                        pin_to_top: create_request.pin_to_top,
+                        keep_alive_interval: create_request.keep_alive_interval,
+                        keep_alive_tries: create_request.keep_alive_tries,
+                        sort_order: create_request.sort_order,
+                        tunnels: create_request.tunnels.clone(),
+                        startup_snippet_id: create_request.startup_snippet_id.clone(),
+                        startup_snippet_mode: create_request.startup_snippet_mode.clone(),
+                        credential_id: Some(
+                            create_request.credential_id.clone().unwrap_or_default(),
+                        ),
+                        jump_host_id: Some(create_request.jump_host_id.clone().unwrap_or_default()),
+                        notes: create_request.notes.clone(),
+                        icon: create_request.icon.clone(),
+                        block_agent_access: create_request.block_agent_access,
+                    };
+                    host_store::hosts_update(
+                        &database,
+                        &secrets,
+                        request,
+                        host_event_handler.as_deref(),
+                    )
+                    .await
+                    .map(|host| host.id)
+                }
+                None => host_store::hosts_create(&database, &secrets, create_request)
+                    .await
+                    .map(|host| host.id),
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                let (saved_id, error) = match result {
+                    Ok(Ok(id)) => (Some(id), None),
+                    Ok(Err(error)) => (None, Some(error.to_string())),
+                    Err(error) => (None, Some(error.to_string())),
+                };
+                if let Some(error) = error {
+                    this.notify_error("Save host failed", error, "hosts:save", cx);
+                }
+                let ok = saved_id.is_some();
+                if let (Some(id), Some(form)) = (saved_id, this.form.as_mut()) {
+                    // A created host is now an existing one: later autosaves
+                    // update it instead of creating another. Typed secrets are
+                    // stored, so the form no longer re-sends them.
+                    form.editing_id = Some(id);
+                    form.password.clear();
+                    form.sudo_password_set |= !form.sudo_password.is_empty();
+                    form.sudo_password_set &= !form.sudo_clear;
+                    form.sudo_password.clear();
+                    form.sudo_clear = false;
+                }
+                this.finish_save(ok, cx);
+                // Refresh the list rows (name / group / pin may have changed)
+                // without disturbing the open form.
+                this.reload_list_only(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Re-fetch just the host/group rows (used after autosave — must not touch
+    /// `self.form`).
+    fn reload_list_only(&self, cx: &mut Context<Self>) {
+        let database = self.database.clone();
+        let jh = self.tokio.spawn(async move {
+            let hosts = host_store::hosts_get_all(&database)
+                .await
+                .map_err(|error| error.to_string())?;
+            let groups = host_store::groups_get_all(&database)
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok::<_, String>((hosts, groups))
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(Ok((h, g))) => {
+                    this.hosts = h;
+                    this.groups = g;
+                    cx.notify();
+                }
+                Ok(Err(error)) => {
+                    this.notify_error("Reload hosts failed", error, "hosts:reload-list", cx);
+                }
+                Err(error) => this.notify_error(
+                    "Reload hosts failed",
+                    error.to_string(),
+                    "hosts:reload-list",
+                    cx,
+                ),
+            });
+        })
+        .detach();
+    }
+
+    fn duplicate_host(&mut self, id: String, cx: &mut Context<Self>) {
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { host_store::hosts_duplicate(&database, &secrets, id).await });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Duplicate host failed",
+                        error.to_string(),
+                        "hosts:duplicate",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Duplicate host failed",
+                        error.to_string(),
+                        "hosts:duplicate",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
+        })
+        .detach();
+    }
+
+    fn delete_host(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.form.as_ref().and_then(|f| f.editing_id.as_deref()) == Some(id.as_str()) {
+            self.reset_detail();
+        }
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { host_store::hosts_delete(&database, &secrets, id).await });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Delete host failed",
+                        error.to_string(),
+                        "hosts:delete",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Delete host failed",
+                        error.to_string(),
+                        "hosts:delete",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
+        })
+        .detach();
+    }
+
+    /// Persist a new sort order that places `dragged` immediately before
+    /// `target` in the current visible list, then reload.
+    fn reorder_hosts(&mut self, dragged: &str, target: &str, cx: &mut Context<Self>) {
+        if dragged == target {
+            return;
+        }
+        let mut order: Vec<String> = self.visible_hosts().into_iter().map(|h| h.id).collect();
+        let Some(from) = order.iter().position(|id| id == dragged) else {
+            return;
+        };
+        let id = order.remove(from);
+        let Some(to) = order.iter().position(|x| x == target) else {
+            return;
+        };
+        order.insert(to, id);
+        let items: Vec<ReorderItem> = order
+            .iter()
+            .enumerate()
+            .map(|(i, id)| ReorderItem {
+                id: id.clone(),
+                sort_order: i as i64,
+            })
+            .collect();
+        let database = self.database.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { host_store::hosts_reorder(&database, items).await });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Reorder hosts failed",
+                        error.to_string(),
+                        "hosts:reorder",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Reorder hosts failed",
+                        error.to_string(),
+                        "hosts:reorder",
+                        cx,
+                    ),
+                }
+                this.reload_list_only(cx)
+            });
+        })
+        .detach();
+    }
+
+    /// Move a host into (`Some(id)`) or out of (`None`) a group.
+    fn move_host_to_group(&mut self, host_id: &str, group: Option<String>, cx: &mut Context<Self>) {
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let id = host_id.to_string();
+        let jh = self.tokio.spawn(async move {
+            host_store::hosts_update(
+                &database,
+                &secrets,
+                HostUpdateRequest {
+                    id,
+                    name: None,
+                    host_address: None,
+                    port: None,
+                    username: None,
+                    auth_method: None,
+                    private_key_path: None,
+                    group_id: Some(group.unwrap_or_default()),
+                    tags: None,
+                    password: None,
+                    sudo_password: None,
+                    default_path_ssh: None,
+                    default_path_sftp: None,
+                    pin_to_top: None,
+                    keep_alive_interval: None,
+                    keep_alive_tries: None,
+                    sort_order: None,
+                    tunnels: None,
+                    startup_snippet_id: None,
+                    startup_snippet_mode: None,
+                    credential_id: None,
+                    jump_host_id: None,
+                    notes: None,
+                    icon: None,
+                    block_agent_access: None,
+                },
+                None,
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => {
+                        this.notify_error("Move host failed", error.to_string(), "hosts:move", cx)
+                    }
+                    Err(error) => {
+                        this.notify_error("Move host failed", error.to_string(), "hosts:move", cx)
+                    }
+                }
+                this.reload_list_only(cx)
+            });
+        })
+        .detach();
+    }
+
+    /// Run `ssh_test_connection` and publish the outcome to Notifications.
+    fn test_connection(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.form.as_ref().and_then(|f| f.editing_id.clone()) else {
+            return;
+        };
+        let tester = self.ssh_tester.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { tester.test(id, None, None, Some(15)).await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match res {
+                    Ok(Ok(SshTestResult::Success)) => {
+                        this.notify("Test Connection", "Connection OK ✓".to_string(), cx);
+                    }
+                    Ok(Ok(SshTestResult::UnknownHostKey { fingerprint })) => {
+                        this.notify(
+                            "Test Connection",
+                            format!("Unknown host key ({fingerprint}) — connect once to trust it"),
+                            cx,
+                        );
+                    }
+                    Ok(Ok(SshTestResult::HostKeyChanged { fingerprint })) => {
+                        this.notify_error(
+                            "Host key changed",
+                            format!("Host key CHANGED ({fingerprint}) — verify before connecting"),
+                            "hosts:test-connection",
+                            cx,
+                        );
+                    }
+                    Ok(Err(e)) => this.notify_error(
+                        "Connection test failed",
+                        e.to_string(),
+                        "hosts:test-connection",
+                        cx,
+                    ),
+                    Err(e) => this.notify_error(
+                        "Connection test failed",
+                        e.to_string(),
+                        "hosts:test-connection",
+                        cx,
+                    ),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Connect via the quick-connect box (`user@host:port`), creating a saved
+    /// host row first so the connection flow has something to key on.
+    fn quick_connect(&mut self, user: String, host: String, port: u16, cx: &mut Context<Self>) {
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let name = host.clone();
+        let jh = self.tokio.spawn(async move {
+            host_store::hosts_create(
+                &database,
+                &secrets,
+                HostCreateRequest {
+                    name,
+                    host_address: host,
+                    port: port as i64,
+                    username: user,
+                    auth_method: "password".to_string(),
+                    private_key_path: None,
+                    group_id: None,
+                    tags: None,
+                    password: None,
+                    sudo_password: None,
+                    default_path_ssh: None,
+                    default_path_sftp: None,
+                    pin_to_top: None,
+                    keep_alive_interval: None,
+                    keep_alive_tries: None,
+                    sort_order: None,
+                    tunnels: None,
+                    startup_snippet_id: None,
+                    startup_snippet_mode: None,
+                    credential_id: None,
+                    jump_host_id: None,
+                    notes: None,
+                    icon: None,
+                    block_agent_access: None,
+                },
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Quick connect failed",
+                        error.to_string(),
+                        "hosts:quick-connect",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Quick connect failed",
+                        error.to_string(),
+                        "hosts:quick-connect",
+                        cx,
+                    ),
+                }
+                if let Ok(Ok(host)) = result {
+                    this.search.clear();
+                    this.reload(cx);
+                    cx.emit(HostManagerEvent::Open(HostOpenRequest::ssh(host.id)));
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn create_group(&mut self, name: String, cx: &mut Context<Self>) {
+        if name.trim().is_empty() {
+            return;
+        }
+        let database = self.database.clone();
+        let name = name.trim().to_string();
+        let jh = self
+            .tokio
+            .spawn(async move { host_store::groups_create(&database, name, None, None).await });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Create group failed",
+                        error.to_string(),
+                        "hosts:create-group",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Create group failed",
+                        error.to_string(),
+                        "hosts:create-group",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
+        })
+        .detach();
+    }
+
+    fn delete_group(&mut self, id: String, cx: &mut Context<Self>) {
+        let database = self.database.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { host_store::groups_delete(&database, id).await });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Delete group failed",
+                        error.to_string(),
+                        "hosts:delete-group",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Delete group failed",
+                        error.to_string(),
+                        "hosts:delete-group",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
+        })
+        .detach();
+    }
+
+    /// Create or update the open credential. A new credential is created once
+    /// it has a name; its secret is only sent when the user typed one.
+    fn submit_cred_form(&mut self, cx: &mut Context<Self>) {
+        let Some(form) = self.cred_form.clone() else {
+            return;
+        };
+        self.save_state = SaveState::Saving;
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let name = form.name.trim().to_string();
+        let cred_type = if form.is_key { "key" } else { "password" }.to_string();
+        let key_path = form
+            .is_key
+            .then(|| form.key_path.trim().to_string())
+            .filter(|path| !path.is_empty());
+        let secret = if form.secret_clear {
+            Some(String::new())
+        } else {
+            (!form.secret.is_empty()).then(|| form.secret.clone())
+        };
+        let editing = form.editing_id.clone();
+        let jh = self.tokio.spawn(async move {
+            match editing {
+                Some(id) => {
+                    labonair_credentials::credentials_update(
+                        &database,
+                        &secrets,
+                        id,
+                        Some(name),
+                        Some(cred_type),
+                        key_path,
+                        None,
+                        None,
+                        secret,
+                    )
+                    .await
+                }
+                None => {
+                    labonair_credentials::credentials_create(
+                        &database, &secrets, name, cred_type, key_path, None, None, secret,
+                    )
+                    .await
+                }
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                let saved = match result {
+                    Ok(Ok(credential)) => Some(credential),
+                    Ok(Err(error)) => {
+                        this.notify_error("Save credential failed", error, "hosts:save-cred", cx);
+                        None
+                    }
+                    Err(error) => {
+                        this.notify_error(
+                            "Save credential failed",
+                            error.to_string(),
+                            "hosts:save-cred",
+                            cx,
+                        );
+                        None
+                    }
+                };
+                let ok = saved.is_some();
+                if let (Some(credential), Some(form)) = (saved, this.cred_form.as_mut()) {
+                    form.editing_id = Some(credential.id);
+                    form.has_secret = credential.has_secret;
+                    form.secret.clear();
+                    form.secret_clear = false;
+                }
+                this.finish_save(ok, cx);
+                this.reload_credentials(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Re-fetch just the credential rows (after a credential save).
+    fn reload_credentials(&self, cx: &mut Context<Self>) {
+        let database = self.database.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { labonair_credentials::credentials_get_all(&database).await });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(credentials)) = jh.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.credentials = credentials;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Generate an ed25519 key pair for the open (already saved) key
+    /// credential. The private key stays in the app data dir; the public key
+    /// is shown on the credential page.
+    fn generate_key(&mut self, cx: &mut Context<Self>) {
+        let Some(form) = self.cred_form.as_ref() else {
+            return;
+        };
+        let Some(id) = form.editing_id.clone() else {
+            return;
+        };
+        let passphrase = (!form.secret.is_empty()).then(|| form.secret.clone());
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let data_dir = self.data_dir.clone();
+        let jh = self.tokio.spawn(async move {
+            labonair_credentials::credential_generate_keypair(
+                &data_dir,
+                &database,
+                &secrets,
+                id,
+                "ed25519".to_string(),
+                passphrase,
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(Ok(generated)) => {
+                        if let Some(form) = this.cred_form.as_mut() {
+                            form.key_path = generated.key_path;
+                            form.key_type = Some("ed25519".into());
+                            form.public_key = Some(generated.public_key);
+                            form.has_secret |= !form.secret.is_empty();
+                            form.secret.clear();
+                        }
+                        // The path input holds the old text; recreate inputs
+                        // so it shows the generated path.
+                        this.inputs.clear();
+                        this.finish_save(true, cx);
+                        this.reload_credentials(cx);
+                    }
+                    Ok(Err(error)) => {
+                        this.notify_error("Generate key failed", error, "hosts:generate-key", cx)
+                    }
+                    Err(error) => this.notify_error(
+                        "Generate key failed",
+                        error.to_string(),
+                        "hosts:generate-key",
+                        cx,
+                    ),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn delete_credential(&mut self, id: String, cx: &mut Context<Self>) {
+        if self
+            .cred_form
+            .as_ref()
+            .and_then(|f| f.editing_id.as_deref())
+            == Some(id.as_str())
+        {
+            self.reset_detail();
+        }
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let data_dir = self.data_dir.clone();
+        let jh = self.tokio.spawn(async move {
+            labonair_credentials::credentials_delete(&database, &secrets, &data_dir, id).await
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Delete credential failed",
+                        error.to_string(),
+                        "hosts:delete-credential",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Delete credential failed",
+                        error.to_string(),
+                        "hosts:delete-credential",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
+        })
+        .detach();
+    }
+
+    // ── SSH-config import / export ─────────────────────────────────────────
+
+    /// Open the "Import from ~/.ssh/config" dialog from the Hosts management
+    /// surface or its toolbar entry point.
+    pub fn open_import_dialog(&mut self, cx: &mut Context<Self>) {
+        self.open_import(cx);
+    }
+
+    /// Open the "Export to ~/.ssh/config" dialog (see
+    /// [`Self::open_import_dialog`]).
+    pub fn open_export_dialog(&mut self, cx: &mut Context<Self>) {
+        self.open_export(cx);
+    }
+
+    /// Open the import dialog and kick off a `~/.ssh/config` parse.
+    fn open_import(&mut self, cx: &mut Context<Self>) {
+        self.import = Some(ImportState {
+            loading: true,
+            entries: Vec::new(),
+            selected: HashSet::new(),
+            conflict: ImportConflict::Skip,
+            error: None,
+        });
+        let config = self.ssh_config.clone();
+        let jh = self.tokio.spawn(async move { config.parse().await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                let failure = match &res {
+                    Ok(Ok(_)) => None,
+                    Ok(Err(error)) => Some(error.to_string()),
+                    Err(error) => Some(error.to_string()),
+                };
+                if let Some(details) = failure {
+                    this.notify_error(
+                        "SSH config read failed",
+                        details,
+                        "hosts:ssh-config:read",
+                        cx,
+                    );
+                }
+                if let Some(state) = this.import.as_mut() {
+                    state.loading = false;
+                    match res {
+                        Ok(Ok(entries)) => {
+                            state.selected = entries.iter().map(|e| e.alias.clone()).collect();
+                            state.entries = entries;
+                        }
+                        Ok(Err(_)) => {
+                            state.error = Some("unavailable".to_string());
+                        }
+                        Err(_) => {
+                            state.error = Some("unavailable".to_string());
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Import the currently selected entries with the chosen conflict policy.
+    fn run_import(&mut self, cx: &mut Context<Self>) {
+        let Some(state) = self.import.as_ref() else {
+            return;
+        };
+        let conflict = state.conflict;
+        let entries: Vec<SshConfigEntry> = state
+            .entries
+            .iter()
+            .filter(|e| state.selected.contains(&e.alias))
+            .cloned()
+            .collect();
+        if entries.is_empty() {
+            return;
+        }
+        let count = entries.len();
+        let config = self.ssh_config.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { config.import(entries, conflict).await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match res {
+                    Ok(Ok(ids)) => {
+                        this.import = None;
+                        this.notify(
+                            "SSH config imported",
+                            format!("{} of {count} host(s) imported.", ids.len()),
+                            cx,
+                        );
+                        this.reload(cx);
+                    }
+                    Ok(Err(e)) => {
+                        if let Some(s) = this.import.as_mut() {
+                            s.error = Some(e);
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(s) = this.import.as_mut() {
+                            s.error = Some(e.to_string());
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Open the export dialog with every host pre-selected.
+    fn open_export(&mut self, cx: &mut Context<Self>) {
+        self.export = Some(ExportState {
+            selected: self.hosts.iter().map(|h| h.id.clone()).collect(),
+            error: None,
+        });
+        cx.notify();
+    }
+
+    fn export_selected_ids(&self) -> Vec<String> {
+        self.export
+            .as_ref()
+            .map(|s| {
+                self.hosts
+                    .iter()
+                    .filter(|h| s.selected.contains(&h.id))
+                    .map(|h| h.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Generate the SSH-config block for the selected hosts and either copy it
+    /// to the clipboard or append it to `~/.ssh/config`.
+    fn run_export(&mut self, append: bool, cx: &mut Context<Self>) {
+        let ids = self.export_selected_ids();
+        if ids.is_empty() {
+            return;
+        }
+        let config = self.ssh_config.clone();
+        let tokio = self.tokio.clone();
+        let export_config = config.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { export_config.export(ids).await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await;
+            let block = match res {
+                Ok(Ok(block)) => block,
+                Ok(Err(e)) => {
+                    let details = e.to_string();
+                    let _ = this.update(cx, |this, cx| {
+                        this.notify_error(
+                            "SSH config export failed",
+                            details,
+                            "hosts:ssh-config:export",
+                            cx,
+                        );
+                        if let Some(s) = this.export.as_mut() {
+                            s.error = Some("unavailable".to_string());
+                        }
+                        cx.notify();
+                    });
+                    return;
+                }
+                Err(e) => {
+                    let _ = this.update(cx, |this, cx| {
+                        this.notify_error(
+                            "SSH config export failed",
+                            e.to_string(),
+                            "hosts:ssh-config:export",
+                            cx,
+                        );
+                        if let Some(s) = this.export.as_mut() {
+                            s.error = Some("unavailable".to_string());
+                        }
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
+            if !append {
+                let _ = this.update(cx, |this, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(block.clone()));
+                    this.export = None;
+                    this.notify(
+                        "SSH config copied",
+                        "The generated Host blocks were copied to the clipboard.".to_string(),
+                        cx,
+                    );
+                    cx.notify();
+                });
+                return;
+            }
+            let write = tokio
+                .spawn(async move { config.write_export(block, true).await })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                match write {
+                    Ok(Ok(path)) => {
+                        this.export = None;
+                        this.notify(
+                            "SSH config exported",
+                            format!("Host blocks appended to {path}"),
+                            cx,
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        this.notify_error(
+                            "SSH config export failed",
+                            e.to_string(),
+                            "hosts:ssh-config:write",
+                            cx,
+                        );
+                        if let Some(s) = this.export.as_mut() {
+                            s.error = Some("unavailable".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        this.notify_error(
+                            "SSH config export failed",
+                            e.to_string(),
+                            "hosts:ssh-config:write",
+                            cx,
+                        );
+                        if let Some(s) = this.export.as_mut() {
+                            s.error = Some("unavailable".to_string());
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    // ── key handling for the inline text fields ─────────────────────────────
+
+    fn edit_str(buf: &mut String, ks: &gpui::Keystroke) -> bool {
+        match ks.key.as_str() {
+            "backspace" => {
+                buf.pop();
+                true
+            }
+            key => {
+                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
+                    return false;
+                }
+                let ch = ks
+                    .key_char
+                    .clone()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
+                if let Some(ch) = ch {
+                    buf.push_str(&ch);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    fn on_group_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        let ks = &ev.keystroke;
+        match ks.key.as_str() {
+            "escape" => self.group_draft = None,
+            "enter" => {
+                if let Some(name) = self.group_draft.take() {
+                    self.create_group(name, cx);
+                }
+            }
+            _ => {
+                if let Some(b) = self.group_draft.as_mut() {
+                    if Self::edit_str(b, ks) {
+                        self.blink.update(cx, |b, cx| b.pause(cx));
+                    }
+                }
+            }
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn on_search_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        if ev.keystroke.key == "escape" {
+            if !self.search.is_empty() {
+                self.search.clear();
+                if let Some(input) = self.search_input.clone() {
+                    input.update(cx, |state, cx| state.set_value(String::new(), _w, cx));
+                }
+                cx.notify();
+            }
+            cx.stop_propagation();
+        }
+    }
+
+    fn ensure_search_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_input.is_some() {
+            return;
+        }
+        let input =
+            cx.new(|cx| text_field(window, cx).placeholder("Find a host or type user@hostname…"));
+        let subscription =
+            cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
+                InputEvent::Change => {
+                    this.search = input.read(cx).value().to_string();
+                    cx.notify();
+                }
+                InputEvent::Focus => {
+                    this.search_input_focused = true;
+                    cx.notify();
+                }
+                InputEvent::Blur => {
+                    this.search_input_focused = false;
+                    cx.notify();
+                }
+                InputEvent::PressEnter { .. } => {
+                    if let Some((user, host, port)) = this.quick_connect_target() {
+                        this.quick_connect(user, host, port, cx);
+                    }
+                    cx.stop_propagation();
+                }
+            });
+        self.search_input = Some(input);
+        self._search_input_subscription = Some(subscription);
+    }
+}
+
+impl Focusable for HostManagerView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+// ── rendering ──────────────────────────────────────────────────────────────
+
+impl HostManagerView {
+    /// T20-001: the per-render token snapshot is now the shared
+    /// [`labonair_ui_kit::Palette`] — the local struct this replaced held the
+    /// same six tokens and forced every ui-kit primitive to be handed a
+    /// `&ThemeStore` separately.
+    fn palette(&self, cx: &App) -> Palette {
+        Palette::from_theme(self.theme.read(cx))
+    }
+
+    /// Small host-manager action button — thin wrapper over the shared
+    /// [`labonair_ui_kit::button`] builder (`Xs` size; `Default` variant for
+    /// primary actions, `Outline` otherwise).
+    fn btn(
+        &self,
+        id: &'static str,
+        label: impl Into<SharedString>,
+        p: &Palette,
+        primary: bool,
+        _cx: &App,
+    ) -> gpui::Stateful<gpui::Div> {
+        let variant = if primary {
+            labonair_ui_kit::ButtonVariant::Filled
+        } else {
+            labonair_ui_kit::ButtonVariant::Outlined
+        };
+        labonair_ui_kit::button(id, *p, variant, labonair_ui_kit::ButtonSize::Xs)
+            .child(label.into())
+    }
+
+    // ── master/detail helpers (T16-014) ────────────────────────────────────
+
+    /// Load `host` into the detail-pane form.
+    fn select_host(&mut self, host: &Host, cx: &mut Context<Self>) {
+        self.reset_detail();
+        self.form = Some(HostForm::from_host(host));
+        cx.notify();
+    }
+
+    /// Open a blank host form (saved once it has an address).
+    fn new_host(&mut self, cx: &mut Context<Self>) {
+        self.reset_detail();
+        self.form = Some(HostForm::blank());
+        cx.notify();
+    }
+
+    fn select_credential(&mut self, credential: &Credential, cx: &mut Context<Self>) {
+        self.reset_detail();
+        self.cred_form = Some(CredForm::from_credential(credential));
+        cx.notify();
+    }
+
+    fn new_credential(&mut self, origin_host: Option<String>, cx: &mut Context<Self>) {
+        self.reset_detail();
+        self.cred_form = Some(CredForm::blank(origin_host));
+        cx.notify();
+    }
+
+    /// Close any open detail sub-page without saving.
+    fn reset_detail(&mut self) {
+        self.form = None;
+        self.cred_form = None;
+        self.inputs.clear();
+        self.focused_input = None;
+        self.dropdown = None;
+        self.icon_picker_open = false;
+        self.save_state = SaveState::Idle;
+    }
+
+    /// Back from a detail sub-page to the list: saves a pending edit first.
+    /// A credential created from a host form returns to that host with the
+    /// new credential selected.
+    fn close_detail(&mut self, cx: &mut Context<Self>) {
+        self.flush_open_form(cx);
+        let back_to = self.cred_form.as_ref().and_then(|c| {
+            c.origin_host
+                .clone()
+                .map(|host| (host, c.editing_id.clone()))
+        });
+        self.reset_detail();
+        if let Some((host_id, credential)) = back_to {
+            self.mode = PageMode::Hosts;
+            if let Some(host) = self.hosts.iter().find(|h| h.id == host_id).cloned() {
+                self.select_host(&host, cx);
+                if let (Some(form), Some(credential)) = (self.form.as_mut(), credential) {
+                    form.credential = Some(credential);
+                    form.auth = AuthMethod::Credential;
+                    self.schedule_autosave(cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Hosts after search filter, group-filter chip, and sort are applied.
+    fn visible_hosts(&self) -> Vec<Host> {
+        let q = self.search.trim().to_lowercase();
+        let mut v: Vec<Host> = self
+            .hosts
+            .iter()
+            .filter(|h| match &self.group_filter {
+                None => true,
+                Some(g) if g.is_empty() => h.group_id.is_none(),
+                Some(g) => h.group_id.as_deref() == Some(g.as_str()),
+            })
+            .filter(|h| {
+                q.is_empty()
+                    || h.name.to_lowercase().contains(&q)
+                    || h.host_address.to_lowercase().contains(&q)
+                    || h.username.to_lowercase().contains(&q)
+            })
+            .cloned()
+            .collect();
+        match self.sort {
+            HostSort::LastConnected => v.sort_by(|a, b| {
+                b.pin_to_top
+                    .cmp(&a.pin_to_top)
+                    .then(b.last_connected_at.cmp(&a.last_connected_at))
+                    .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            }),
+            HostSort::NameAsc => v.sort_by_key(|h| h.name.to_lowercase()),
+            HostSort::NameDesc => v.sort_by_key(|h| std::cmp::Reverse(h.name.to_lowercase())),
+        }
+        v
+    }
+
+    /// `Some((user, host, port))` if the search box holds a `user@host[:port]`
+    /// quick-connect target that isn't already a saved host.
+    fn quick_connect_target(&self) -> Option<(String, String, u16)> {
+        let s = self.search.trim();
+        let (user, rest) = s.split_once('@')?;
+        if user.is_empty() || rest.is_empty() || user.contains(char::is_whitespace) {
+            return None;
+        }
+        let (host, port) = match rest.split_once(':') {
+            Some((h, p)) => (h, p.parse::<u16>().ok()?),
+            None => (rest, 22),
+        };
+        if host.is_empty() || host.contains(char::is_whitespace) {
+            return None;
+        }
+        Some((user.to_string(), host.to_string(), port))
+    }
+
+    /// Display snapshot of a `visible_hosts()` row.
+    fn host_row_data(&self, host: &Host) -> HostRowData {
+        HostRowData {
+            name: host.name.clone(),
+            subtitle: format!("{}@{}:{}", host.username, host.host_address, host.port),
+            icon: host_icon(host.icon.as_deref()),
+            pin_to_top: host.pin_to_top,
+            status: self.status_of(&host.id),
+        }
+    }
+
+    fn render_group_chips(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let c_accent = p.accent;
+        let palette = *p;
+        let chip = |id: &'static str,
+                    label: String,
+                    active: bool,
+                    on_drop_group: Option<String>,
+                    cx: &mut Context<Self>,
+                    filter: Option<String>| {
+            let mut el = button(
+                id,
+                palette,
+                if active {
+                    ButtonVariant::Filled
+                } else {
+                    ButtonVariant::Outlined
+                },
+                ButtonSize::Xs,
+            )
+            .child(SharedString::from(label))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                this.group_filter = filter.clone();
+                cx.notify();
+            }));
+            if let Some(gid) = on_drop_group {
+                el = el
+                    .drag_over::<DraggedHost>(move |s, _, _, _| s.border_color(c_accent))
+                    .on_drop(cx.listener(move |this, dragged: &DraggedHost, _w, cx| {
+                        let g = if gid.is_empty() {
+                            None
+                        } else {
+                            Some(gid.clone())
+                        };
+                        this.move_host_to_group(&dragged.id, g, cx);
+                    }));
+            }
+            el
+        };
+
+        let mut row = div().flex().flex_wrap().gap_1().items_center().child(chip(
+            "chip-all",
+            "All".to_string(),
+            self.group_filter.is_none(),
+            None,
+            cx,
+            None,
+        ));
+        let ungrouped = self.hosts.iter().filter(|h| h.group_id.is_none()).count();
+        row = row.child(chip(
+            "chip-ungrouped",
+            format!("Ungrouped ({ungrouped})"),
+            self.group_filter.as_deref() == Some(""),
+            Some(String::new()),
+            cx,
+            Some(String::new()),
+        ));
+        for g in self.groups.clone() {
+            let count = self
+                .hosts
+                .iter()
+                .filter(|h| h.group_id.as_deref() == Some(g.id.as_str()))
+                .count();
+            let gid = g.id.clone();
+            let gid_del = g.id.clone();
+            let (gid_menu, gname_menu) = (g.id.clone(), g.name.clone());
+            row = row.child(
+                div()
+                    .id(SharedString::from(format!("gchip-{}", g.id)))
+                    .flex()
+                    .items_center()
+                    .gap_0p5()
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                            this.group_menu =
+                                Some((gid_menu.clone(), gname_menu.clone(), ev.position));
+                            cx.notify();
+                        }),
+                    )
+                    .child(chip(
+                        "chip-group",
+                        format!("{} ({count})", g.name),
+                        self.group_filter.as_deref() == Some(g.id.as_str()),
+                        Some(gid.clone()),
+                        cx,
+                        Some(gid.clone()),
+                    ))
+                    .child(
+                        icon_button_builder(
+                            SharedString::from(format!("gdel-{gid_del}")),
+                            *p,
+                            IconName::X,
+                        )
+                        .size(ButtonSize::IconXxs)
+                        .tooltip("Delete group")
+                        .render()
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
+                                this.delete_group(gid_del.clone(), cx)
+                            },
+                        )),
+                    ),
+            );
+        }
+        row.into_any_element()
+    }
+
+    fn modal_shell(&self, width: f32, p: &Palette) -> gpui::Div {
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .w(px(width))
+            .max_h(px(620.0))
+            .overflow_hidden()
+            .p_4()
+            .rounded_lg()
+            .bg(p.card)
+            .border_1()
+            .border_color(p.border)
+    }
+
+    fn render_import(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(state) = self.import.as_ref() else {
+            return div().into_any_element();
+        };
+        let existing_names: HashSet<&str> = self.hosts.iter().map(|h| h.name.as_str()).collect();
+        let selected_count = state.selected.len();
+        let total = state.entries.len();
+        let conflict = state.conflict;
+
+        let list: Vec<gpui::AnyElement> = state
+            .entries
+            .iter()
+            .map(|e| {
+                let alias = e.alias.clone();
+                let checked = state.selected.contains(&alias);
+                let exists = existing_names.contains(e.alias.as_str());
+                let (p_accent, p_border) = (p.accent, p.border);
+                let meta = format!(
+                    "{}:{}{}{}{}",
+                    e.host_address,
+                    e.port,
+                    e.username
+                        .as_deref()
+                        .map(|u| format!("  \u{00b7}  {u}"))
+                        .unwrap_or_default(),
+                    if e.auth_method == "key" {
+                        "  \u{00b7}  key"
+                    } else {
+                        "  \u{00b7}  password"
+                    },
+                    e.proxy_jump
+                        .as_deref()
+                        .map(|j| format!("  \u{00b7}  via {j}"))
+                        .unwrap_or_default(),
+                );
+                ListItem::new(SharedString::from(format!("imp-{alias}")), *p)
+                    // T20-001: shared `Checkbox` primitive.
+                    .child(checkbox("", *p, checked).box_only())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(div().text_sm().text_color(p.fg).child(SharedString::from(
+                                if exists {
+                                    format!("{alias}  (already exists)")
+                                } else {
+                                    alias.clone()
+                                },
+                            )))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(p.muted)
+                                    .child(SharedString::from(meta)),
+                            ),
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(s) = this.import.as_mut() {
+                            if !s.selected.remove(&alias) {
+                                s.selected.insert(alias.clone());
+                            }
+                        }
+                        cx.notify();
+                    }))
+                    .extra(move |row| {
+                        row.rounded_md().border_1().border_color(if checked {
+                            p_accent
+                        } else {
+                            p_border
+                        })
+                    })
+                    .into_any_element()
+            })
+            .collect();
+
+        let body = if state.loading {
+            div()
+                .text_sm()
+                .text_color(p.muted)
+                .child("Reading ~/.ssh/config\u{2026}")
+                .into_any_element()
+        } else if state.error.is_some() {
+            div()
+                .text_sm()
+                .text_color(p.muted)
+                .child("No import entries available.")
+                .into_any_element()
+        } else if list.is_empty() {
+            div()
+                .text_sm()
+                .text_color(p.muted)
+                .child("No hosts found in ~/.ssh/config.")
+                .into_any_element()
+        } else {
+            div()
+                .id("imp-list")
+                .flex()
+                .flex_col()
+                .gap_1()
+                .overflow_y_scroll()
+                .max_h(px(360.0))
+                .children(list)
+                .into_any_element()
+        };
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(crate::theme::modal_scrim())
+            .child(
+                self.modal_shell(500.0, p)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(p.fg)
+                            .child("Import from ~/.ssh/config"),
+                    )
+                    .when(
+                        !state.loading && state.error.is_none() && !state.entries.is_empty(),
+                        |el| {
+                            el.child(
+                                div()
+                                    .flex()
+                                    .gap_2()
+                                    .child(
+                                        self.btn("imp-all", "Select all", p, false, cx).on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                if let Some(s) = this.import.as_mut() {
+                                                    s.selected = s
+                                                        .entries
+                                                        .iter()
+                                                        .map(|e| e.alias.clone())
+                                                        .collect();
+                                                }
+                                                cx.notify();
+                                            }),
+                                        ),
+                                    )
+                                    .child(
+                                        self.btn("imp-none", "Deselect all", p, false, cx)
+                                            .on_click(cx.listener(
+                                                |this, _: &ClickEvent, _w, cx| {
+                                                    if let Some(s) = this.import.as_mut() {
+                                                        s.selected.clear();
+                                                    }
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        self.btn(
+                                            "imp-conflict",
+                                            format!("On conflict: {}", conflict_label(conflict)),
+                                            p,
+                                            false,
+                                            cx,
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                if let Some(s) = this.import.as_mut() {
+                                                    s.conflict = cycle_conflict(s.conflict);
+                                                }
+                                                cx.notify();
+                                            }),
+                                        ),
+                                    ),
+                            )
+                        },
+                    )
+                    .child(body)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .justify_end()
+                            .pt_2()
+                            .when(!state.loading && total > 0, |el| {
+                                el.child(div().flex_1().text_xs().text_color(p.muted).child(
+                                    SharedString::from(format!(
+                                        "{selected_count} of {total} selected"
+                                    )),
+                                ))
+                            })
+                            .child(self.btn("imp-cancel", "Cancel", p, false, cx).on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    this.import = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(
+                                self.btn("imp-run", "Import Selected", p, true, cx)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.run_import(cx)
+                                    })),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_export(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(state) = self.export.as_ref() else {
+            return div().into_any_element();
+        };
+        let selected_count = state.selected.len();
+
+        let rows: Vec<gpui::AnyElement> = self
+            .hosts
+            .iter()
+            .map(|h| {
+                let id = h.id.clone();
+                let checked = state.selected.contains(&id);
+                let (p_accent, p_border) = (p.accent, p.border);
+                ListItem::new(SharedString::from(format!("exp-{id}")), *p)
+                    // T20-001: shared `Checkbox` primitive.
+                    .child(checkbox("", *p, checked).box_only())
+                    .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
+                        SharedString::from(format!(
+                            "{}  \u{00b7}  {}@{}:{}",
+                            h.name, h.username, h.host_address, h.port
+                        )),
+                    ))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(s) = this.export.as_mut() {
+                            if !s.selected.remove(&id) {
+                                s.selected.insert(id.clone());
+                            }
+                        }
+                        cx.notify();
+                    }))
+                    .extra(move |row| {
+                        row.rounded_md().border_1().border_color(if checked {
+                            p_accent
+                        } else {
+                            p_border
+                        })
+                    })
+                    .into_any_element()
+            })
+            .collect();
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(crate::theme::modal_scrim())
+            .child(
+                self.modal_shell(500.0, p)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(p.fg)
+                            .child("Export to ~/.ssh/config"),
+                    )
+                    .child(
+                        div()
+                            .id("exp-list")
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .overflow_y_scroll()
+                            .max_h(px(360.0))
+                            .children(rows),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .justify_end()
+                            .pt_2()
+                            .child(
+                                div().flex_1().text_xs().text_color(p.muted).child(
+                                    SharedString::from(format!("{selected_count} selected")),
+                                ),
+                            )
+                            .child(self.btn("exp-cancel", "Cancel", p, false, cx).on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    this.export = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(
+                                self.btn("exp-copy", "Copy to clipboard", p, false, cx)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.run_export(false, cx)
+                                    })),
+                            )
+                            .child(
+                                self.btn("exp-append", "Append to ~/.ssh/config", p, true, cx)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.run_export(true, cx)
+                                    })),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
+impl HostManagerView {
+    /// Copy a single host's SSH-config block to the clipboard.
+    fn export_host(&mut self, id: String, cx: &mut Context<Self>) {
+        let config = self.ssh_config.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { config.export(vec![id]).await });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(Ok(block)) => {
+                    cx.write_to_clipboard(ClipboardItem::new_string(block));
+                }
+                Ok(Err(error)) => this.notify_error(
+                    "Export host failed",
+                    error.to_string(),
+                    "hosts:export-host",
+                    cx,
+                ),
+                Err(error) => this.notify_error(
+                    "Export host failed",
+                    error.to_string(),
+                    "hosts:export-host",
+                    cx,
+                ),
+            });
+        })
+        .detach();
+    }
+
+    fn rename_group(&mut self, id: String, name: String, cx: &mut Context<Self>) {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        let database = self.database.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { host_store::groups_update(&database, id, name).await });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Rename group failed",
+                        error.to_string(),
+                        "hosts:rename-group",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Rename group failed",
+                        error.to_string(),
+                        "hosts:rename-group",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
+        })
+        .detach();
+    }
+
+    fn render_host_menu(&self, _p: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (id, pos) = self.host_menu.clone()?;
+        let host = self.hosts.iter().find(|h| h.id == id)?.clone();
+        let view = cx.entity();
+        let close = |v: &Entity<Self>, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.host_menu = None;
+                cx.notify();
+            })
+        };
+        let items = vec![
+            MenuItem::new("hm-ssh", "Connect SSH")
+                .icon(IconName::Terminal)
+                .on_click({
+                    let v = view.clone();
+                    let id = id.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            cx.emit(HostManagerEvent::Open(HostOpenRequest::ssh(id)));
+                        });
+                    }
+                }),
+            MenuItem::new("hm-sftp", "Open SFTP")
+                .icon(IconName::Folder)
+                .on_click({
+                    let v = view.clone();
+                    let id = id.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            cx.emit(HostManagerEvent::Open(HostOpenRequest::sftp(id)));
+                        });
+                    }
+                }),
+            MenuItem::separator(),
+            MenuItem::new("hm-edit", "Edit")
+                .icon(IconName::Pencil)
+                .on_click({
+                    let v = view.clone();
+                    let host = host.clone();
+                    move |_, _w, cx| {
+                        let host = host.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            this.mode = PageMode::Hosts;
+                            this.select_host(&host, cx);
+                        });
+                    }
+                }),
+            MenuItem::new("hm-dup", "Duplicate")
+                .icon(IconName::Copy)
+                .on_click({
+                    let v = view.clone();
+                    let id = id.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            this.duplicate_host(id, cx);
+                        });
+                    }
+                }),
+            MenuItem::new("hm-export", "Export to SSH Config").on_click({
+                let v = view.clone();
+                let id = id.clone();
+                move |_, _w, cx| {
+                    let id = id.clone();
+                    v.update(cx, |this, cx| {
+                        this.host_menu = None;
+                        this.export_host(id, cx);
+                    });
+                }
+            }),
+            MenuItem::separator(),
+            MenuItem::new("hm-del", "Delete")
+                .icon(IconName::Trash)
+                .destructive()
+                .on_click({
+                    let v = view.clone();
+                    let id = id.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            this.confirm = Some(Confirm::DeleteHost(id));
+                            cx.notify();
+                        });
+                    }
+                }),
+        ];
+        let v = view.clone();
+        Some(context_menu(
+            pos,
+            self.palette(cx),
+            move |_w, cx| close(&v, cx),
+            items,
+        ))
+    }
+
+    fn render_group_menu(&self, _p: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (gid, gname, pos) = self.group_menu.clone()?;
+        let view = cx.entity();
+        let items = vec![
+            MenuItem::new("gm-rename", "Rename Group")
+                .icon(IconName::Pencil)
+                .on_click({
+                    let v = view.clone();
+                    let (gid, gname) = (gid.clone(), gname.clone());
+                    move |_, w, cx| {
+                        let (gid, gname) = (gid.clone(), gname.clone());
+                        v.update(cx, |this, cx| {
+                            this.group_menu = None;
+                            this.group_rename = Some((gid, gname));
+                            w.focus(&this.group_rename_focus);
+                            cx.notify();
+                        });
+                    }
+                }),
+            MenuItem::new("gm-del", "Delete Group")
+                .icon(IconName::Trash)
+                .destructive()
+                .on_click({
+                    let v = view.clone();
+                    let gid = gid.clone();
+                    move |_, _w, cx| {
+                        let gid = gid.clone();
+                        v.update(cx, |this, cx| {
+                            this.group_menu = None;
+                            this.delete_group(gid, cx);
+                        });
+                    }
+                }),
+        ];
+        let v = view.clone();
+        Some(context_menu(
+            pos,
+            self.palette(cx),
+            move |_w, cx| {
+                v.update(cx, |this, cx| {
+                    this.group_menu = None;
+                    cx.notify();
+                })
+            },
+            items,
+        ))
+    }
+
+    fn render_group_rename(&self, p: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (_, buf) = self.group_rename.as_ref()?;
+        let show_caret =
+            self.focused_region == Some(FocusRegion::GroupRename) && self.blink.read(cx).visible();
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(crate::theme::modal_scrim())
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                        this.group_rename = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .track_focus(&self.group_rename_focus)
+                        .key_context("HostGroupRename")
+                        .on_key_down(cx.listener(Self::on_group_rename_key))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                                // Explicit re-focus, not just `stop_propagation` — GPUI's
+                                // automatic focus-on-click for `track_focus` and this
+                                // listener share the same mouse-down dispatch pass, and
+                                // `stop_propagation` aborts it before the automatic
+                                // focus transfer runs, silently killing click-to-refocus.
+                                window.focus(&this.group_rename_focus);
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .w(px(300.0))
+                        .p_3()
+                        .rounded_md()
+                        .bg(p.card)
+                        .border_1()
+                        .border_color(p.border)
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(p.fg)
+                                .child("Rename group"),
+                        )
+                        .child(
+                            div()
+                                .px_2()
+                                .py_1()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(p.accent)
+                                .text_size(px(12.0))
+                                .text_color(p.fg)
+                                .flex()
+                                .items_center()
+                                .child(SharedString::from(buf.clone()))
+                                .when(show_caret, |el| el.child(caret(p.fg, 12.0))),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn on_group_rename_key(
+        &mut self,
+        ev: &KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((gid, buf)) = self.group_rename.as_mut() else {
+            return;
+        };
+        match ev.keystroke.key.as_str() {
+            "enter" => {
+                let (gid, name) = (gid.clone(), buf.clone());
+                self.group_rename = None;
+                self.rename_group(gid, name, cx);
+            }
+            "escape" => {
+                self.group_rename = None;
+                cx.notify();
+            }
+            "backspace" => {
+                buf.pop();
+                self.blink.update(cx, |b, cx| b.pause(cx));
+                cx.notify();
+            }
+            _ => {
+                if let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                {
+                    buf.push_str(ch);
+                    self.blink.update(cx, |b, cx| b.pause(cx));
+                    cx.notify();
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::ThemeStore;
+    use gpui::{AppContext, TestAppContext, WindowAppearance};
+
+    struct TestSshServices;
+
+    impl SshConnectionTester for TestSshServices {
+        fn test<'a>(
+            &'a self,
+            _host_id: String,
+            _passphrase: Option<String>,
+            _password_override: Option<String>,
+            _connect_timeout_secs: Option<u64>,
+        ) -> labonair_ssh::BoxFuture<'a, Result<SshTestResult, labonair_errors::LabonairError>>
+        {
+            Box::pin(async { Ok(SshTestResult::Success) })
+        }
+    }
+
+    impl SshConfigService for TestSshServices {
+        fn parse<'a>(&'a self) -> labonair_ssh::BoxFuture<'a, Result<Vec<SshConfigEntry>, String>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn import<'a>(
+            &'a self,
+            _entries: Vec<SshConfigEntry>,
+            _conflict: ImportConflict,
+        ) -> labonair_ssh::BoxFuture<'a, Result<Vec<String>, String>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn export<'a>(
+            &'a self,
+            _host_ids: Vec<String>,
+        ) -> labonair_ssh::BoxFuture<'a, Result<String, String>> {
+            Box::pin(async { Ok(String::new()) })
+        }
+
+        fn write_export<'a>(
+            &'a self,
+            _block: String,
+            _append: bool,
+        ) -> labonair_ssh::BoxFuture<'a, Result<String, String>> {
+            Box::pin(async { Ok(String::new()) })
+        }
+    }
+
+    fn make(cx: &mut TestAppContext) -> (tokio::runtime::Runtime, Entity<HostManagerView>) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = rt.handle().clone();
+        let dir = std::env::temp_dir().join(format!("labonair-hm-{}", uuid::Uuid::new_v4()));
+        let connection = labonair_persistence::initialize_database(dir.clone()).unwrap();
+        let database = Database(std::sync::Arc::new(std::sync::Mutex::new(connection)));
+        let secrets = std::sync::Arc::new(SecretsState::new(dir.clone()));
+        let ssh_service = std::sync::Arc::new(TestSshServices);
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            cx.new(|cx| {
+                HostManagerView::new(
+                    database,
+                    secrets,
+                    dir.clone(),
+                    None,
+                    ssh_service.clone(),
+                    ssh_service,
+                    handle,
+                    theme,
+                    cx,
+                )
+            })
+        });
+        (rt, view)
+    }
+
+    #[gpui::test]
+    fn tracks_per_host_connection_status(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                assert_eq!(v.status_of("h1"), HostStatus::Disconnected);
+                v.set_status("h1", HostStatus::Connecting, cx);
+                v.set_status("h1", HostStatus::Connected, cx);
+                v.set_status("h2", HostStatus::Failed, cx);
+                assert_eq!(v.status_of("h1"), HostStatus::Connected);
+                assert_eq!(v.status_of("h2"), HostStatus::Failed);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn picker_rows_are_canonical_and_recent_rows_keep_owner_order(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, _cx| {
+                let mut recent = host_stub("recent", "Recent");
+                recent.last_connected_at = Some(20);
+                recent.host_address = "recent.example".into();
+                recent.username = "deploy".into();
+
+                let mut older = host_stub("older", "Older");
+                older.last_connected_at = Some(10);
+                older.host_address = "older.example".into();
+
+                v.hosts = vec![older, recent];
+
+                assert_eq!(v.picker_rows()[1].subtitle, "deploy@recent.example:22");
+                assert_eq!(
+                    v.recent_picker_rows(2)
+                        .into_iter()
+                        .map(|row| row.id)
+                        .collect::<Vec<_>>(),
+                    vec!["recent", "older"]
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn host_form_prefills_from_an_existing_host(cx: &mut TestAppContext) {
+        let (_rt, _view) = make(cx);
+        let host = Host {
+            id: "h".into(),
+            name: "Web".into(),
+            host_address: "example.com".into(),
+            port: 2222,
+            username: "deploy".into(),
+            auth_method: "key".into(),
+            private_key_path: Some("/k".into()),
+            group_id: None,
+            tags: Some("prod".into()),
+            created_at: 0,
+            last_connected_at: None,
+            default_path_ssh: Some("/srv".into()),
+            default_path_sftp: None,
+            pin_to_top: false,
+            sudo_password_set: false,
+            keep_alive_interval: None,
+            keep_alive_tries: None,
+            sort_order: 0,
+            tunnels: None,
+            startup_snippet_id: None,
+            startup_snippet_mode: None,
+            credential_id: None,
+            jump_host_id: None,
+            notes: None,
+            icon: None,
+            block_agent_access: false,
+        };
+        let form = HostForm::from_host(&host);
+        assert_eq!(form.name, "Web");
+        assert_eq!(form.port, "2222");
+        assert_eq!(form.auth, AuthMethod::Key);
+        assert_eq!(form.key_path, "/k");
+        assert_eq!(form.default_path, "/srv");
+        assert_eq!(form.editing_id.as_deref(), Some("h"));
+        assert!(form.jump_host.is_none());
+        assert!(form.tunnels.is_empty());
+    }
+
+    #[test]
+    fn host_form_prefills_and_serializes_the_block_e_fields() {
+        let mut host = host_stub("h", "Box");
+        host.auth_method = "credential".into();
+        host.default_path_sftp = Some("/var/www".into());
+        host.keep_alive_interval = Some(30);
+        host.keep_alive_tries = Some(5);
+        host.notes = Some("prod runbook".into());
+        host.pin_to_top = true;
+        host.sudo_password_set = true;
+
+        let form = HostForm::from_host(&host);
+        assert_eq!(form.auth, AuthMethod::Credential);
+        assert_eq!(form.default_path_sftp, "/var/www");
+        assert_eq!(form.keep_alive_interval, "30");
+        assert_eq!(form.keep_alive_tries, "5");
+        assert_eq!(form.notes, "prod runbook");
+        assert!(form.pin_to_top);
+        assert!(form.sudo_password_set);
+        assert!(form.sudo_password.is_empty());
+
+        // Legacy "agent" spelling still resolves to the Credential mode, and
+        // Credential serializes back to the persisted "credential" string.
+        assert_eq!(AuthMethod::from_str("agent"), AuthMethod::Credential);
+        assert_eq!(AuthMethod::Credential.as_str(), "credential");
+    }
+
+    pub(super) fn host_stub(id: &str, name: &str) -> Host {
+        Host {
+            id: id.into(),
+            name: name.into(),
+            host_address: "h.example".into(),
+            port: 22,
+            username: "u".into(),
+            auth_method: "password".into(),
+            private_key_path: None,
+            group_id: None,
+            tags: None,
+            created_at: 0,
+            last_connected_at: None,
+            default_path_ssh: None,
+            default_path_sftp: None,
+            pin_to_top: false,
+            sudo_password_set: false,
+            keep_alive_interval: None,
+            keep_alive_tries: None,
+            sort_order: 0,
+            tunnels: None,
+            startup_snippet_id: None,
+            startup_snippet_mode: None,
+            credential_id: None,
+            jump_host_id: None,
+            notes: None,
+            icon: None,
+            block_agent_access: false,
+        }
+    }
+
+    #[test]
+    fn tunnel_json_round_trips_and_drops_incomplete_rows() {
+        let drafts = vec![
+            TunnelDraft {
+                id: "keep".into(),
+                local_port: "8080".into(),
+                remote_host: "db.internal".into(),
+                remote_port: "5432".into(),
+            },
+            TunnelDraft {
+                id: "drop-no-host".into(),
+                local_port: "9000".into(),
+                remote_host: "  ".into(),
+                remote_port: "9000".into(),
+            },
+            TunnelDraft {
+                id: "drop-bad-port".into(),
+                local_port: "notaport".into(),
+                remote_host: "x".into(),
+                remote_port: "1".into(),
+            },
+        ];
+        let json = serialize_tunnels(&drafts);
+        let back = parse_tunnels(&Some(json));
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].id, "keep");
+        assert_eq!(back[0].local_port, "8080");
+        assert_eq!(back[0].remote_host, "db.internal");
+        assert_eq!(back[0].remote_port, "5432");
+    }
+
+    #[test]
+    fn empty_and_garbage_tunnel_columns_parse_to_nothing() {
+        assert!(parse_tunnels(&None).is_empty());
+        assert!(parse_tunnels(&Some(String::new())).is_empty());
+        assert!(parse_tunnels(&Some("not json".into())).is_empty());
+        assert!(parse_tunnels(&Some("[]".into())).is_empty());
+    }
+
+    #[test]
+    fn conflict_policy_cycles_skip_overwrite_rename() {
+        let c = ImportConflict::Skip;
+        let c = cycle_conflict(c);
+        assert_eq!(c, ImportConflict::Overwrite);
+        let c = cycle_conflict(c);
+        assert_eq!(c, ImportConflict::Rename);
+        let c = cycle_conflict(c);
+        assert_eq!(c, ImportConflict::Skip);
+        assert_eq!(conflict_label(ImportConflict::Overwrite), "overwrite");
+    }
+
+    #[gpui::test]
+    fn export_dialog_preselects_all_known_hosts(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.hosts = vec![host_stub("a", "Alpha"), host_stub("b", "Beta")];
+                v.open_export(cx);
+                let sel = &v.export.as_ref().unwrap().selected;
+                assert_eq!(sel.len(), 2);
+                assert!(sel.contains("a") && sel.contains("b"));
+                assert_eq!(v.export_selected_ids().len(), 2);
+            });
+        });
+    }
+
+    #[test]
+    fn from_host_keeps_the_jump_host_id_and_never_points_at_self() {
+        let mut target = host_stub("a", "Alpha");
+        target.jump_host_id = Some("b".into());
+        target.tunnels = Some(
+            r#"[{"id":"t","type":"local","local_port":2201,"remote_host":"web","remote_port":80}]"#
+                .into(),
+        );
+        let form = HostForm::from_host(&target);
+        assert_eq!(form.jump_host.as_deref(), Some("b"));
+        assert_eq!(form.tunnels.len(), 1);
+        assert_eq!(form.tunnels[0].local_port, "2201");
+
+        // A self-referential jump_host_id is ignored.
+        let mut loopy = host_stub("a", "Alpha");
+        loopy.jump_host_id = Some("a".into());
+        let form = HostForm::from_host(&loopy);
+        assert!(form.jump_host.is_none());
+    }
+
+    #[test]
+    fn quick_connect_target_parses_user_at_host_port() {
+        let hm_search = |s: &str| {
+            // exercise the parser in isolation via a throwaway view field
+            let parsed = {
+                let s = s.trim();
+                s.split_once('@').and_then(|(u, rest)| {
+                    if u.is_empty() {
+                        return None;
+                    }
+                    let (h, p) = match rest.split_once(':') {
+                        Some((h, p)) => (h, p.parse::<u16>().ok()?),
+                        None => (rest, 22),
+                    };
+                    (!h.is_empty()).then(|| (u.to_string(), h.to_string(), p))
+                })
+            };
+            parsed
+        };
+        assert_eq!(
+            hm_search("deploy@web.example:2222"),
+            Some(("deploy".into(), "web.example".into(), 2222))
+        );
+        assert_eq!(
+            hm_search("root@10.0.0.1"),
+            Some(("root".into(), "10.0.0.1".into(), 22))
+        );
+        assert_eq!(hm_search("just-text"), None);
+        assert_eq!(hm_search("@host"), None);
+    }
+
+    #[gpui::test]
+    fn visible_hosts_applies_group_filter_and_sort(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                let mut a = host_stub("a", "Zeta");
+                a.group_id = Some("g1".into());
+                let mut b = host_stub("b", "Alpha");
+                b.group_id = Some("g1".into());
+                let c = host_stub("c", "Mid"); // ungrouped
+                v.hosts = vec![a, b, c];
+
+                v.sort = HostSort::NameAsc;
+                let all: Vec<_> = v.visible_hosts().into_iter().map(|h| h.name).collect();
+                assert_eq!(all, vec!["Alpha", "Mid", "Zeta"]);
+
+                v.group_filter = Some("g1".into());
+                let g: Vec<_> = v.visible_hosts().into_iter().map(|h| h.id).collect();
+                assert_eq!(g, vec!["b", "a"]); // NameAsc within the group
+
+                v.group_filter = Some(String::new()); // ungrouped only
+                let u: Vec<_> = v.visible_hosts().into_iter().map(|h| h.id).collect();
+                assert_eq!(u, vec!["c"]);
+
+                v.group_filter = None;
+                v.search = "mid".into();
+                let s: Vec<_> = v.visible_hosts().into_iter().map(|h| h.id).collect();
+                assert_eq!(s, vec!["c"]);
+                let _ = cx;
+            });
+        });
+    }
+
+    #[test]
+    fn host_form_maps_icon_snippet_and_tab_defaults() {
+        let mut h = host_stub("h", "Box");
+        h.icon = Some("shield".into());
+        h.startup_snippet_id = Some("s1".into());
+        h.startup_snippet_mode = Some("inject".into());
+        let form = HostForm::from_host(&h);
+        assert_eq!(form.icon.as_deref(), Some("shield"));
+        assert_eq!(form.snippet_id.as_deref(), Some("s1"));
+        assert_eq!(form.snippet_mode, "inject");
+        assert_eq!(form.tab, FormTab::General);
+        // icon key round-trips through the curated set
+        assert!(matches!(host_icon(Some("shield")), IconName::Shield));
+        assert!(matches!(host_icon(None), IconName::Server));
+    }
+}

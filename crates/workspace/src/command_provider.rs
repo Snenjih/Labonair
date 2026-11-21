@@ -1,0 +1,1187 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Workspace-owned command metadata and composition adapters.
+//!
+//! The workspace capability contributes its discoverable commands and their
+//! executable handlers without importing the palette UI or application shell.
+
+use std::rc::Rc;
+
+use gpui::{App, Entity, Window};
+use labonair_command_palette_core::{
+    CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
+    PaletteAction, SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
+};
+use labonair_command_palette_runtime::CommandHandlerRegistry;
+use labonair_terminal::command_provider::TerminalCommandTarget;
+use labonair_terminal::Scroll;
+
+use crate::context::WorkspaceTransition;
+use crate::views::preview::PreviewImageAction;
+use crate::views::project_diff::DiffAction;
+use crate::Workspace;
+
+/// Stable command metadata contributed by the workspace capability.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WorkspaceCommandProvider;
+
+/// Host operation used to present or dismiss the workspace search overlay.
+pub type SearchToggleHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// Host operation used to present or dismiss the Editor-owned Open File modal.
+pub type FileFinderToggleHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// Register the executable search contribution owned by Workspace.
+pub fn register_search_handler(registry: &mut CommandHandlerRegistry, toggle: SearchToggleHandler) {
+    registry
+        .register(CommandId::Find, move |window, cx| {
+            toggle(window, cx);
+        })
+        .expect("workspace search handler must have a unique id");
+}
+
+/// Register the Editor-owned Open File contribution at the modal composition
+/// boundary. Workspace supplies the view/adapter; the shell supplies the
+/// existing ModalLayer host callback.
+pub fn register_file_finder_handler(
+    registry: &mut CommandHandlerRegistry,
+    toggle: FileFinderToggleHandler,
+) {
+    registry
+        .register(CommandId::OpenFile, move |window, cx| {
+            toggle(window, cx);
+        })
+        .expect("workspace file finder handler must have a unique id");
+}
+
+/// Register the keymap-management entry point owned by Workspace.
+///
+/// The keymap tab presents the full command catalog, so composition supplies
+/// the descriptor snapshot; the [`KeymapManagementView`](labonair_keymap_ui::KeymapManagementView)
+/// is created and cached by Workspace as a tab (mirrors `CommandId::OpenGitGraph`).
+pub fn register_keymap_handler(
+    registry: &mut CommandHandlerRegistry,
+    workspace: &Entity<Workspace>,
+    descriptors: Vec<CommandDescriptor>,
+) {
+    let workspace = workspace.clone();
+    registry
+        .register(CommandId::OpenKeymapJson, move |window, cx| {
+            workspace.update(cx, |workspace, cx| {
+                workspace.open_keymap_tab(descriptors.clone(), window, cx);
+            });
+        })
+        .expect("workspace keymap handler must have a unique id");
+}
+
+/// Register the host-management entry point owned by Workspace (opens the
+/// Settings Hosts page through the shell).
+pub fn register_hosts_handler(
+    registry: &mut CommandHandlerRegistry,
+    workspace: &Entity<Workspace>,
+) {
+    let workspace = workspace.clone();
+    registry
+        .register(CommandId::OpenHosts, move |_window, cx| {
+            workspace.update(cx, |workspace, cx| {
+                workspace.open_hosts_settings(cx);
+            });
+        })
+        .expect("workspace hosts handler must have a unique id");
+}
+
+struct WorkspaceTerminalCommandTarget(Entity<Workspace>);
+
+/// Surfaces that live in a pane: the `pane::*` commands are offered in all of
+/// them (the key context `Pane` wraps every pane).
+const PANE_CONTEXTS: &[CommandContext] = &[
+    CommandContext::Terminal,
+    CommandContext::SshTerminal,
+    CommandContext::Editor,
+    CommandContext::EditorVim,
+    CommandContext::EditorHelix,
+    CommandContext::Preview,
+    CommandContext::Sftp,
+];
+
+impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
+    fn clear_active_terminal(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.clear_active_terminal(cx));
+    }
+
+    fn copy_selection(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_copy_selection(cx));
+    }
+
+    fn paste(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_paste(cx));
+    }
+
+    fn scroll_to_top(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_scroll_to_top(cx));
+    }
+
+    fn scroll_to_bottom(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_scroll_to_bottom(cx));
+    }
+
+    fn reset(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_reset(cx));
+    }
+
+    fn scroll_page_up(&self, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.terminal_scroll(Scroll::PageUp, cx)
+        });
+    }
+
+    fn scroll_page_down(&self, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.terminal_scroll(Scroll::PageDown, cx)
+        });
+    }
+
+    fn scroll_line_up(&self, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.terminal_scroll(Scroll::Delta(1), cx)
+        });
+    }
+
+    fn scroll_line_down(&self, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.terminal_scroll(Scroll::Delta(-1), cx)
+        });
+    }
+
+    fn paste_text(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.terminal_paste_text(cx));
+    }
+
+    fn rename(&self, window: &mut gpui::Window, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.rename_active_tab(window, cx));
+    }
+
+    fn recover_background_sessions(&self, window: &mut gpui::Window, cx: &mut gpui::App) {
+        self.0.update(cx, |workspace, cx| {
+            workspace.recover_background_sessions(window, cx)
+        });
+    }
+
+    fn quit_and_stop_all_sessions(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.quit_and_stop_all_sessions(cx));
+    }
+
+    fn restart_background_host(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.restart_host_command(cx));
+    }
+}
+
+/// Adapt Workspace's active-pane operation to the terminal command contract.
+pub fn terminal_command_target(workspace: &Entity<Workspace>) -> Rc<dyn TerminalCommandTarget> {
+    Rc::new(WorkspaceTerminalCommandTarget(workspace.clone()))
+}
+
+/// Register executable handlers for commands owned by Workspace.
+///
+/// The callbacks capture only the Workspace entity and therefore remain
+/// usable by any composition root. The shell supplies the active window and
+/// application context when dispatching; it does not define these behaviors.
+pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Entity<Workspace>) {
+    macro_rules! register {
+        ($id:expr, $handler:expr) => {
+            registry
+                .register($id, $handler)
+                .expect("workspace command handler must have a unique id");
+        };
+    }
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::NewTerminalTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.new_terminal_tab(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::NewEditorTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.new_editor_tab(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::NewPreviewTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.new_preview_tab(window, cx));
+    });
+
+    for (command, action) in [
+        (CommandId::PreviewImageZoomIn, PreviewImageAction::ZoomIn),
+        (CommandId::PreviewImageZoomOut, PreviewImageAction::ZoomOut),
+        (
+            CommandId::PreviewImageResetZoom,
+            PreviewImageAction::ResetZoom,
+        ),
+        (
+            CommandId::PreviewImageZoomToActualSize,
+            PreviewImageAction::ZoomToActualSize,
+        ),
+        (
+            CommandId::PreviewImageZoomToFit,
+            PreviewImageAction::ZoomToFit,
+        ),
+    ] {
+        let workspace_handle = workspace.clone();
+        registry
+            .register(command, move |window, cx| {
+                workspace_handle.update(cx, |workspace, cx| {
+                    workspace.apply_active_preview_image_action(action, window, cx);
+                });
+            })
+            .expect("workspace image-viewer command handler must have a unique id");
+    }
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::Save, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.save_active(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::CloseTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.close_active(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DuplicateTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.duplicate_active_tab(window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::CloseOtherTabs, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.close_other_tabs(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::NextTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.cycle(true, window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::PrevTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.cycle(false, window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::FocusNextPane, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.focus_next_pane(window, cx));
+    });
+
+    for (id, dir) in [
+        (CommandId::FocusPaneLeft, crate::pane::SplitDirection::Left),
+        (
+            CommandId::FocusPaneRight,
+            crate::pane::SplitDirection::Right,
+        ),
+        (CommandId::FocusPaneUp, crate::pane::SplitDirection::Up),
+        (CommandId::FocusPaneDown, crate::pane::SplitDirection::Down),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.focus_pane_dir(dir, window, cx)
+            });
+        });
+    }
+    for (id, dir) in [
+        (CommandId::MovePaneLeft, crate::pane::SplitDirection::Left),
+        (CommandId::MovePaneRight, crate::pane::SplitDirection::Right),
+        (CommandId::MovePaneUp, crate::pane::SplitDirection::Up),
+        (CommandId::MovePaneDown, crate::pane::SplitDirection::Down),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |window, cx| {
+            workspace_handle.update(cx, |workspace, cx| workspace.move_pane_dir(dir, window, cx));
+        });
+    }
+    let workspace_handle = workspace.clone();
+    register!(CommandId::MovePaneToNewTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.move_focused_pane_to_new_tab(window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
+    register!(CommandId::CloseOtherPanes, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.close_other_panes_of_active(window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
+    register!(CommandId::FocusPrevPane, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.focus_pane_cycle(false, window, cx)
+        });
+    });
+    let workspace_handle = workspace.clone();
+    register!(CommandId::TogglePaneZoom, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.toggle_zoom(window, cx));
+    });
+
+    for (id, index) in [
+        (CommandId::SelectTab1, 0),
+        (CommandId::SelectTab2, 1),
+        (CommandId::SelectTab3, 2),
+        (CommandId::SelectTab4, 3),
+        (CommandId::SelectTab5, 4),
+        (CommandId::SelectTab6, 5),
+        (CommandId::SelectTab7, 6),
+        (CommandId::SelectTab8, 7),
+        (CommandId::SelectTab9, 8),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.select_tab_by_index(index, window, cx)
+            });
+        });
+    }
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::SplitLeft, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Left, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::SplitRight, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Right, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::SplitUp, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Up, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::SplitDown, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Down, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::ResetPaneSizes, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.reset_pane_sizes(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::ClosePane, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.close_pane(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenProject, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.request_open_project(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::ReturnToStandalone, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.apply_transition(WorkspaceTransition::ReturnToStandalone, cx);
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenProjectSettings, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.open_or_create_project_settings(window, cx);
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenSettingsJson, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.open_or_create_user_settings_json(window, cx);
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::ToggleSidebar, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            let position = workspace.primary_dock();
+            workspace.dock_mut(position).toggle_open();
+            workspace.persist_docks(cx);
+            cx.notify();
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenSnippetsPanel, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_panel("snippets", cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::FocusSourceControl, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.open_panel("source-control", cx)
+        });
+    });
+
+    for (command, source) in [
+        (
+            CommandId::GitViewUncommittedChanges,
+            labonair_panel::DiffSource::WorkingTree,
+        ),
+        (
+            CommandId::GitViewUnstagedChanges,
+            labonair_panel::DiffSource::Unstaged,
+        ),
+        (
+            CommandId::GitViewStagedChanges,
+            labonair_panel::DiffSource::Staged,
+        ),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(command, move |_window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.open_diff_source(source.clone(), cx)
+            });
+        });
+    }
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DiffSelectForCompare, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.select_for_diff_compare(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DiffCompareWithSelected, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.compare_with_selected_file(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DiffClipboardWithSelection, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.diff_clipboard_with_selection(cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::GitDiff, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_default_diff(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::GitToggleDiffBase, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.toggle_diff_base(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::GitDiffBranch, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_diff_since_default(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::GitOpenFileDiff, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_active_file_diff(cx));
+    });
+
+    for (command, action) in [
+        (CommandId::DiffGoToHunk, DiffAction::GoToHunk),
+        (
+            CommandId::DiffGoToPreviousHunk,
+            DiffAction::GoToPreviousHunk,
+        ),
+        (CommandId::DiffToggleStaged, DiffAction::ToggleStaged),
+        (CommandId::DiffStageAndNext, DiffAction::StageAndNext),
+        (CommandId::DiffUnstageAndNext, DiffAction::UnstageAndNext),
+        (CommandId::DiffStageAll, DiffAction::StageAll),
+        (CommandId::DiffUnstageAll, DiffAction::UnstageAll),
+        (CommandId::DiffToggleSplit, DiffAction::ToggleSplit),
+        (CommandId::DiffUndoRestore, DiffAction::UndoRestore),
+        (CommandId::DiffCopySelection, DiffAction::CopySelection),
+        (CommandId::DiffRestoreAndNext, DiffAction::RestoreAndNext),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(command, move |_window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.perform_project_diff_action(action, cx)
+            });
+        });
+    }
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenGitGraph, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_git_graph_tab(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DebugCyclePanelDock, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            let position = workspace.primary_dock();
+            let Some(name) = workspace.dock(position).active_name().map(str::to_owned) else {
+                return;
+            };
+            if workspace.move_panel(&name, position.next(), cx) {
+                workspace.persist_docks(cx);
+            }
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DebugToggleDockZoom, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            let position = workspace.primary_dock();
+            let zoomed = workspace.dock(position).is_zoomed();
+            workspace.dock_mut(position).set_zoomed(!zoomed);
+            workspace.persist_docks(cx);
+            cx.notify();
+        });
+    });
+}
+
+/// Register the executable Editor contribution at the Workspace composition
+/// boundary. The Editor owns command meaning and metadata; Workspace only
+/// resolves the active tab and forwards the typed command to its view.
+pub fn register_editor_handlers(
+    registry: &mut CommandHandlerRegistry,
+    workspace: &Entity<Workspace>,
+) {
+    macro_rules! register {
+        ($id:expr) => {
+            let workspace = workspace.clone();
+            registry
+                .register($id, move |_window, cx| {
+                    workspace.update(cx, |workspace, cx| {
+                        workspace.dispatch_active_editor_command($id, cx);
+                    });
+                })
+                .expect("editor command handler must have a unique id");
+        };
+    }
+
+    for id in labonair_editor::command_provider::EXECUTABLE_EDITOR_COMMAND_IDS {
+        register!(*id);
+    }
+}
+
+/// Register Workspace-owned dynamic palette actions. The palette only emits
+/// typed values; tab navigation, editor navigation, and status-item
+/// placement remain implemented by the Workspace owner.
+pub fn register_palette_action_handlers(
+    registry: &mut labonair_command_palette_runtime::PaletteActionHandlerRegistry,
+    workspace: &Entity<Workspace>,
+) {
+    let workspace_handle = workspace.clone();
+    registry
+        .register("workspace", move |action, window, cx| {
+            let PaletteAction::Submenu(action) = action else {
+                return false;
+            };
+            match action {
+                SubmenuAction::SwitchToTab(id) => {
+                    workspace_handle
+                        .update(cx, |workspace, cx| workspace.reveal_tab(*id, window, cx));
+                    true
+                }
+                SubmenuAction::OpenBackgroundTerminal(id) => {
+                    workspace_handle.update(cx, |workspace, cx| {
+                        workspace.open_background_terminal(*id, window, cx)
+                    });
+                    true
+                }
+                SubmenuAction::KillBackgroundTerminal(id) => {
+                    workspace_handle.update(cx, |workspace, cx| {
+                        workspace.kill_background_terminal(*id, window, cx)
+                    });
+                    true
+                }
+                SubmenuAction::GoToEditorLine { tab_id, line } => {
+                    workspace_handle.update(cx, |workspace, cx| {
+                        workspace.goto_editor_line(*tab_id, *line, window, cx)
+                    });
+                    true
+                }
+                SubmenuAction::SetEditorLanguage(id) => {
+                    workspace_handle.update(cx, |workspace, cx| {
+                        workspace.set_active_editor_language(id, cx)
+                    });
+                    true
+                }
+                SubmenuAction::ShowStatusBarItem(id) => {
+                    workspace_handle
+                        .update(cx, |workspace, cx| workspace.show_status_bar_item(id, cx));
+                    true
+                }
+                _ => false,
+            }
+        })
+        .expect("workspace palette action handler must have a unique owner");
+}
+
+/// Build the workspace-owned open-tab snapshot without exposing workspace
+/// entities to the palette UI.
+pub fn tabs_submenu(rows: impl IntoIterator<Item = (u64, String, String)>) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new("tabs", "Open Tabs", CommandSubmenu::Tabs),
+        items: rows
+            .into_iter()
+            .map(|(id, title, kind)| SubmenuItem {
+                id: id.to_string(),
+                title,
+                subtitle: Some(kind),
+                active: false,
+                action: SubmenuAction::SwitchToTab(id),
+                secondary: None,
+            })
+            .collect(),
+    }
+}
+
+pub fn hidden_status_items_submenu(
+    rows: impl IntoIterator<Item = (String, String)>,
+) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new(
+            "status-bar-hidden",
+            "Hidden Status Bar Items",
+            CommandSubmenu::StatusBarHidden,
+        ),
+        items: rows
+            .into_iter()
+            .map(|(id, title)| SubmenuItem {
+                action: SubmenuAction::ShowStatusBarItem(id.clone()),
+                id,
+                title,
+                subtitle: None,
+                active: false,
+                secondary: None,
+            })
+            .collect(),
+    }
+}
+
+/// User-facing labels for the workspace status-bar registry.
+pub fn status_item_label(id: &str) -> &'static str {
+    match id {
+        "dock-buttons-left" => "Left Dock Buttons",
+        "dock-buttons-right" => "Right Dock Buttons",
+        "dock-buttons-bottom" => "Bottom Dock Buttons",
+        "notifications" => "Notifications",
+        "cwd" => "CWD Breadcrumb",
+        "cursor-position" => "Cursor Position",
+        "editor-status" => "Editor Status",
+        "preview-url" => "Preview URL",
+        "updater" => "Updater",
+        "transfers" => "Transfers",
+        "agent-access" => "Agent Access",
+        _ => "Status Bar Item",
+    }
+}
+
+impl CommandProvider for WorkspaceCommandProvider {
+    fn commands(&self) -> Vec<CommandDescriptor> {
+        let mut commands = vec![
+            CommandDescriptor::new(CommandId::OpenProject, "Open Project…", "Workspace")
+                .with_icon(CommandIcon::Folder),
+            CommandDescriptor::new(
+                CommandId::ReturnToStandalone,
+                "Return to Standalone",
+                "Workspace",
+            )
+            .with_icon(CommandIcon::Folder),
+            CommandDescriptor::new(CommandId::NewTerminalTab, "New Terminal Tab", "Layout")
+                .with_default_binding("cmd-t", None)
+                .with_icon(CommandIcon::Terminal),
+            CommandDescriptor::new(CommandId::NewEditorTab, "New Editor Tab", "Layout")
+                .with_default_binding("cmd-e", None)
+                .with_icon(CommandIcon::File),
+            CommandDescriptor::new(CommandId::NewPreviewTab, "New Preview Tab", "Layout")
+                .with_default_binding("cmd-shift-p", None)
+                .with_icon(CommandIcon::File),
+            CommandDescriptor::new(
+                CommandId::GitViewUncommittedChanges,
+                "Git: View Uncommitted Changes",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitViewUnstagedChanges,
+                "Git: View Unstaged Changes",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitViewStagedChanges,
+                "Git: View Staged Changes",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::DiffSelectForCompare,
+                "Editor: Select File for Compare",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::DiffCompareWithSelected,
+                "Editor: Compare File with Selected",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(
+                CommandId::DiffClipboardWithSelection,
+                "Editor: Compare Clipboard with Selection",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor]),
+            CommandDescriptor::new(CommandId::GitDiff, "Git: Diff", "Source Control")
+                .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitToggleDiffBase,
+                "Git: Toggle Diff Base",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitDiffBranch,
+                "Git: Changes Since Default Branch",
+                "Source Control",
+            )
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(
+                CommandId::GitOpenFileDiff,
+                "Git: Open File Diff",
+                "Source Control",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_icon(CommandIcon::GitBranch),
+            CommandDescriptor::new(CommandId::DiffGoToHunk, "Diff: Go to Next Hunk", "Diff")
+                .with_contexts(&[CommandContext::Diff])
+                .with_default_binding("cmd-f8", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffGoToPreviousHunk,
+                "Diff: Go to Previous Hunk",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-shift-f8", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffToggleStaged,
+                "Diff: Toggle Hunk Staged",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-alt-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffStageAndNext,
+                "Diff: Stage Hunk and Go to Next",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffUnstageAndNext,
+                "Diff: Unstage Hunk and Go to Next",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff]),
+            CommandDescriptor::new(CommandId::DiffStageAll, "Diff: Stage All", "Diff")
+                .with_contexts(&[CommandContext::Diff])
+                .with_default_binding("cmd-ctrl-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(CommandId::DiffUnstageAll, "Diff: Unstage All", "Diff")
+                .with_contexts(&[CommandContext::Diff])
+                .with_default_binding("cmd-ctrl-shift-y", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffRestoreAndNext,
+                "Diff: Restore Hunk and Go to Next",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-alt-z", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffCopySelection,
+                "Diff: Copy Selected Lines",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-c", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffUndoRestore,
+                "Diff: Undo Restore Hunk",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff])
+            .with_default_binding("cmd-z", Some(CommandContext::Diff)),
+            CommandDescriptor::new(
+                CommandId::DiffToggleSplit,
+                "Diff: Toggle Split View",
+                "Diff",
+            )
+            .with_contexts(&[CommandContext::Diff]),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomIn,
+                "Image Viewer: Zoom In",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-=", Some(CommandContext::Preview))
+            .with_default_binding("cmd-+", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomOut,
+                "Image Viewer: Zoom Out",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd--", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageResetZoom,
+                "Image Viewer: Reset Zoom",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-0", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomToActualSize,
+                "Image Viewer: Actual Size",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-1", Some(CommandContext::Preview)),
+            CommandDescriptor::new(
+                CommandId::PreviewImageZoomToFit,
+                "Image Viewer: Fit to Window",
+                "Image Viewer",
+            )
+            .with_contexts(&[CommandContext::Preview])
+            .with_default_binding("cmd-shift-0", Some(CommandContext::Preview)),
+            CommandDescriptor::new(CommandId::Save, "Save", "Tab Actions")
+                .with_icon(CommandIcon::Edit),
+            CommandDescriptor::new(CommandId::CloseTab, "Close Current Tab", "Tab Actions")
+                .with_default_binding("cmd-w", None)
+                .with_icon(CommandIcon::Close),
+            CommandDescriptor::new(CommandId::DuplicateTab, "Duplicate Tab", "Layout")
+                .with_icon(CommandIcon::Copy),
+            CommandDescriptor::new(CommandId::CloseOtherTabs, "Close Other Tabs", "Layout")
+                .with_icon(CommandIcon::Close),
+            CommandDescriptor::new(CommandId::NextTab, "Next Tab", "Tab Actions")
+                .with_default_binding("ctrl-tab", None)
+                .with_default_binding("cmd-shift-]", None)
+                .with_icon(CommandIcon::ChevronRight),
+            CommandDescriptor::new(CommandId::PrevTab, "Previous Tab", "Tab Actions")
+                .with_default_binding("ctrl-shift-tab", None)
+                .with_default_binding("cmd-shift-[", None)
+                .with_icon(CommandIcon::ChevronRight),
+            CommandDescriptor::new(CommandId::FocusNextPane, "Focus Next Pane", "Layout")
+                .with_default_binding("cmd-]", None)
+                .with_icon(CommandIcon::ChevronRight),
+            CommandDescriptor::new(CommandId::FocusPrevPane, "Focus Previous Pane", "Layout")
+                .with_default_binding("cmd-[", None)
+                .with_icon(CommandIcon::ChevronRight),
+            CommandDescriptor::new(CommandId::SwitchTab, "Switch Tab…", "Layout")
+                .with_icon(CommandIcon::Terminal)
+                .with_submenu(CommandSubmenu::Tabs),
+            CommandDescriptor::new(CommandId::ToggleSidebar, "Toggle File Explorer", "View")
+                .with_default_binding("cmd-b", None)
+                .with_icon(CommandIcon::PanelLeft),
+            CommandDescriptor::new(
+                CommandId::ShowStatusBarItem,
+                "Statusbar: Show Hidden Item…",
+                "View",
+            )
+            .with_icon(CommandIcon::Eye)
+            .with_submenu(CommandSubmenu::StatusBarHidden),
+            CommandDescriptor::new(
+                CommandId::DebugCyclePanelDock,
+                "Debug: Cycle Panel Dock",
+                "Application",
+            )
+            .with_default_binding("cmd-alt-shift-m", None)
+            .with_icon(CommandIcon::PanelLeft),
+            CommandDescriptor::new(
+                CommandId::DebugToggleDockZoom,
+                "Debug: Toggle Dock Zoom",
+                "Application",
+            )
+            .with_default_binding("cmd-alt-shift-z", None)
+            .with_icon(CommandIcon::Square),
+        ];
+
+        for (id, index) in [
+            (CommandId::SelectTab1, 1),
+            (CommandId::SelectTab2, 2),
+            (CommandId::SelectTab3, 3),
+            (CommandId::SelectTab4, 4),
+            (CommandId::SelectTab5, 5),
+            (CommandId::SelectTab6, 6),
+            (CommandId::SelectTab7, 7),
+            (CommandId::SelectTab8, 8),
+            (CommandId::SelectTab9, 9),
+        ] {
+            commands.push(
+                CommandDescriptor::new(id, format!("Select Tab {index}"), "Tab Actions")
+                    .with_default_binding(format!("cmd-{index}"), None)
+                    .with_icon(CommandIcon::Terminal),
+            );
+        }
+
+        commands.extend([
+            CommandDescriptor::new(CommandId::SplitLeft, "Split Pane Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-k left", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::SplitRight, "Split Pane Right", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-\\", Some(CommandContext::Pane))
+                .with_default_binding("cmd-d", Some(CommandContext::Terminal))
+                .with_icon(CommandIcon::SplitRight),
+            CommandDescriptor::new(CommandId::SplitUp, "Split Pane Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-k up", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::SplitDown, "Split Pane Down", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-\\", Some(CommandContext::Pane))
+                .with_default_binding("cmd-shift-d", Some(CommandContext::Terminal))
+                .with_icon(CommandIcon::SplitDown),
+            CommandDescriptor::new(CommandId::ResetPaneSizes, "Reset Pane Sizes", "Layout")
+                .with_contexts(PANE_CONTEXTS),
+            CommandDescriptor::new(CommandId::ClosePane, "Close Active Pane", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-w", Some(CommandContext::Pane))
+                .with_icon(CommandIcon::Close),
+            CommandDescriptor::new(CommandId::FocusPaneLeft, "Focus Pane Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-left", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneRight, "Focus Pane Right", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-right", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneUp, "Focus Pane Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-up", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::FocusPaneDown, "Focus Pane Down", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-down", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::TogglePaneZoom, "Toggle Pane Zoom", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-shift-enter", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneLeft, "Move Pane Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-left", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneRight, "Move Pane Right", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-right", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneUp, "Move Pane Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-up", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::MovePaneDown, "Move Pane Down", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-alt-shift-down", Some(CommandContext::Pane)),
+            CommandDescriptor::new(
+                CommandId::MovePaneToNewTab,
+                "Move Pane to New Tab",
+                "Layout",
+            )
+            .with_contexts(PANE_CONTEXTS),
+            CommandDescriptor::new(CommandId::CloseOtherPanes, "Close Other Panes", "Layout")
+                .with_contexts(PANE_CONTEXTS),
+        ]);
+
+        commands
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_provider_owns_project_lifecycle_commands() {
+        let commands = WorkspaceCommandProvider.commands();
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::OpenProject));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::ReturnToStandalone));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::SwitchTab));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::SplitRight));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::SplitLeft));
+        assert!(commands
+            .iter()
+            .any(|command| command.id == CommandId::SplitUp));
+    }
+
+    #[test]
+    fn workspace_split_commands_expose_all_four_directions() {
+        let commands = WorkspaceCommandProvider.commands();
+        for (id, title, binding, context) in [
+            (
+                CommandId::SplitLeft,
+                "Split Pane Left",
+                "cmd-k left",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitRight,
+                "Split Pane Right",
+                "cmd-\\",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitRight,
+                "Split Pane Right",
+                "cmd-d",
+                CommandContext::Terminal,
+            ),
+            (
+                CommandId::SplitUp,
+                "Split Pane Up",
+                "cmd-k up",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitDown,
+                "Split Pane Down",
+                "cmd-shift-\\",
+                CommandContext::Pane,
+            ),
+            (
+                CommandId::SplitDown,
+                "Split Pane Down",
+                "cmd-shift-d",
+                CommandContext::Terminal,
+            ),
+        ] {
+            let command = commands
+                .iter()
+                .find(|command| command.id == id)
+                .expect("workspace split descriptor");
+            assert_eq!(command.title, title);
+            // Offered in every pane kind, not only terminals.
+            assert!(command.contexts.contains(&CommandContext::Editor));
+            assert!(command.contexts.contains(&CommandContext::Terminal));
+            assert!(command.default_bindings.iter().any(|candidate| {
+                candidate.keystrokes == binding && candidate.context == Some(context)
+            }));
+        }
+        let reset = commands
+            .iter()
+            .find(|command| command.id == CommandId::ResetPaneSizes)
+            .expect("reset pane sizes descriptor");
+        assert_eq!(reset.title, "Reset Pane Sizes");
+        assert!(reset.contexts.contains(&CommandContext::Preview));
+        assert!(reset.default_bindings.is_empty());
+    }
+
+    #[test]
+    fn image_viewer_commands_have_preview_scoped_default_bindings() {
+        let commands = WorkspaceCommandProvider.commands();
+        for (id, binding) in [
+            (CommandId::PreviewImageZoomIn, "cmd-="),
+            (CommandId::PreviewImageZoomIn, "cmd-+"),
+            (CommandId::PreviewImageZoomOut, "cmd--"),
+            (CommandId::PreviewImageResetZoom, "cmd-0"),
+            (CommandId::PreviewImageZoomToActualSize, "cmd-1"),
+            (CommandId::PreviewImageZoomToFit, "cmd-shift-0"),
+        ] {
+            let descriptor = commands
+                .iter()
+                .find(|descriptor| descriptor.id == id)
+                .expect("image viewer action descriptor");
+            assert_eq!(descriptor.contexts, vec![CommandContext::Preview]);
+            assert!(descriptor.default_bindings.iter().any(|candidate| {
+                candidate.keystrokes == binding
+                    && candidate.context == Some(CommandContext::Preview)
+            }));
+            assert!(!descriptor.is_available_in(Some(CommandContext::Editor)));
+        }
+    }
+
+    #[test]
+    fn file_compare_commands_are_editor_scoped() {
+        let commands = WorkspaceCommandProvider.commands();
+        for id in [
+            CommandId::DiffSelectForCompare,
+            CommandId::DiffCompareWithSelected,
+            CommandId::DiffClipboardWithSelection,
+            CommandId::GitOpenFileDiff,
+        ] {
+            let descriptor = commands
+                .iter()
+                .find(|descriptor| descriptor.id == id)
+                .expect("compare command descriptor");
+            assert_eq!(descriptor.contexts, vec![CommandContext::Editor]);
+        }
+    }
+
+    #[test]
+    fn diff_commands_are_scoped_to_the_diff_context() {
+        let commands = WorkspaceCommandProvider.commands();
+        for (id, binding) in [
+            (CommandId::DiffGoToHunk, Some("cmd-f8")),
+            (CommandId::DiffGoToPreviousHunk, Some("cmd-shift-f8")),
+            (CommandId::DiffToggleStaged, Some("cmd-alt-y")),
+            (CommandId::DiffStageAndNext, Some("cmd-y")),
+            (CommandId::DiffStageAll, Some("cmd-ctrl-y")),
+            (CommandId::DiffUnstageAll, Some("cmd-ctrl-shift-y")),
+            (CommandId::DiffUnstageAndNext, None),
+            (CommandId::DiffToggleSplit, None),
+        ] {
+            let descriptor = commands
+                .iter()
+                .find(|descriptor| descriptor.id == id)
+                .expect("diff command descriptor");
+            assert_eq!(descriptor.contexts, vec![CommandContext::Diff]);
+            assert!(!descriptor.is_available_in(Some(CommandContext::Editor)));
+            if let Some(binding) = binding {
+                assert!(descriptor.default_bindings.iter().any(|candidate| {
+                    candidate.keystrokes == binding
+                        && candidate.context == Some(CommandContext::Diff)
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn editor_handler_inventory_is_unique_and_descriptor_backed() {
+        let ids = labonair_editor::command_provider::EXECUTABLE_EDITOR_COMMAND_IDS;
+        let mut unique = ids.to_vec();
+        unique.sort_by_key(|id| format!("{id:?}"));
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len());
+
+        let descriptors = labonair_editor::command_provider::EditorCommandProvider.commands();
+        assert!(ids
+            .iter()
+            .all(|id| descriptors.iter().any(|descriptor| descriptor.id == *id)));
+    }
+
+    #[test]
+    fn open_file_is_not_a_second_workspace_descriptor() {
+        let workspace_commands = WorkspaceCommandProvider.commands();
+        let editor_commands = labonair_editor::command_provider::EditorCommandProvider.commands();
+        assert!(!workspace_commands
+            .iter()
+            .any(|command| command.id == CommandId::OpenFile));
+        assert!(editor_commands
+            .iter()
+            .any(|command| command.id == CommandId::OpenFile));
+    }
+}

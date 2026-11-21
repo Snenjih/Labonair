@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Shared request contract for the workspace-owned Project Diff surface.
+//! The Source-Control panel (`labonair-panel-scm`) no longer owns an inline
+//! diff viewer. Instead it emits a [`ProjectDiffRequest`] describing *what* to
+//! review; the workspace opens or focuses exactly one Project Diff item and
+//! renders the code + hunk actions. This type lives in the contracts crate so
+//! neither `labonair-workspace` nor `labonair-panel-scm` has to depend on the
+//! other's concrete view types — the request flows
+//! `panel-scm → shell → workspace`.
+
+/// How the Project Diff lays a file's hunks out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectDiffMode {
+    /// One column, `+`/`-` prefixed.
+    Unified,
+    /// Two columns: old on the left, new on the right.
+    Split,
+}
+
+/// What the Diff item is reviewing. One workspace surface renders every
+/// variant; the source decides where the base text comes from and whether
+/// hunk-level staging is available.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum DiffSource {
+    /// Uncommitted work: the request's `files` list drives the rail and each
+    /// file's diff is `worktree↔index` or `index↔HEAD` per its flags.
+    #[default]
+    WorkingTree,
+    /// Only the staged changes (index↔HEAD): read-only text, hunks can be
+    /// unstaged. `files` is filtered to the staged entries.
+    Staged,
+    /// Only the unstaged changes (worktree↔index, incl. untracked files):
+    /// hunks can be staged and restored. `files` is filtered to unstaged entries.
+    Unstaged,
+    /// The working tree against the merge base with `base` ("Changes since
+    /// `base`"), rendered read-only; the base can be switched in the view.
+    Since { base: String },
+    /// A comparison of two texts with no Git behind it (clipboard against a
+    /// selection). Read-only; `title` names the single diff section.
+    Text {
+        title: String,
+        old: String,
+        new: String,
+    },
+    /// One file's working-tree changes (staged and unstaged), with a
+    /// "Show Full File" / "Show Changes Only" toggle. `path` is repo-relative.
+    File { path: String },
+    /// A single committed change, rendered read-only. `files` is ignored — the
+    /// item derives the changed-file rail from the commit's own patch.
+    Commit {
+        /// Full or short commit hash.
+        hash: String,
+        /// Commit subject, for the tab title / header.
+        subject: String,
+    },
+    /// A saved Git stash, rendered read-only with untracked files included.
+    Stash {
+        /// Stash commit hash.
+        hash: String,
+        /// Stash message, for the tab title / header.
+        subject: String,
+    },
+    /// A comparison between the merge base of two branches and the target
+    /// branch, rendered read-only. `files` is derived from the patch.
+    Branch {
+        /// Branch used as the comparison base.
+        base: String,
+        /// Branch whose changes are shown.
+        head: String,
+        /// Description for the tab title / header.
+        subject: String,
+    },
+}
+
+impl DiffSource {
+    /// Hunk staging is only meaningful against the working tree.
+    pub fn supports_staging(&self) -> bool {
+        matches!(
+            self,
+            DiffSource::WorkingTree
+                | DiffSource::Staged
+                | DiffSource::Unstaged
+                | DiffSource::File { .. }
+        )
+    }
+}
+
+/// One changed file in a [`ProjectDiffRequest`], carrying the identity the diff
+/// item needs to fetch the right `git diff` for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectDiffFile {
+    /// Repo-relative path (b-side for renames).
+    pub path: String,
+    /// `true` → diff index↔HEAD (a staged change); `false` → worktree↔index.
+    pub staged: bool,
+    /// `true` → the file is untracked (`git diff --no-index /dev/null <file>`).
+    pub untracked: bool,
+    /// `true` → the file has merge conflicts (listed first, flagged).
+    pub conflicted: bool,
+}
+
+/// A request to open / focus the single workspace Project Diff item.
+///
+/// Repeated requests for the same repository are **idempotent**: the workspace
+/// focuses the existing item and re-points its selection, never opening a
+/// duplicate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectDiffRequest {
+    /// Resolved repository root (`git rev-parse --show-toplevel`).
+    pub repo_root: String,
+    /// Remote SSH session id, or `None` for a local repo.
+    pub session_id: Option<String>,
+    /// What is being reviewed. `WorkingTree` uses `files`; `Commit` and `Stash`
+    /// `Commit`, `Stash`, and `Branch` derive their file lists from read-only
+    /// patches.
+    pub source: DiffSource,
+    /// Ordered changed files to review (`WorkingTree` source only).
+    pub files: Vec<ProjectDiffFile>,
+    /// Which file to focus initially / on a follow-up selection request. Must be
+    /// one of `files`' paths; ignored otherwise.
+    pub selected: Option<String>,
+    /// Initial layout.
+    pub mode: ProjectDiffMode,
+}

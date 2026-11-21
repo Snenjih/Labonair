@@ -1,0 +1,19 @@
+[package]
+name = "labonair-activity-ui"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_activity_ui"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-activity = { path = "../activity" }
+labonair-panel = { path = "../panel" }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

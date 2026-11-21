@@ -1,0 +1,1061 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Shared right-click context-menu primitive.
+//!
+//! A port of the reference `components/ui/context-menu.tsx` (radix) look &
+//! behaviour: `min-w-[8rem]`, `rounded-md`, `bg-popover`, `border`, `p-1`,
+//! `shadow-md`; items `rounded-sm px-2 py-1.5 text-sm`, `focus:bg-accent`;
+//! destructive variant = `text-destructive`; separators; disabled items;
+//! one level of sub-menus (revealed on hover).
+//!
+//! The port previously hand-rolled a bespoke `div` menu in every view
+//! (`workspace.rs`, `explorer.rs`, `sftp.rs`, …). This module is the single
+//! implementation they all now build from.
+//!
+//! Usage — the caller owns the "is this menu open?" state (an `Option<Point>`
+//! plus whatever context it needs) and rebuilds the entries each render:
+//!
+//! ```ignore
+//! let view = cx.entity();
+//! let dismiss = { let v = view.clone(); move |_w: &mut Window, cx: &mut App|
+//!     v.update(cx, |this, cx| { this.menu = None; cx.notify() }) };
+//! context_menu(anchor, self.theme.read(cx), dismiss, vec![
+//!     MenuItem::new("copy", "Copy").icon(IconName::Copy).on_click({
+//!         let v = view.clone();
+//!         move |_, w, cx| v.update(cx, |this, cx| { this.menu = None; this.copy(w, cx) })
+//!     }),
+//!     MenuItem::separator(),
+//!     MenuItem::new("delete", "Delete").destructive().on_click(/* … */),
+//! ])
+//! ```
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use gpui::{
+    canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnyElement, App, Bounds,
+    ClickEvent, Display, Edges, Element, FontWeight, GlobalElementId, InspectorElementId,
+    InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Length, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, Position, SharedString, Size, StatefulInteractiveElement, Style,
+    Styled, Window,
+};
+
+use super::IconName;
+use crate::kbd::kbd_row;
+use crate::palette::Palette;
+use crate::popover::anchored_popup;
+use crate::presence::{closing_guard, enter_or_popup};
+
+type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+/// Which part of a controlled submenu a hover transition came from. The caller
+/// needs the distinction: leaving the *trigger* must not close the submenu
+/// (the pointer may be travelling into the flyout), while leaving the *flyout*
+/// should.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubmenuHoverSource {
+    /// The `Label ▸` row in the parent menu.
+    Trigger,
+    /// The open flyout panel.
+    Flyout,
+}
+
+/// Hover callback for a *controlled* submenu — `(source, hovered)`: `hovered`
+/// is `true` on pointer-enter, `false` on pointer-leave.
+type SubmenuHover = Rc<dyn Fn(SubmenuHoverSource, bool, &mut Window, &mut App)>;
+
+/// Boxed click handler — the shape `MenuItem::on_click` accepts once boxed.
+/// Exported so call sites can name it in helper signatures (clippy
+/// `type_complexity`).
+pub type MenuClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+/// One row of a [`context_menu`]. Build with [`MenuItem::new`] /
+/// [`MenuItem::separator`] / [`MenuItem::label`] / [`MenuItem::submenu`].
+pub struct MenuItem {
+    kind: Kind,
+}
+
+enum Kind {
+    Action {
+        id: SharedString,
+        label: SharedString,
+        icon: Option<IconName>,
+        /// Right-aligned muted secondary text (e.g. a host address next to a
+        /// host name). Mutually exclusive with `keybind` in practice.
+        detail: Option<SharedString>,
+        destructive: bool,
+        disabled: bool,
+        checked: bool,
+        /// Zed-style toggle: a check column is always reserved (so labels stay
+        /// aligned) and a plain primary-coloured check marks the `true` state.
+        toggled: Option<bool>,
+        /// Right-aligned keybinding hint (`["\u{2318}", "K"]`), rendered as
+        /// [`crate::kbd`] chips — radix `ContextMenuShortcut`.
+        keybind: Vec<SharedString>,
+        handler: Option<Handler>,
+    },
+    Separator,
+    Label(SharedString),
+    Submenu {
+        id: SharedString,
+        label: SharedString,
+        icon: Option<IconName>,
+        items: Vec<MenuItem>,
+        /// `None` → the flyout is revealed by pure CSS `:hover` (fine for a
+        /// lone submenu). `Some` → the caller owns "which submenu is open" as
+        /// explicit state: the flyout is only built when `open`, and hover
+        /// transitions are reported back through the callback. Two adjacent
+        /// controlled submenus can't both latch open, since the caller holds a
+        /// single open-id.
+        control: Option<SubmenuControl>,
+    },
+}
+
+struct SubmenuControl {
+    open: bool,
+    on_hover: SubmenuHover,
+}
+
+impl MenuItem {
+    /// An actionable row. `id` must be unique within the menu (element id).
+    pub fn new(id: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
+        Self {
+            kind: Kind::Action {
+                id: id.into(),
+                label: label.into(),
+                icon: None,
+                detail: None,
+                destructive: false,
+                disabled: false,
+                checked: false,
+                toggled: None,
+                keybind: Vec::new(),
+                handler: None,
+            },
+        }
+    }
+
+    /// A horizontal divider.
+    pub fn separator() -> Self {
+        Self {
+            kind: Kind::Separator,
+        }
+    }
+
+    /// A non-interactive section heading.
+    pub fn label(text: impl Into<SharedString>) -> Self {
+        Self {
+            kind: Kind::Label(text.into()),
+        }
+    }
+
+    /// A row that reveals `items` in a nested panel on hover.
+    pub fn submenu(
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        items: Vec<MenuItem>,
+    ) -> Self {
+        Self {
+            kind: Kind::Submenu {
+                id: id.into(),
+                label: label.into(),
+                icon: None,
+                items,
+                control: None,
+            },
+        }
+    }
+
+    /// Put this submenu under caller-owned open/close state instead of pure
+    /// `:hover`. `open` builds (and shows) the flyout; `on_hover` fires `true`
+    /// when the pointer enters the trigger row or the open flyout and `false`
+    /// when it leaves. The caller keeps one "open submenu" id, so sibling
+    /// submenus can't both open and their flyouts can't overlap. No-op on
+    /// non-submenu items.
+    pub fn submenu_control(
+        mut self,
+        open: bool,
+        on_hover: impl Fn(SubmenuHoverSource, bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        if let Kind::Submenu { control, .. } = &mut self.kind {
+            *control = Some(SubmenuControl {
+                open,
+                on_hover: Rc::new(on_hover),
+            });
+        }
+        self
+    }
+
+    /// Leading icon.
+    pub fn icon(mut self, icon: IconName) -> Self {
+        match &mut self.kind {
+            Kind::Action { icon: i, .. } | Kind::Submenu { icon: i, .. } => *i = Some(icon),
+            _ => {}
+        }
+        self
+    }
+
+    /// Right-aligned muted secondary text (radix `ContextMenuShortcut` slot,
+    /// but plain text — used for a host address beside a host name). Ignored on
+    /// non-action items.
+    pub fn detail(mut self, text: impl Into<SharedString>) -> Self {
+        if let Kind::Action { detail, .. } = &mut self.kind {
+            *detail = Some(text.into());
+        }
+        self
+    }
+
+    /// Render the label in the destructive colour (`text-destructive`).
+    pub fn destructive(mut self) -> Self {
+        if let Kind::Action { destructive, .. } = &mut self.kind {
+            *destructive = true;
+        }
+        self
+    }
+
+    /// Dim + disable the row (no handler fires).
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        if let Kind::Action { disabled: d, .. } = &mut self.kind {
+            *d = disabled;
+        }
+        self
+    }
+
+    /// Right-aligned keybinding hint — one chip per key
+    /// (`["\u{2318}", "\u{21E7}", "P"]`). Ignored on non-action items.
+    pub fn keybind<S: Into<SharedString>>(mut self, keys: impl IntoIterator<Item = S>) -> Self {
+        if let Kind::Action { keybind, .. } = &mut self.kind {
+            *keybind = keys.into_iter().map(Into::into).collect();
+        }
+        self
+    }
+
+    /// Show a leading check mark (radio / checkbox item).
+    pub fn checked(mut self, checked: bool) -> Self {
+        if let Kind::Action { checked: c, .. } = &mut self.kind {
+            *c = checked;
+        }
+        self
+    }
+
+    /// Zed-style toggle row: reserves the check column on every row and shows a
+    /// plain check when `on`. Prefer over [`Self::checked`] for on/off settings.
+    pub fn toggled(mut self, on: bool) -> Self {
+        if let Kind::Action { toggled, .. } = &mut self.kind {
+            *toggled = Some(on);
+        }
+        self
+    }
+
+    /// Click handler. Runs with `&mut App`, so the caller captures a
+    /// `cx.entity()` clone and calls `.update` on it.
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        if let Kind::Action { handler: h, .. } = &mut self.kind {
+            *h = Some(Rc::new(handler));
+        }
+        self
+    }
+}
+
+/// Per-render list of open submenu-flyout rectangles in window space. A
+/// controlled submenu flyout is painted *outside* the parent menu card's own
+/// bounds (`absolute().left_full()`), so a click that lands in the flyout would
+/// otherwise trip the card's `on_mouse_down_out` (capture phase) and dismiss the
+/// whole menu before the flyout row's `on_click` (bubble, on mouse-up) can run —
+/// i.e. clicking a host in the `+ ▸ SSH ▸` / `SFTP ▸` submenus did nothing.
+///
+/// Each open flyout records its bounds here during prepaint; the card's
+/// outside-press dismiss and the full-screen backdrop consult it and skip the
+/// dismiss when the press is inside a flyout. The `Rc` is rebuilt on every
+/// `context_menu` / `popover_menu` call, so it is always fresh for the frame.
+type FlyoutBounds = Rc<RefCell<Vec<Bounds<Pixels>>>>;
+
+/// A layout-neutral probe that records its own painted rectangle into `sink`
+/// during prepaint. Dropped into each open submenu flyout so the menu's dismiss
+/// paths can tell "inside a flyout" from "outside the menu".
+fn flyout_probe(sink: FlyoutBounds) -> impl IntoElement {
+    canvas(
+        move |bounds, _window, _cx| sink.borrow_mut().push(bounds),
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
+/// True when `pos` falls inside any recorded open-flyout rectangle.
+fn in_flyout(flyouts: &FlyoutBounds, pos: Point<Pixels>) -> bool {
+    flyouts.borrow().iter().any(|b| b.contains(&pos))
+}
+
+/// Resolve a submenu's origin from its trigger and its measured panel size.
+///
+/// The preferred position is aligned with the trigger's top-right corner. If
+/// that does not fit, the panel is attached to the other side, and the same
+/// decision is made independently for the vertical axis. The final clamp is
+/// only a last resort for panels that are larger than the available viewport;
+/// normal edge collisions therefore never move a panel on top of its trigger.
+fn submenu_origin(
+    trigger: Bounds<Pixels>,
+    panel_size: Size<Pixels>,
+    viewport: Size<Pixels>,
+    gap: Pixels,
+    margin: Pixels,
+) -> Point<Pixels> {
+    let trigger_left = f32::from(trigger.left());
+    let trigger_right = f32::from(trigger.right());
+    let trigger_top = f32::from(trigger.top());
+    let trigger_bottom = f32::from(trigger.bottom());
+    let panel_width = f32::from(panel_size.width);
+    let panel_height = f32::from(panel_size.height);
+    let viewport_width = f32::from(viewport.width);
+    let viewport_height = f32::from(viewport.height);
+    let gap = f32::from(gap);
+    let margin = f32::from(margin);
+
+    let right_origin = trigger_right + gap;
+    let left_origin = trigger_left - gap - panel_width;
+    let right_fits = right_origin + panel_width <= viewport_width - margin;
+    let left_fits = left_origin >= margin;
+    let open_left = if right_fits {
+        false
+    } else if left_fits {
+        true
+    } else {
+        let right_space = viewport_width - margin - right_origin;
+        let left_space = trigger_left - margin - gap;
+        left_space > right_space
+    };
+
+    let below_origin = trigger_top;
+    let above_origin = trigger_bottom - panel_height;
+    let below_fits = below_origin + panel_height <= viewport_height - margin;
+    let above_fits = above_origin >= margin;
+    let open_above = if below_fits {
+        false
+    } else if above_fits {
+        true
+    } else {
+        let below_space = viewport_height - margin - below_origin;
+        let above_space = trigger_bottom - margin;
+        above_space > below_space
+    };
+
+    let origin_x = if open_left { left_origin } else { right_origin };
+    let origin_y = if open_above {
+        above_origin
+    } else {
+        below_origin
+    };
+    let max_x = (viewport_width - margin - panel_width).max(margin);
+    let max_y = (viewport_height - margin - panel_height).max(margin);
+
+    point(
+        px(origin_x.clamp(margin, max_x)),
+        px(origin_y.clamp(margin, max_y)),
+    )
+}
+
+/// Positions a submenu from its parent row after both the row and the panel
+/// have been laid out. This keeps the collision decision in the same pass as
+/// the real panel measurement instead of caching a guessed width/height in a
+/// render-local hover callback.
+struct SubmenuFlyout {
+    child: AnyElement,
+    gap: Pixels,
+    margin: Pixels,
+}
+
+impl SubmenuFlyout {
+    fn new(child: impl IntoElement, gap: Pixels, margin: Pixels) -> Self {
+        Self {
+            child: child.into_any_element(),
+            gap,
+            margin,
+        }
+    }
+}
+
+impl IntoElement for SubmenuFlyout {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for SubmenuFlyout {
+    type RequestLayoutState = LayoutId;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<gpui::ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let child_layout_id = self.child.request_layout(window, cx);
+        let style = Style {
+            display: Display::Flex,
+            position: Position::Absolute,
+            align_items: Some(AlignItems::FlexStart),
+            inset: Edges::all(Length::from(px(0.0))),
+            ..Style::default()
+        };
+        let layout_id = window.request_layout(style, [child_layout_id], cx);
+        (layout_id, child_layout_id)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        child_layout_id: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self::PrepaintState {
+        let child_bounds = window.layout_bounds(*child_layout_id);
+        let origin = submenu_origin(
+            bounds,
+            child_bounds.size,
+            window.viewport_size(),
+            self.gap,
+            self.margin,
+        );
+        let offset = point(
+            (origin.x - child_bounds.origin.x).round(),
+            (origin.y - child_bounds.origin.y).round(),
+        );
+        window.with_element_offset(offset, |window| {
+            self.child.prepaint(window, cx);
+        });
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _child_layout_id: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.child.paint(window, cx);
+    }
+}
+
+/// A fixed 16px centred box holding a 14px glyph — keeps every row's icon the
+/// same size and every label aligned to the same left edge regardless of the
+/// individual SVG's internal padding.
+fn icon_slot(icon: IconName, color: gpui::Hsla) -> impl IntoElement {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(16.0))
+        .child(icon.svg(color).size(px(14.0)))
+}
+
+fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds) -> AnyElement {
+    match item.kind {
+        Kind::Separator => div()
+            .my(c.space(4.0))
+            .h(px(1.0))
+            .bg(c.border)
+            .into_any_element(),
+        // Ciel `Eyebrow pad="menu"`: uppercase 12px semibold group label.
+        Kind::Label(text) => div()
+            .px(c.space(8.0))
+            .py(c.space(4.0))
+            .text_size(c.control_space(12.0))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(c.muted)
+            .child(SharedString::from(text.to_uppercase()))
+            .into_any_element(),
+        Kind::Action {
+            id,
+            label,
+            icon,
+            detail,
+            destructive,
+            disabled,
+            checked,
+            toggled,
+            keybind,
+            handler,
+        } => {
+            let text_color = if disabled {
+                c.muted
+            } else if destructive {
+                c.destructive
+            } else {
+                c.popover_fg
+            };
+            let mut row = div()
+                .id(id)
+                .flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .h(c.control_space(28.0))
+                .px(c.space(8.0))
+                .rounded(px(c.radius.md))
+                .text_size(c.control_space(13.0))
+                .text_color(text_color)
+                .when_some(toggled, |d, on| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .size(px(16.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .when(on, |s| {
+                                s.child(IconName::Check.svg(c.primary).size(px(14.0)))
+                            }),
+                    )
+                })
+                .when(toggled.is_none() && (checked || icon.is_some()), |d| {
+                    let glyph = if checked {
+                        IconName::CircleCheck
+                    } else {
+                        icon.unwrap()
+                    };
+                    d.child(icon_slot(glyph, text_color))
+                })
+                .child(div().flex_1().min_w_0().truncate().child(label))
+                .when_some(detail, |d, text| {
+                    d.child(
+                        div()
+                            .flex_shrink_0()
+                            .ml_auto()
+                            .pl(c.space(8.0))
+                            .text_size(px(12.0))
+                            .text_color(c.muted)
+                            .child(text),
+                    )
+                })
+                .when(!keybind.is_empty(), |d| {
+                    d.child(div().ml_auto().child(kbd_row(keybind.clone(), c)))
+                });
+            if disabled {
+                row = row.opacity(super::DISABLED_OPACITY);
+            } else {
+                let hover_fg = if destructive {
+                    c.destructive
+                } else {
+                    c.accent_fg
+                };
+                row = row.hover(move |s| s.bg(c.accent).text_color(hover_fg));
+                if let Some(h) = handler {
+                    row = row
+                        .tab_index(0)
+                        .focus(move |s| {
+                            s.bg(c.sunken)
+                                .text_color(hover_fg)
+                                .font_weight(FontWeight::SEMIBOLD)
+                        })
+                        .on_click(move |ev, w, cx| h(ev, w, cx))
+                        .on_key_down(|event, window, cx| match event.keystroke.key.as_str() {
+                            "enter" | "space" => cx.stop_propagation(),
+                            "down" => {
+                                window.focus_next();
+                                cx.stop_propagation();
+                            }
+                            "up" => {
+                                window.focus_prev();
+                                cx.stop_propagation();
+                            }
+                            _ => {}
+                        });
+                }
+            }
+            let _ = depth;
+            row.into_any_element()
+        }
+        Kind::Submenu {
+            id,
+            label,
+            icon,
+            items,
+            control,
+        } => {
+            let group = SharedString::from(format!("ctxsub-{id}-{depth}"));
+            let flyout_id = SharedString::from(format!("ctxsubfly-{id}-{depth}"));
+
+            // In controlled mode the flyout only exists while the caller says
+            // it's open; otherwise it's always in the tree and revealed by CSS.
+            let show_panel = control.as_ref().map(|c| c.open).unwrap_or(true);
+            let panel = show_panel.then(|| {
+                let card = div()
+                    .id(flyout_id.clone())
+                    .flex()
+                    .flex_col()
+                    .min_w(c.space(160.0))
+                    .max_w(c.space(340.0))
+                    .max_h(c.space(320.0))
+                    .overflow_y_scroll()
+                    .p(c.space(4.0))
+                    .rounded(px(c.radius.lg))
+                    .bg(c.popover)
+                    .border_1()
+                    .border_color(c.border)
+                    .shadow(c.popover_shadow())
+                    .children(
+                        items
+                            .into_iter()
+                            .map(|it| render_item(it, c, depth + 1, flyouts)),
+                    );
+                let card = match &control {
+                    Some(ctrl) => {
+                        let on_hover = ctrl.on_hover.clone();
+                        card.occlude()
+                            .on_hover(move |h, w, cx| {
+                                on_hover(SubmenuHoverSource::Flyout, *h, w, cx)
+                            })
+                            // Report this flyout's rect so a click inside it
+                            // isn't treated as an outside-press on the card.
+                            .child(flyout_probe(flyouts.clone()))
+                    }
+                    // CSS-hover mode: flush edge so the pointer crosses from
+                    // the trigger into the panel without passing over dead
+                    // space, which would drop `group_hover`.
+                    None => card
+                        .invisible()
+                        .group_hover(group.clone(), |s| s.visible())
+                        .hover(|s| s.visible()),
+                };
+                SubmenuFlyout::new(card, c.space(6.0), px(8.0))
+            });
+
+            let mut row = div()
+                .id(id)
+                .relative()
+                .flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .h(c.control_space(28.0))
+                .px(c.space(8.0))
+                .rounded(px(c.radius.md))
+                .text_size(c.control_space(13.0))
+                .text_color(c.popover_fg)
+                .hover(|s| s.bg(c.accent).text_color(c.accent_fg))
+                .when_some(icon, |d, ic| d.child(icon_slot(ic, c.popover_fg)))
+                .child(label)
+                .child(
+                    div()
+                        .ml_auto()
+                        .child(IconName::ChevronRight.svg(c.muted).size(px(14.0))),
+                );
+            row = match control {
+                Some(ctrl) => {
+                    let on_hover = ctrl.on_hover.clone();
+                    let on_key = ctrl.on_hover.clone();
+                    row.tab_index(0)
+                        .focus(|s| {
+                            s.bg(c.sunken)
+                                .text_color(c.accent_fg)
+                                .font_weight(FontWeight::SEMIBOLD)
+                        })
+                        .on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
+                        .on_key_down(
+                            move |event, window, cx| match event.keystroke.key.as_str() {
+                                "right" | "enter" | "space" => {
+                                    on_key(SubmenuHoverSource::Trigger, true, window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "left" => {
+                                    on_key(SubmenuHoverSource::Trigger, false, window, cx);
+                                    cx.stop_propagation();
+                                }
+                                "down" => {
+                                    window.focus_next();
+                                    cx.stop_propagation();
+                                }
+                                "up" => {
+                                    window.focus_prev();
+                                    cx.stop_propagation();
+                                }
+                                _ => {}
+                            },
+                        )
+                }
+                None => row.group(group),
+            };
+            row.children(panel).into_any_element()
+        }
+    }
+}
+
+/// The menu card itself — the `p-1 rounded-md bg-popover border shadow-md`
+/// panel shared by [`context_menu`] and [`popover_menu`].
+fn menu_card(c: Palette, items: Vec<MenuItem>, flyouts: FlyoutBounds) -> gpui::Div {
+    div()
+        .flex()
+        .flex_col()
+        .min_w(c.space(160.0))
+        .max_w(c.space(320.0))
+        .p(c.space(4.0))
+        .rounded(px(c.radius.lg))
+        .bg(c.popover)
+        .border_1()
+        .border_color(c.border)
+        .shadow(c.popover_shadow())
+        .occlude()
+        .children(
+            items
+                .into_iter()
+                .map(move |it| render_item(it, c, 0, &flyouts)),
+        )
+}
+
+/// The bare menu card on its own — no full-screen backdrop, no anchoring, no
+/// dismiss wiring. Used by the component gallery (T20-004) to show a context
+/// menu as a permanently-open example; not for normal call sites, which want
+/// [`context_menu`] / [`popover_menu`].
+#[cfg(any(debug_assertions, feature = "gallery"))]
+pub fn menu_card_preview(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
+    menu_card(c, items, Rc::new(RefCell::new(Vec::new())))
+}
+
+/// Build a full-screen context-menu overlay anchored at `anchor` (window
+/// coordinates). `dismiss` fires on a click anywhere outside the menu card.
+pub fn context_menu(
+    anchor: Point<Pixels>,
+    c: Palette,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
+    context_menu_with_exit(anchor, c, false, dismiss, items)
+}
+
+/// [`context_menu`] with an exit state: while `closing` the card plays the exit
+/// fade and ignores pointer input. Drive `closing` from a
+/// [`crate::Presence`]; see [`crate::presence`] for the wiring.
+pub fn context_menu_with_exit(
+    anchor: Point<Pixels>,
+    c: Palette,
+    closing: bool,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
+    let dismiss = Rc::new(dismiss);
+    let d2 = dismiss.clone();
+    let d3 = dismiss.clone();
+    let d4 = dismiss.clone();
+
+    // Open submenu flyouts record their rects here each frame so the dismiss
+    // paths below can skip a press that landed inside a flyout (which paints
+    // outside the card's own bounds). See [`FlyoutBounds`].
+    let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
+    let fb_out = flyouts.clone();
+    let fb_left = flyouts.clone();
+    let fb_right = flyouts.clone();
+    // Shared anchored placement uses window coordinates
+    // (the right-click `MouseDownEvent::position` is already window-space) and
+    // keeps the same viewport margin near an edge; `deferred(..)` lifts the
+    // whole overlay above every sibling so an ancestor's `overflow_hidden`
+    // cannot clip it and it always paints on top. Previously this was a plain
+    // `absolute().inset_0()` child of whatever view opened it, which made the
+    // menu mispositioned (anchor is window-space, parent is not the window),
+    // clipped by scrollable panels, and sometimes hidden behind later siblings.
+    // `on_mouse_down_out` on the card itself is the reliable dismiss path: the
+    // full-screen backdrop below is laid out relative to whichever (often tiny,
+    // e.g. a 20px status-bar item) element opened the menu, so `inset_0` does
+    // not actually cover the window and a click next to the menu would leave it
+    // stuck open. The card, by contrast, always knows its own bounds.
+    let card = anchored_popup(anchor, c).child(enter_or_popup(
+        menu_card(c, items, flyouts)
+            .on_mouse_down_out(move |ev, w, cx| {
+                if !in_flyout(&fb_out, ev.position) {
+                    d3(w, cx)
+                }
+            })
+            .on_key_down(
+                move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        d4(window, cx);
+                        cx.stop_propagation();
+                    }
+                },
+            )
+            .when(closing, |card| card.child(closing_guard())),
+        "context-menu-fade",
+        c,
+        closing,
+    ));
+
+    deferred(
+        div()
+            .absolute()
+            .inset_0()
+            .on_mouse_down(
+                MouseButton::Left,
+                move |ev: &MouseDownEvent, w: &mut Window, cx: &mut App| {
+                    if !in_flyout(&fb_left, ev.position) {
+                        dismiss(w, cx)
+                    }
+                },
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                move |ev: &MouseDownEvent, w: &mut Window, cx: &mut App| {
+                    if !in_flyout(&fb_right, ev.position) {
+                        d2(w, cx)
+                    }
+                },
+            )
+            .child(card),
+    )
+    .with_priority(200)
+    .into_any_element()
+}
+
+/// The same menu, opened from a trigger instead of a right-click. It uses
+/// window-anchored placement and `deferred(..)` so it cannot be clipped by an
+/// ancestor's `overflow_hidden`, and flips back into the window near an edge.
+///
+/// Pass the trigger's bottom-left window point as `anchor` so the card opens
+/// below it.
+///
+/// ```ignore
+/// popover_menu(bounds.bottom_left(), c, dismiss, vec![
+///     MenuItem::new("settings", "Settings\u{2026}").on_click(..),
+///     MenuItem::separator(),
+///     MenuItem::new("profile", "Profile").on_click(..),
+/// ])
+/// ```
+pub fn popover_menu(
+    anchor: Point<Pixels>,
+    c: Palette,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
+    popover_menu_with_exit(anchor, c, false, dismiss, items)
+}
+
+/// [`popover_menu`] with an exit state; see [`context_menu_with_exit`].
+pub fn popover_menu_with_exit(
+    anchor: Point<Pixels>,
+    c: Palette,
+    closing: bool,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
+    let dismiss = Rc::new(dismiss);
+    let d_out = dismiss.clone();
+    let d_escape = dismiss.clone();
+
+    let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
+    let fb_out = flyouts.clone();
+    let fb_bd = flyouts.clone();
+
+    let card = anchored_popup(anchor, c).child(enter_or_popup(
+        menu_card(c, items, flyouts)
+            .on_mouse_down_out(move |ev, w, cx| {
+                if !in_flyout(&fb_out, ev.position) {
+                    d_out(w, cx)
+                }
+            })
+            .on_key_down(
+                move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        d_escape(window, cx);
+                        cx.stop_propagation();
+                    }
+                },
+            )
+            .when(closing, |card| card.child(closing_guard())),
+        "popover-menu-fade",
+        c,
+        closing,
+    ));
+
+    deferred(
+        div()
+            .absolute()
+            .inset_0()
+            .on_mouse_down(
+                MouseButton::Left,
+                move |ev: &MouseDownEvent, w: &mut Window, cx: &mut App| {
+                    if !in_flyout(&fb_bd, ev.position) {
+                        dismiss(w, cx)
+                    }
+                },
+            )
+            .child(card),
+    )
+    .with_priority(200)
+    .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[allow(clippy::type_complexity)]
+    fn action(item: &MenuItem) -> (&SharedString, bool, bool, bool, bool, &[SharedString]) {
+        match &item.kind {
+            Kind::Action {
+                label,
+                destructive,
+                disabled,
+                checked,
+                keybind,
+                handler,
+                ..
+            } => (
+                label,
+                *destructive,
+                *disabled,
+                *checked,
+                handler.is_some(),
+                keybind,
+            ),
+            _ => panic!("not an action item"),
+        }
+    }
+
+    #[test]
+    fn builder_sets_item_flags() {
+        let plain = MenuItem::new("id", "Plain");
+        let (label, destr, dis, chk, has_handler, keys) = action(&plain);
+        assert_eq!(label.as_ref(), "Plain");
+        assert!(!destr && !dis && !chk && !has_handler);
+        assert!(keys.is_empty());
+
+        let styled = MenuItem::new("id", "Danger")
+            .icon(IconName::Trash)
+            .destructive()
+            .disabled(true)
+            .checked(true)
+            .keybind(["\u{2318}", "\u{232B}"])
+            .on_click(|_, _, _| {});
+        let (_, destr, dis, chk, has_handler, keys) = action(&styled);
+        assert!(destr && dis && chk && has_handler);
+        assert_eq!(keys.len(), 2);
+
+        assert!(matches!(MenuItem::separator().kind, Kind::Separator));
+        assert!(matches!(MenuItem::label("Sec").kind, Kind::Label(_)));
+        assert!(matches!(
+            MenuItem::submenu("s", "Sub", vec![MenuItem::new("a", "A")]).kind,
+            Kind::Submenu { .. }
+        ));
+    }
+
+    #[test]
+    fn in_flyout_matches_recorded_rects() {
+        use gpui::{point, px, size};
+        let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
+        // No flyout open → every press is "outside", menu dismisses.
+        assert!(!in_flyout(&flyouts, point(px(150.0), px(80.0))));
+
+        flyouts.borrow_mut().push(Bounds {
+            origin: point(px(120.0), px(40.0)),
+            size: size(px(160.0), px(120.0)),
+        });
+        // A press inside the flyout rect must not count as an outside-press…
+        assert!(in_flyout(&flyouts, point(px(150.0), px(80.0))));
+        // …but one clearly outside it still does.
+        assert!(!in_flyout(&flyouts, point(px(400.0), px(400.0))));
+    }
+
+    #[test]
+    fn submenu_stays_right_and_below_when_measured_space_allows() {
+        use gpui::{point, px, size};
+
+        let origin = submenu_origin(
+            Bounds {
+                origin: point(px(100.0), px(100.0)),
+                size: size(px(24.0), px(28.0)),
+            },
+            size(px(160.0), px(80.0)),
+            size(px(400.0), px(300.0)),
+            px(6.0),
+            px(8.0),
+        );
+
+        assert_eq!(origin, point(px(130.0), px(100.0)));
+    }
+
+    #[test]
+    fn submenu_flips_to_the_available_left_and_upper_sides() {
+        use gpui::{point, px, size};
+
+        let origin = submenu_origin(
+            Bounds {
+                origin: point(px(320.0), px(240.0)),
+                size: size(px(24.0), px(28.0)),
+            },
+            size(px(180.0), px(100.0)),
+            size(px(400.0), px(300.0)),
+            px(6.0),
+            px(8.0),
+        );
+
+        assert_eq!(origin, point(px(134.0), px(168.0)));
+    }
+
+    #[test]
+    fn submenu_flips_each_axis_independently() {
+        use gpui::{point, px, size};
+
+        let horizontal_flip = submenu_origin(
+            Bounds {
+                origin: point(px(320.0), px(100.0)),
+                size: size(px(24.0), px(28.0)),
+            },
+            size(px(180.0), px(80.0)),
+            size(px(400.0), px(300.0)),
+            px(6.0),
+            px(8.0),
+        );
+        let vertical_flip = submenu_origin(
+            Bounds {
+                origin: point(px(100.0), px(240.0)),
+                size: size(px(24.0), px(28.0)),
+            },
+            size(px(160.0), px(100.0)),
+            size(px(400.0), px(300.0)),
+            px(6.0),
+            px(8.0),
+        );
+
+        assert_eq!(horizontal_flip, point(px(134.0), px(100.0)));
+        assert_eq!(vertical_flip, point(px(130.0), px(168.0)));
+    }
+
+    #[test]
+    fn submenu_clamps_to_the_viewport_when_panel_is_larger_than_both_sides() {
+        use gpui::{point, px, size};
+
+        let origin = submenu_origin(
+            Bounds {
+                origin: point(px(80.0), px(80.0)),
+                size: size(px(24.0), px(24.0)),
+            },
+            size(px(240.0), px(220.0)),
+            size(px(200.0), px(180.0)),
+            px(6.0),
+            px(8.0),
+        );
+
+        assert_eq!(origin, point(px(8.0), px(8.0)));
+    }
+}

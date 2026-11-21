@@ -1,0 +1,17 @@
+[package]
+name = "labonair-settings-json"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_settings_json"
+path = "src/settings_json.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = "1"
+unindent = "0.2"

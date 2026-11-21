@@ -1,0 +1,188 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! `labonair-ui-kit` — the shared design-system crate.
+//!
+//! Block A of the feature-parity audit (`vergleichsbericht-subagent-3.md`,
+//! `-4.md`): the reference app (`reference-src/src/components/ui/**`) drives one
+//! consistent visual language through a cva-based primitive set. The port had
+//! none — every view hand-rolled its own `btn` and every "field" was a
+//! focus-tracking `div`. This crate holds the shared replacements, built on
+//! `gpui-component` where it fits and on the [`theme::UiTheme`] token accessor
+//! where 1:1 reference values matter.
+//!
+//! T20-001 grew it from the four extracted primitives (`button`,
+//! `context_menu`, `icon`, `text_field` + `popover`) into the full set the
+//! views assemble from — see `docs/design-system.md` §"UI-kit requirement" for the
+//! inventory that decided which primitives exist.
+//!
+//! ## Conventions
+//!
+//! * **Tokens, never literals.** Every primitive is styled from a
+//!   [`Palette`] — a `Copy` snapshot of the `labonair-theme` tokens built once
+//!   per render with [`Palette::from_theme`]. No primitive may hardcode a
+//!   colour (Critical Rule 3). The two "one colour in, one line out" helpers
+//!   ([`divider`], [`indicator`]) take a bare `Hsla` instead, since a whole
+//!   palette would be noise.
+//! * **`Size` / `Variant` enums.** Sizes are named `Xs`/`Sm`/`Md` (plus the
+//!   reference's `Lg`/`Icon*` where `button.tsx` has them); variants follow the
+//!   reference's cva variant names.
+//! * **`RenderOnce`-shaped structs for >2 fields** — [`ListItem`],
+//!   [`NumberField`], [`Checkbox`], [`SegmentedControl`], [`Banner`] are
+//!   builder structs implementing [`gpui::IntoElement`]; everything smaller is
+//!   a plain builder fn returning a `Div`/`Stateful<Div>` the caller keeps
+//!   chaining on.
+//! * **`disabled` dims to [`DISABLED_OPACITY`] and drops the handler**, so a
+//!   disabled control is inert, not just faint.
+//! * **State stays with the caller.** `Disclosure`, `Select`, `ToggleButton`
+//!   and friends render a flag and fire `on_click`/`on_select`; they never own
+//!   the flag. This is what lets them be rebuilt every frame inside a view's
+//!   `render`.
+//!
+//! ## `gpui-component`
+//!
+//! `gpui-component` 0.5.1 ships many of these (checkbox, divider, kbd, select,
+//! tab, …), but every one of them styles itself from **its own** `cx.theme()`
+//! global, which the app never syncs to `labonair-theme` — wrapping them would
+//! silently bypass our tokens. It is therefore used only where the *behaviour*
+//! is the hard part and colours are incidental: [`InputState`]/[`field_input`]
+//! (caret, selection, IME, undo), [`Badge`], [`Switch`], [`Tooltip`].
+
+mod animation;
+mod banner;
+mod button;
+mod checkbox;
+mod context_menu;
+mod density;
+mod dialog;
+mod disclosure;
+mod divider;
+mod empty_state;
+mod icon;
+mod icon_button;
+mod indicator;
+mod kbd;
+mod list;
+mod number_field;
+mod option_card;
+mod palette;
+mod pane_bar;
+mod popover;
+mod presence;
+mod preview_tile;
+mod search_field;
+mod segmented;
+mod select;
+mod settings_widgets;
+mod slider;
+mod stack;
+mod switch;
+mod tab;
+mod tab_tile;
+#[cfg(test)]
+mod test_support;
+mod text_field;
+pub mod theme;
+mod tree_row;
+
+pub use animation::{
+    fade_in, level_for, reveal_extent, slide_offset, state_fade_ambient, state_opacity, MotionExt,
+    MotionLevel, MotionPrefs, StateTransition, MOTION_FLOOR,
+};
+pub use banner::{banner, Banner, Severity};
+pub use button::{button, button_disabled, ButtonSize, ButtonVariant, DISABLED_OPACITY};
+pub use checkbox::{checkbox, Checkbox};
+/// Debug-only preview helper consumed by the component gallery (now in
+/// `labonair-shell`).
+#[cfg(any(debug_assertions, feature = "gallery"))]
+pub use context_menu::menu_card_preview;
+pub use context_menu::{
+    context_menu, context_menu_with_exit, popover_menu, popover_menu_with_exit, MenuClick,
+    MenuItem, SubmenuHoverSource,
+};
+pub use density::Density;
+pub use dialog::{dialog_surface, modal_overlay, modal_overlay_with_exit};
+pub use disclosure::disclosure;
+pub use divider::{divider, Axis};
+pub use empty_state::empty_state;
+pub use icon::{
+    chevron_icon_path, file_icon_path, folder_icon_path, icon_for_path, svg_path, IconName,
+};
+pub use icon_button::{
+    icon_button, icon_button_builder, icon_button_disabled, IconButtonBuilder, IconButtonShape,
+};
+pub use indicator::{indicator, IndicatorSize};
+pub use kbd::{kbd, kbd_row, keybinding_hint};
+pub use list::{list_header, list_separator, ListItem};
+pub use number_field::{number_field, step_value, NumberField};
+pub use option_card::option_card;
+pub use palette::Palette;
+pub use pane_bar::{
+    canvas_backdrop, pane_bar, pane_frame, PaneAction, PaneBar, PaneLayoutStyle, PANE_GAP,
+};
+pub use popover::{popover, popover_with_exit};
+pub use presence::{exit_duration, exit_fade, Presence, PresenceSlot, PresenceStep};
+pub use preview_tile::{
+    preview_tile, preview_tile_group, selected_index, step_selection, ColorSchemeChoice,
+    InterfaceStyleChoice, PreviewKind, PreviewTile, PreviewTileGroup, TileMock,
+};
+pub use search_field::{search_clear_button, search_field, search_input};
+pub use segmented::{segmented_control, SegmentSize, SegmentVariant, SegmentedControl};
+pub use select::{
+    select_popover, select_popover_with_exit, select_trigger, select_trigger_disabled,
+    selected_label, SelectOption, SelectPopoverAnchor,
+};
+pub use settings_widgets::{
+    category_chip, settings_group, settings_row, slider_control, slider_row, ChipHue,
+    SettingsGroup, SettingsRow, SETTINGS_ROW_MIN_HEIGHT,
+};
+pub use slider::{slider, SliderEvent, SliderState, SliderValue};
+pub use stack::{h_stack, v_stack};
+pub use switch::{switch, ToggleSwitch};
+pub use tab::{
+    floating_tab_strip, tab_drop_marker, tab_group_gap, tab_item, TabDropSide, TabItemBuilder,
+    TabLayout, TabStyle,
+};
+pub use tab_tile::{
+    stack_width, tab_tile, tab_tile_stack, tile_colors, tile_rim, TabTileSpec, MAX_STACKED_TILES,
+    TILE_SIZE,
+};
+pub use text_field::{
+    caret, field_input, text_area_surface, text_field, text_field_surface,
+    text_field_surface_sized, text_input, BlinkCursor, InputEvent, InputState, TextFieldSize,
+    TextFieldState,
+};
+pub use theme::{ActiveThemeExt, UiTheme};
+pub use tree_row::{tree_row, TreeRow, TreeRowState, TREE_INDENT_STEP};
+
+// gpui-component primitives re-exported where their behaviour (not their
+// styling) is what we want. Kept here so call sites import from
+// `labonair_ui_kit::*` and can be swapped without touching them.
+pub use gpui_component::scroll::ScrollableElement;
+pub use gpui_component::{badge::Badge, switch::Switch, tooltip::Tooltip};
+
+/// Everything a view needs in one `use`.
+///
+/// ```ignore
+/// use labonair_ui_kit::prelude::*;
+/// ```
+pub mod prelude {
+    pub use crate::ActiveThemeExt;
+    pub use crate::{
+        banner, button, button_disabled, checkbox, chevron_icon_path, context_menu, dialog_surface,
+        disclosure, divider, empty_state, fade_in, file_icon_path, folder_icon_path, h_stack,
+        icon_button, icon_button_builder, icon_button_disabled, icon_for_path, indicator, kbd,
+        kbd_row, keybinding_hint, list_header, list_separator, modal_overlay, number_field,
+        popover, popover_menu, search_clear_button, search_field, search_input, segmented_control,
+        select_popover, select_trigger, select_trigger_disabled, selected_label, slider, svg_path,
+        text_area_surface, text_field_surface, text_field_surface_sized, text_input, tree_row,
+        v_stack,
+    };
+    pub use crate::{
+        Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, Density, IconButtonBuilder,
+        IconButtonShape, IconName, IndicatorSize, ListItem, MenuClick, MenuItem, NumberField,
+        Palette, ScrollableElement, SegmentSize, SegmentVariant, SegmentedControl, SelectOption,
+        SelectPopoverAnchor, Severity, SliderEvent, SliderState, SliderValue, Switch,
+        TextFieldSize, TextFieldState, Tooltip, TreeRow, TreeRowState, UiTheme, DISABLED_OPACITY,
+    };
+}

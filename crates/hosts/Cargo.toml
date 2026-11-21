@@ -1,0 +1,17 @@
+[package]
+name = "labonair-hosts"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+labonair-errors = { path = "../errors" }
+labonair-persistence = { path = "../persistence" }
+labonair-secrets = { path = "../secrets" }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }
+
+[dev-dependencies]
+tokio = { workspace = true }

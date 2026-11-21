@@ -1,0 +1,16 @@
+[package]
+name = "labonair-panel"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_panel"
+path = "src/panel.rs"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-gpui-ext = { path = "../gpui-ext" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

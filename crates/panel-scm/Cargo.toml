@@ -1,0 +1,27 @@
+[package]
+name = "labonair-panel-scm"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_panel_scm"
+path = "src/panel_scm.rs"
+
+[dependencies]
+gpui = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-panel = { path = "../panel" }
+labonair-editor = { path = "../editor" }
+labonair-settings = { path = "../settings" }
+labonair-activity-ui = { path = "../activity-ui" }
+labonair-notifications = { path = "../notifications" }
+labonair-git = { path = "../git" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

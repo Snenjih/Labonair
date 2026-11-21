@@ -1,0 +1,33 @@
+[package]
+name = "labonair-hosts-ui"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_hosts_ui"
+path = "src/hosts_ui.rs"
+
+[dependencies]
+gpui = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-notifications = { path = "../notifications" }
+labonair-hosts = { path = "../hosts" }
+labonair-hosts-host = { path = "../hosts-host" }
+labonair-credentials = { path = "../credentials" }
+labonair-persistence = { path = "../persistence" }
+labonair-secrets = { path = "../secrets" }
+labonair-settings = { path = "../settings" }
+labonair-snippets = { path = "../snippets" }
+labonair-ssh = { path = "../ssh" }
+labonair-errors = { path = "../errors" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

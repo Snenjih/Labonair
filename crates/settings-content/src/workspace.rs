@@ -1,0 +1,100 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! `workspace` area — command-palette preferences.
+
+use serde::{Deserialize, Serialize};
+
+use crate::MergeFrom;
+
+/// Command-palette match strategy.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum PaletteSearchMode {
+    #[default]
+    Contains,
+    StartsWith,
+    Fuzzy,
+}
+
+impl MergeFrom for PaletteSearchMode {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
+#[derive(
+    Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema, MergeFrom,
+)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WorkspaceContent {
+    // ── Command palette ─────────────────────────────────────────────────
+    pub command_palette_search_mode: Option<PaletteSearchMode>,
+    pub command_palette_show_recent: Option<bool>,
+    pub command_palette_opacity: Option<u32>,
+    /// `"top"` | `"high"` | `"center"`.
+    pub command_palette_position: Option<String>,
+    /// Palette size modifier in percent, 50..=200.
+    pub command_palette_size: Option<u32>,
+    pub command_palette_history_size: Option<u32>,
+    pub command_palette_close_on_overlay_click: Option<bool>,
+
+    // ── Tab bar ────────────────────────────────────────────────────────
+    pub show_nav_history_buttons: Option<bool>,
+    pub show_tab_bar_buttons: Option<bool>,
+    pub show_editor_tab_git_status: Option<bool>,
+    pub show_editor_tab_diagnostics: Option<bool>,
+
+    // ── Quit confirmation ──────────────────────────────────────────────
+    /// Block the first quit attempt (and show a notification) while a
+    /// terminal or SSH shell is still running; quitting again within a few
+    /// seconds proceeds.
+    pub confirm_quit_with_active_sessions: Option<bool>,
+}
+
+impl WorkspaceContent {
+    pub fn defaults() -> Self {
+        Self {
+            command_palette_search_mode: Some(PaletteSearchMode::Contains),
+            command_palette_show_recent: Some(true),
+            command_palette_opacity: Some(95),
+            command_palette_position: Some("top".to_string()),
+            command_palette_size: Some(100),
+            command_palette_history_size: Some(5),
+            command_palette_close_on_overlay_click: Some(true),
+            show_nav_history_buttons: Some(false),
+            show_tab_bar_buttons: Some(true),
+            show_editor_tab_git_status: Some(true),
+            show_editor_tab_diagnostics: Some(false),
+            confirm_quit_with_active_sessions: Some(true),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tab_bar_controls_defaults_and_parse_from_settings() {
+        let defaults = serde_json::to_value(WorkspaceContent::defaults()).expect("defaults");
+        assert_eq!(defaults["showNavHistoryButtons"], false);
+        assert_eq!(defaults["showTabBarButtons"], true);
+        assert_eq!(defaults["showEditorTabGitStatus"], true);
+        assert_eq!(defaults["showEditorTabDiagnostics"], false);
+
+        let parsed: WorkspaceContent = serde_json::from_value(serde_json::json!({
+            "showNavHistoryButtons": false,
+            "showTabBarButtons": false,
+            "showEditorTabGitStatus": false,
+            "showEditorTabDiagnostics": true
+        }))
+        .expect("tab-bar settings");
+        assert_eq!(parsed.show_nav_history_buttons, Some(false));
+        assert_eq!(parsed.show_tab_bar_buttons, Some(false));
+        assert_eq!(parsed.show_editor_tab_git_status, Some(false));
+        assert_eq!(parsed.show_editor_tab_diagnostics, Some(true));
+    }
+}

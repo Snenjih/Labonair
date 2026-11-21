@@ -1,0 +1,15 @@
+[package]
+name = "labonair-snippets-host"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_snippets_host"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

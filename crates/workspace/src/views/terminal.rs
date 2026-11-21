@@ -1,0 +1,1490 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! GPUI terminal renderer (T03-002).
+//!
+//! [`TerminalView`] is the GPUI entity that turns a registry session's
+//! [`RenderableScreen`] snapshots into a visible, interactive terminal surface:
+//!
+//! * cells are drawn as batched style runs ([`labonair_terminal::batch_runs`]),
+//!   one styled-text element per run rather than per cell;
+//! * the block/beam/underline cursor and the selection highlight are painted as
+//!   absolutely-positioned overlays using the theme's terminal palette;
+//! * on every frame the view derives `(columns, rows)` from the available pixel
+//!   area and the monospace cell metrics and forwards a resize to the engine +
+//!   PTY when it changed;
+//! * a lightweight poll task drains terminal events and only calls
+//!   `cx.notify()` when the grid actually changed, so idle terminals don't
+//!   re-render.
+//!
+//! Keyboard and mouse input (T03-003) is translated by
+//! [`labonair_terminal::input`]: this view converts GPUI events to the plain
+//! [`KeyInput`] / [`MouseInput`] / [`WheelInput`] descriptions, folds in the
+//! live [`ModeState`] from the engine, and writes the resulting bytes to the
+//! PTY. Mouse-wheel scrolling walks the scrollback unless a mouse-reporting or
+//! alternate-scroll mode is active; drag selects text (copy-on-select), the Copy /
+//! Paste keymap actions and right-click drive the clipboard with
+//! bracketed-paste support.
+
+use std::time::{Duration, Instant};
+
+/// How long a terminal grid size must stay unchanged before the PTY is resized.
+const RESIZE_DEBOUNCE: Duration = Duration::from_millis(120);
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    canvas, div, px, App, ClickEvent, ClipboardItem, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, FontWeight, Hsla, InteractiveElement, IntoElement, KeyDownEvent, Keystroke,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
+    Render, ScrollDelta, ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled,
+    Task, Window,
+};
+use labonair_terminal::{
+    batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
+    HostedAttachmentStatus, HostedLink, Key, KeyInput, ModeState, Modifiers,
+    MouseButton as TermMouseButton, MouseEventKind, MouseInput, NamedKey, RenderableScreen, Rgb,
+    Scroll, SessionHandle, SessionStatus, StyledRun, TermDimensions, TerminalColors,
+    TerminalColorsExt, TerminalEvent, WheelAction, WheelInput,
+};
+
+use crate::theme::ThemeStore;
+use labonair_background_host::{BackgroundHost, LayerScope};
+use labonair_explorer_host::{quote_paths, DraggedPaths};
+use labonair_settings::Settings as _;
+use labonair_ui_kit::{
+    banner, button, context_menu, ButtonSize, ButtonVariant, IconName, MenuItem, Palette, Severity,
+};
+
+/// `keymap.json`: `["terminal::SendText", "..."]` — writes `text` straight to
+/// the focused terminal's PTY, bypassing key parsing, mode-aware encoding and
+/// bracketed paste.
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = terminal, no_json)]
+pub struct SendText {
+    pub text: String,
+}
+
+/// `keymap.json`: `["terminal::SendKeystroke", "ctrl-l"]` — feeds one
+/// keystroke through the focused terminal's normal key handling (terminal
+/// modes, Alt-as-Meta), as if it had been typed. Binding a key to itself in
+/// the `Terminal` context forwards it to the shell instead of the app.
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = terminal, no_json)]
+pub struct SendKeystroke {
+    pub keystroke: String,
+}
+
+/// A running terminal, rendered with GPUI.
+///
+/// The terminal session itself lives in the shared [`TerminalRegistry`]
+/// (T03-005) and is reached through a cheap [`SessionHandle`] — the view only
+/// renders it and forwards input. Switching which tab is visible never touches
+/// the session, so background terminals keep running (T04-001).
+///
+/// [`TerminalRegistry`]: labonair_terminal::TerminalRegistry
+pub struct TerminalView {
+    theme: Entity<ThemeStore>,
+    background: BackgroundHost,
+    focus_handle: FocusHandle,
+    /// Handle to this tab's session in the registry.
+    handle: SessionHandle,
+    /// Grid size last pushed to the engine, to avoid redundant resizes.
+    grid: (usize, usize),
+    /// A grid change waiting out [`RESIZE_DEBOUNCE`]: target size + when it
+    /// was first seen. `resized` is false until the first size was applied.
+    resize_pending: Option<((usize, usize), Instant)>,
+    resized: bool,
+    /// Cell (width, height) in pixels from the last render — used to map mouse
+    /// positions to grid cells.
+    cell_size: (f32, f32),
+    /// Anchor cell of an in-progress drag selection, if the user is selecting.
+    drag_anchor: Option<(usize, usize)>,
+    /// Pixel size of this view's content area, captured each paint. Preferred
+    /// over the whole window's viewport so a terminal hosted in a split pane
+    /// sizes its grid to the pane, not the window (T04-002).
+    measured: Option<Size<Pixels>>,
+    /// Window-relative origin of this view's content area, captured each paint.
+    /// GPUI mouse-event positions are window-relative while grid cells are
+    /// painted relative to this view, so this is subtracted before mapping a
+    /// pixel position to a cell.
+    content_origin: Point<Pixels>,
+    /// Open right-click context menu anchor (when `terminalRightClickPastes`
+    /// is off — mirrors the reference `TerminalPane` `<ContextMenu>`).
+    menu: Option<Point<Pixels>>,
+    /// Current on/off phase of the blinking cursor (`terminalCursorBlink`).
+    blink_on: bool,
+    /// Whether this view held focus at its last paint — the blink task uses it
+    /// to skip repaints for background panes.
+    focused: bool,
+    /// Last time the terminal produced output or received input — the cursor is
+    /// held solid for one blink interval afterwards so it never blinks mid-type.
+    activity_at: Instant,
+    /// Command offered by the restore-time "Resume ...?" banner, until the user
+    /// resumes or dismisses it.
+    resume_offer: Option<String>,
+    /// SSH pane: Enter on an exited session asks the workspace to reconnect.
+    reconnectable: bool,
+    _poll: Task<()>,
+    _blink: Task<()>,
+}
+
+/// Emitted when the user presses Enter in an exited reconnectable (SSH) pane.
+pub struct ReconnectRequested;
+
+impl EventEmitter<ReconnectRequested> for TerminalView {}
+
+impl TerminalView {
+    /// Mark this pane as an SSH pane whose closed session Enter reconnects.
+    pub fn set_reconnectable(&mut self, reconnectable: bool) {
+        self.reconnectable = reconnectable;
+    }
+
+    /// Render the registry session behind `handle`.
+    pub fn new(
+        handle: SessionHandle,
+        theme: Entity<ThemeStore>,
+        background: BackgroundHost,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let focus_handle = cx.focus_handle();
+        window.focus(&focus_handle);
+
+        // Re-color the running shell when the theme changes.
+        cx.observe(&theme, |this, theme, cx| {
+            let colors = TerminalColors::from_theme(theme.read(cx).theme());
+            let _ = this.handle.set_colors(colors);
+            cx.notify();
+        })
+        .detach();
+
+        // Repaint when the background image / settings change.
+        cx.observe(background.pulse(), |_, _, cx| cx.notify())
+            .detach();
+
+        let event_handle = handle.clone();
+        let poll = cx.spawn(async move |view, cx| loop {
+            event_handle.wait_for_events().await;
+            let keep_going = view.update(cx, |this, cx| {
+                let events = this.handle.drain_events();
+                if events.is_empty() {
+                    return true;
+                }
+                let exited = events
+                    .iter()
+                    .any(|e| matches!(e, TerminalEvent::Exit | TerminalEvent::ChildExit(_)));
+                if events.iter().any(|e| matches!(e, TerminalEvent::Bell)) {
+                    let bell = labonair_settings::TerminalSettings::try_get(cx)
+                        .map(|s| s.bell())
+                        .unwrap_or(false);
+                    crate::bell::ring(bell);
+                }
+                // Fresh output — hold the cursor solid for one blink interval.
+                this.activity_at = Instant::now();
+                this.blink_on = true;
+                cx.notify();
+                !exited
+            });
+            if !matches!(keep_going, Ok(true)) {
+                break;
+            }
+        });
+
+        // Drive the blinking cursor. The interval is re-read every tick so a
+        // `terminalCursorBlinkInterval` change takes effect on the next toggle;
+        // the repaint is skipped unless this terminal is focused and the
+        // `terminalCursorBlink` preference is on, so idle/background panes stay
+        // quiet.
+        let blink = cx.spawn(async move |view, cx| loop {
+            let (ms, blink_pref) = view
+                .read_with(cx, |_, cx| {
+                    labonair_settings::TerminalSettings::try_get(cx)
+                        .map(|s| (s.cursor_blink_interval_ms(), s.cursor_blink()))
+                        .unwrap_or((1_000, true))
+                })
+                .unwrap_or((1_000, true));
+            cx.background_executor()
+                .timer(Duration::from_millis(ms))
+                .await;
+            if view
+                .update(cx, |this, cx| {
+                    this.blink_on = !this.blink_on;
+                    if blink_pref && this.focused {
+                        cx.notify();
+                    }
+                })
+                .is_err()
+            {
+                break;
+            }
+        });
+
+        Self {
+            theme,
+            background,
+            focus_handle,
+            handle,
+            grid: (80, 24),
+            resize_pending: None,
+            resized: false,
+            cell_size: (8.0, 16.0),
+            drag_anchor: None,
+            measured: None,
+            content_origin: Point::default(),
+            menu: None,
+            blink_on: true,
+            focused: false,
+            activity_at: Instant::now(),
+            resume_offer: None,
+            reconnectable: false,
+            _poll: poll,
+            _blink: blink,
+        }
+    }
+
+    /// The pending resume offer, if the user has not answered it yet.
+    pub fn resume_offer(&self) -> Option<&str> {
+        self.resume_offer.as_deref()
+    }
+
+    /// Show the one-click "Resume `command`?" banner (session restore).
+    pub fn offer_resume(&mut self, command: String, cx: &mut Context<Self>) {
+        self.resume_offer = Some(command);
+        cx.notify();
+    }
+
+    /// Resume button: type the offered command into the shell like the user.
+    fn accept_resume(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(command) = self.resume_offer.take() {
+            self.send_text(&format!("{command}\r"), cx);
+        }
+        window.focus(&self.focus_handle);
+    }
+
+    fn dismiss_resume(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.resume_offer = None;
+        window.focus(&self.focus_handle);
+        cx.notify();
+    }
+
+    fn render_resume_banner(&self, command: &str, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let palette = Palette::from_theme(self.theme.read(cx));
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .p(palette.space(8.0))
+            // Keep clicks on the banner from starting a terminal selection.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                banner(Severity::Info, palette)
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(SharedString::from(format!("Resume `{command}`?"))),
+                    )
+                    .child(
+                        button(
+                            "term-resume",
+                            palette,
+                            ButtonVariant::Filled,
+                            ButtonSize::Xs,
+                        )
+                        .child("Resume")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
+                                this.accept_resume(window, cx);
+                            },
+                        )),
+                    )
+                    .child(
+                        button(
+                            "term-resume-dismiss",
+                            palette,
+                            ButtonVariant::Subtle,
+                            ButtonSize::Xs,
+                        )
+                        .child("Dismiss")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
+                                this.dismiss_resume(window, cx);
+                            },
+                        )),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// Inline notice for a hosted session that lost its link to the
+    /// background host.
+    fn render_host_link_banner(
+        &self,
+        _link: HostedLink,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let palette = Palette::from_theme(self.theme.read(cx));
+        let (message, action) = ("Background host disconnected", "Reconnect");
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .p(palette.space(8.0))
+            // Keep clicks on the banner from starting a terminal selection.
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                banner(Severity::Warning, palette)
+                    .child(div().flex_1().child(SharedString::from(message)))
+                    .child(
+                        button(
+                            "term-host-reattach",
+                            palette,
+                            ButtonVariant::Filled,
+                            ButtonSize::Xs,
+                        )
+                        .child(action)
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
+                                let result = this.handle.reattach();
+                                labonair_notifications::notify_err(
+                                    "Could not reattach the session",
+                                    result,
+                                    cx,
+                                );
+                                window.focus(&this.focus_handle);
+                                cx.notify();
+                            },
+                        )),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_shared_host_status(
+        &self,
+        status: HostedAttachmentStatus,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let palette = Palette::from_theme(self.theme.read(cx));
+        let message = if status.controls_resize {
+            format!(
+                "Shared by {} views · this view controls terminal size",
+                status.attached_count
+            )
+        } else {
+            format!(
+                "Shared by {} views · another view controls terminal size",
+                status.attached_count
+            )
+        };
+        let status = div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .p(palette.space(8.0))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                banner(Severity::Info, palette)
+                    .child(div().flex_1().child(SharedString::from(message)))
+                    .when(!status.controls_resize, |banner| {
+                        banner.child(
+                            button(
+                                "term-request-resize-control",
+                                palette,
+                                ButtonVariant::Subtle,
+                                ButtonSize::Xs,
+                            )
+                            .child("Take resize control")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, window, cx| {
+                                    let result = this.handle.request_host_resize_control();
+                                    labonair_notifications::notify_err(
+                                        "Could not take terminal resize control",
+                                        result,
+                                        cx,
+                                    );
+                                    window.focus(&this.focus_handle);
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                    }),
+            );
+        status.into_any_element()
+    }
+
+    /// The session this view renders.
+    pub fn handle(&self) -> &SessionHandle {
+        &self.handle
+    }
+
+    /// Focus the terminal surface (called by the workspace on tab switch).
+    pub fn focus(&self, window: &mut Window) {
+        window.focus(&self.focus_handle);
+    }
+
+    /// The shell's current working directory (OSC 7 shell integration), if
+    /// known. Surfaced to the status bar / breadcrumb and used as the starting
+    /// directory for new tabs (Phase 03).
+    pub fn cwd(&self) -> Option<String> {
+        self.handle.with(|s| s.cwd())
+    }
+
+    /// Scan the recent terminal output for a local dev-server URL
+    /// (`http://localhost:3000`, `127.0.0.1:5173`, …) — drives the statusbar
+    /// `previewUrl` item. Returns the most recently printed match.
+    pub fn preview_url(&self) -> Option<String> {
+        let ctx = self.handle.with(|s| s.ai_context(200)).ok()?;
+        detect_preview_url(&ctx.lines)
+    }
+
+    /// The last `n` visible/scrollback lines of this terminal — feeds the AI
+    /// live bridge's `terminal_context`.
+    pub fn recent_lines(&self, n: usize) -> Vec<String> {
+        self.handle
+            .with(|s| s.ai_context(n))
+            .ok()
+            .map(|c| c.lines)
+            .unwrap_or_default()
+    }
+
+    /// The process/window title set via OSC 0/2, if any.
+    pub fn shell_title(&self) -> Option<String> {
+        self.handle
+            .with(|s| s.metadata().ok().and_then(|m| m.title))
+    }
+
+    /// Read the two shell-integration fields needed by Workspace in one
+    /// emulator lock instead of taking one lock per field.
+    pub fn shell_meta(&self) -> (Option<String>, Option<String>) {
+        self.handle.with(|s| {
+            s.metadata()
+                .ok()
+                .map(|meta| (meta.cwd, meta.title))
+                .unwrap_or_default()
+        })
+    }
+
+    /// Start / update a literal scrollback search (T18-002 search overlay).
+    /// Returns `(current_1_based, total)` — `(0, 0)` on an empty query.
+    pub fn search_set(
+        &self,
+        query: &str,
+        case_sensitive: bool,
+        cx: &mut Context<Self>,
+    ) -> (usize, usize) {
+        let r = self
+            .handle
+            .with(|s| s.search_set(query, case_sensitive))
+            .unwrap_or((0, 0));
+        cx.notify();
+        r
+    }
+
+    /// Step to the next / previous match. Returns `(current, total)`.
+    pub fn search_step(&self, forward: bool, cx: &mut Context<Self>) -> (usize, usize) {
+        let r = self
+            .handle
+            .with(|s| s.search_step(forward))
+            .unwrap_or((0, 0));
+        cx.notify();
+        r
+    }
+
+    /// Drop the search state / clear the match highlight.
+    pub fn search_end(&self, cx: &mut Context<Self>) {
+        let _ = self.handle.with(|s| s.search_clear());
+        cx.notify();
+    }
+
+    /// The current terminal mode snapshot (falls back to defaults on error).
+    fn mode(&self) -> ModeState {
+        self.handle
+            .with(|s| s.mode_state().ok())
+            .unwrap_or_default()
+    }
+
+    /// Map a window-relative pixel position to a viewport cell `(col, row)`,
+    /// clamped to the grid.
+    fn cell_at(&self, pos: Point<gpui::Pixels>) -> (usize, usize) {
+        let (cw, ch) = self.cell_size;
+        let (cols, rows) = self.grid;
+        let local = pos - self.content_origin;
+        let col = (f32::from(local.x).max(0.0) / cw) as usize;
+        let row = (f32::from(local.y).max(0.0) / ch) as usize;
+        (
+            col.min(cols.saturating_sub(1)),
+            row.min(rows.saturating_sub(1)),
+        )
+    }
+
+    /// The current terminal selection text, if any ("Ask AI about Selection").
+    pub fn selection_text(&self) -> Option<String> {
+        self.handle
+            .with(|s| s.selection_text())
+            .ok()
+            .flatten()
+            .filter(|t| !t.is_empty())
+    }
+
+    pub fn copy_selection(&self, cx: &mut Context<Self>) {
+        if let Ok(Some(text)) = self.handle.with(|s| s.selection_text()) {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
+    }
+
+    pub fn paste_from_clipboard(&self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) else {
+            return;
+        };
+        if text.is_empty() {
+            return;
+        }
+        let bracketed = self.mode().bracketed_paste;
+        self.send_input(&paste_payload(&text, bracketed));
+        self.snap_to_bottom();
+    }
+
+    /// Paste the clipboard as plain input, without bracketed-paste wrapping
+    /// (`terminal::PasteText`).
+    pub fn paste_text(&self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) else {
+            return;
+        };
+        if !text.is_empty() {
+            self.send_input(&paste_payload(&text, false));
+            self.snap_to_bottom();
+        }
+    }
+
+    fn scroll_lines(&self, delta: i32) {
+        self.scroll(Scroll::Delta(delta));
+    }
+
+    pub fn scroll(&self, scroll: Scroll) {
+        let _ = self.handle.with(|s| s.scroll(scroll));
+    }
+
+    /// Encode `ks` for the PTY with the live terminal modes and send it.
+    /// Shared by real key presses and `terminal::SendKeystroke`.
+    fn process_keystroke(&mut self, ks: &Keystroke, cx: &mut Context<Self>) {
+        let option_as_meta = labonair_settings::TerminalSettings::try_get(cx)
+            .map(|s| s.option_as_meta())
+            .unwrap_or(false);
+        let Some(input) = keystroke_to_input(ks, option_as_meta) else {
+            return;
+        };
+        if let Some(bytes) = key_to_bytes(&input, &self.mode()) {
+            self.send_input(&bytes);
+            self.after_input(cx);
+        }
+    }
+
+    /// `terminal::SendText`: write `text` verbatim.
+    fn send_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.send_input(text.as_bytes());
+        self.after_input(cx);
+    }
+
+    fn after_input(&mut self, cx: &mut Context<Self>) {
+        self.snap_to_bottom();
+        let _ = self.handle.with(|s| s.clear_selection());
+        self.activity_at = Instant::now();
+        self.blink_on = true;
+        cx.notify();
+    }
+
+    pub fn snap_to_bottom(&self) {
+        let _ = self.handle.with(|s| s.scroll(Scroll::Bottom));
+    }
+
+    pub fn scroll_to_top(&self) {
+        let _ = self.handle.with(|s| s.scroll(Scroll::Top));
+    }
+
+    /// Full terminal reset (`ESC c`): clears screen, scrollback and modes.
+    pub fn reset(&self) {
+        self.send_input(b"\x1bc");
+    }
+
+    fn send_input(&self, bytes: &[u8]) {
+        let _ = self.handle.write(bytes);
+    }
+}
+
+impl Focusable for TerminalView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for TerminalView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let store = self.theme.read(cx);
+        let colors = TerminalColors::from_theme(store.theme());
+        let base_font = store.terminal_font();
+        let font_px = store.terminal_font_size();
+        let line_height = store.terminal_line_height();
+
+        let font_id = cx.text_system().resolve_font(&base_font);
+        let cell_w = cx
+            .text_system()
+            .ch_advance(font_id, px(font_px))
+            .map(f32::from)
+            .unwrap_or(font_px * 0.6)
+            .max(1.0);
+        let cell_h = (font_px * line_height).ceil().max(1.0);
+
+        // The terminal surface goes translucent while a background image shows
+        // through (`ThemeStore::terminal_background` carries that alpha), on
+        // top of the user's own `terminalOpacity`.
+        let surface_alpha = store.terminal_background().a;
+        let opacity = ((terminal_opacity(cx) as f32 / 100.0) * surface_alpha).clamp(0.05, 1.0);
+        let mut translucent = opacity < 1.0;
+        let default_bg = colors.background;
+        let bg = to_hsla(colors.background, opacity);
+        let fg = to_hsla(colors.foreground, 1.0);
+
+        let exited = match self.handle.status() {
+            SessionStatus::Running => None,
+            SessionStatus::Exited(code) => Some(code),
+        };
+
+        self.cell_size = (cell_w, cell_h);
+        let reconnectable = self.reconnectable;
+
+        // Wait for this view's first measured bounds before resizing. The
+        // window viewport includes the shell chrome and is larger than the
+        // terminal surface, so using it here would resize the PTY twice while
+        // the shell is starting.
+        let (cols, rows) = self.measured.map_or(self.grid, |viewport| {
+            grid_size(
+                f32::from(viewport.width),
+                f32::from(viewport.height),
+                cell_w,
+                cell_h,
+            )
+        });
+        // Root cause of garbled prompts while dragging a divider / the window:
+        // every intermediate grid size used to hit the emulator (reflow) and
+        // the PTY (SIGWINCH -> the shell redraws its prompt) immediately, so
+        // each frame left a reflowed prompt copy behind. Only the settled size
+        // is applied; the first measured size goes through at once.
+        if (cols, rows) == self.grid {
+            self.resize_pending = None;
+        } else {
+            let now = Instant::now();
+            let since = match self.resize_pending {
+                Some((target, at)) if target == (cols, rows) => at,
+                _ => now,
+            };
+            if !self.resized || now.duration_since(since) >= RESIZE_DEBOUNCE {
+                self.resized = true;
+                self.resize_pending = None;
+                self.grid = (cols, rows);
+                let _ = self.handle.resize(TermDimensions {
+                    columns: cols,
+                    screen_lines: rows,
+                    cell_width: cell_w.round().max(1.0) as u16,
+                    cell_height: cell_h as u16,
+                });
+            } else {
+                let first = self.resize_pending.is_none_or(|(t, _)| t != (cols, rows));
+                self.resize_pending = Some(((cols, rows), since));
+                if first {
+                    // Re-render once the size has been stable for the debounce.
+                    cx.spawn(async move |view, cx| {
+                        cx.background_executor().timer(RESIZE_DEBOUNCE).await;
+                        let _ = view.update(cx, |_, cx| cx.notify());
+                    })
+                    .detach();
+                }
+            }
+        }
+
+        let screen: RenderableScreen =
+            self.handle
+                .with(|s| s.render())
+                .unwrap_or_else(|_| RenderableScreen {
+                    columns: cols,
+                    screen_lines: rows,
+                    display_offset: 0,
+                    cursor: labonair_terminal::RenderableCursor {
+                        line: 0,
+                        column: 0,
+                        shape: CursorShape::Block,
+                        blinking: false,
+                    },
+                    cells: Vec::new(),
+                    selection: Vec::new(),
+                    search: Vec::new(),
+                });
+
+        // Background image overlay (only when the target is Terminal-only;
+        // App/Both is painted window-wide by the app root instead).
+        let background_layer = self.background.layer(cx, LayerScope::Terminal);
+        // Default-background cells would hide that layer, so they paint
+        // nothing while it is present.
+        translucent |= background_layer.is_some();
+
+        let runs = batch_runs(&screen);
+        let bold_font = {
+            let mut f = base_font.clone();
+            f.weight = FontWeight::BOLD;
+            f
+        };
+
+        let cell = |x: usize, y: usize| (px(x as f32 * cell_w), px(y as f32 * cell_h));
+
+        let run_elements = runs.into_iter().map(|run: StyledRun| {
+            let (left, top) = cell(run.start_col, run.line);
+            let text_color = if run.style.hidden {
+                to_hsla(run.style.bg, 1.0)
+            } else {
+                to_hsla(run.style.fg, 1.0)
+            };
+            // When the terminal is translucent, cells that keep the default
+            // background paint nothing so the wallpaper / desktop shows through.
+            let paint_bg = !(translucent && run.style.bg == default_bg);
+            let mut el = div()
+                .absolute()
+                .left(left)
+                .top(top)
+                .w(px(run.width() as f32 * cell_w))
+                .h(px(cell_h))
+                .when(paint_bg, |el| el.bg(to_hsla(run.style.bg, 1.0)))
+                .text_color(text_color)
+                .text_size(px(font_px))
+                .line_height(px(cell_h))
+                .whitespace_nowrap()
+                .font(if run.style.bold {
+                    bold_font.clone()
+                } else {
+                    base_font.clone()
+                });
+            if run.style.italic {
+                el = el.italic();
+            }
+            if run.style.underline {
+                el = el.underline();
+            }
+            if run.style.strikeout {
+                el = el.line_through();
+            }
+            el.child(SharedString::from(run.text))
+        });
+
+        let selection_color = to_hsla(colors.selection, colors.selection_alpha.clamp(0.0, 1.0));
+        let selection_elements = screen.selection.clone().into_iter().map(move |span| {
+            let (left, top) = cell(span.start_col, span.line);
+            div()
+                .absolute()
+                .left(left)
+                .top(top)
+                .w(px((span.end_col - span.start_col) as f32 * cell_w))
+                .h(px(cell_h))
+                .bg(selection_color)
+        });
+
+        // Inactive search matches (the active one is drawn as the selection).
+        let search_color = to_hsla(colors.foreground, 0.16);
+        let search_elements = screen.search.clone().into_iter().map(move |span| {
+            let (left, top) = cell(span.start_col, span.line);
+            div()
+                .absolute()
+                .left(left)
+                .top(top)
+                .w(px((span.end_col - span.start_col) as f32 * cell_w))
+                .h(px(cell_h))
+                .bg(search_color)
+        });
+
+        // Blink: hide the cursor on the "off" phase, but only while the view is
+        // focused and no key/output landed within the last blink interval.
+        self.focused = self.focus_handle.is_focused(window);
+        let active = self.focused && window.is_window_active();
+        let blink_ms = labonair_settings::TerminalSettings::try_get(cx)
+            .map(|s| s.cursor_blink_interval_ms())
+            .unwrap_or(1_000);
+        let cursor_hidden = screen.cursor.blinking
+            && self.focused
+            && !self.blink_on
+            && self.activity_at.elapsed() >= Duration::from_millis(blink_ms);
+        let cursor_element = cursor_overlay(
+            &screen,
+            cell_w,
+            cell_h,
+            to_hsla(colors.cursor, 1.0),
+            cursor_hidden,
+            active,
+        );
+
+        let view = cx.weak_entity();
+        let size_probe = canvas(
+            move |bounds, _window, cx| {
+                let _ = view.update(cx, |this, cx| {
+                    this.content_origin = bounds.origin;
+                    if this.measured != Some(bounds.size) {
+                        this.measured = Some(bounds.size);
+                        cx.notify();
+                    }
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full();
+
+        div()
+            .id("terminal")
+            .track_focus(&self.focus_handle)
+            .key_context("Terminal")
+            .relative()
+            .size_full()
+            .overflow_hidden()
+            .bg(bg)
+            .text_color(fg)
+            .child(size_probe)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, ev: &MouseDownEvent, window, cx| {
+                    window.focus(&this.focus_handle);
+                    let cell = this.cell_at(ev.position);
+                    let mode = this.mode();
+                    let mods = to_term_mods(&ev.modifiers);
+                    // Shift bypasses mouse reporting so text selection remains
+                    // available in TUIs such as vim and Claude Code.
+                    let report = if ev.modifiers.shift {
+                        None
+                    } else {
+                        mouse_report(
+                            &MouseInput {
+                                button: TermMouseButton::Left,
+                                kind: MouseEventKind::Press,
+                                col: cell.0,
+                                row: cell.1,
+                                mods,
+                            },
+                            &mode,
+                        )
+                    };
+                    if let Some(bytes) = report {
+                        this.send_input(&bytes);
+                    } else if ev.click_count >= 2 {
+                        // Double-click: select the word under the cursor using
+                        // the configured `terminalWordSeparator` set.
+                        this.drag_anchor = None;
+                        let selected = this
+                            .handle
+                            .with(|s| s.select_word_at(cell))
+                            .unwrap_or(false);
+                        if selected && copy_on_select(cx) {
+                            this.copy_selection(cx);
+                        }
+                    } else {
+                        // Native selection: anchor here, clear any old selection.
+                        this.drag_anchor = Some(cell);
+                        let _ = this.handle.with(|s| s.clear_selection());
+                    }
+                    cx.notify();
+                }),
+            )
+            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _window, cx| {
+                let Some(anchor) = this.drag_anchor else {
+                    // No native selection: forward drags/motion to the program
+                    // (TUIs like Claude Code do their own selection).
+                    if !ev.modifiers.shift {
+                        let cell = this.cell_at(ev.position);
+                        let pressed = ev.pressed_button == Some(MouseButton::Left);
+                        if let Some(bytes) = mouse_report(
+                            &MouseInput {
+                                button: TermMouseButton::Left,
+                                kind: if pressed {
+                                    MouseEventKind::Drag
+                                } else {
+                                    MouseEventKind::Motion
+                                },
+                                col: cell.0,
+                                row: cell.1,
+                                mods: to_term_mods(&ev.modifiers),
+                            },
+                            &this.mode(),
+                        ) {
+                            this.send_input(&bytes);
+                        }
+                    }
+                    return;
+                };
+                if ev.pressed_button != Some(MouseButton::Left) {
+                    // The release was lost (outside the element / swallowed
+                    // by an overlay): end the drag instead of selecting on.
+                    this.drag_anchor = None;
+                    return;
+                }
+                let head = this.cell_at(ev.position);
+                let _ = this.handle.with(|s| s.update_selection(anchor, head));
+                cx.notify();
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, ev: &MouseUpEvent, _window, cx| {
+                    let cell = this.cell_at(ev.position);
+                    let mode = this.mode();
+                    // A press that started a native selection owns its release.
+                    let report = if this.drag_anchor.is_some() {
+                        None
+                    } else {
+                        mouse_report(
+                            &MouseInput {
+                                button: TermMouseButton::Left,
+                                kind: MouseEventKind::Release,
+                                col: cell.0,
+                                row: cell.1,
+                                mods: to_term_mods(&ev.modifiers),
+                            },
+                            &mode,
+                        )
+                    };
+                    if let Some(bytes) = report {
+                        this.send_input(&bytes);
+                    } else if this.drag_anchor.is_some() && copy_on_select(cx) {
+                        // Copy-on-select — gated by the terminal preference (T13-003).
+                        this.copy_selection(cx);
+                    }
+                    this.drag_anchor = None;
+                    cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                    // Reference `TerminalPane`: `terminalRightClickPastes` pref
+                    // toggles between paste-on-right-click and a context menu.
+                    // T19-002: real `TerminalSettings::get(cx)` consumer (was
+                    // `GlobalPreferences`).
+                    let pastes = labonair_settings::TerminalSettings::try_get(cx)
+                        .map(|s| s.right_click_pastes())
+                        .unwrap_or(false);
+                    if pastes {
+                        this.paste_from_clipboard(cx);
+                    } else {
+                        this.menu = Some(ev.position);
+                    }
+                    cx.notify();
+                }),
+            )
+            .on_scroll_wheel(
+                cx.listener(move |this, ev: &ScrollWheelEvent, _window, cx| {
+                    let lines = match ev.delta {
+                        ScrollDelta::Lines(p) => p.y,
+                        ScrollDelta::Pixels(p) => f32::from(p.y) / cell_h,
+                    };
+                    let step = lines.round() as i32;
+                    if step == 0 {
+                        return;
+                    }
+                    // `terminalScrollSensitivity` scales every notch;
+                    // `terminalFastScrollModifier`, held, multiplies by 5.
+                    let (sensitivity, fast) = labonair_settings::TerminalSettings::try_get(cx)
+                        .map(|s| {
+                            (
+                                s.scroll_sensitivity() as i32,
+                                fast_scroll_held(&ev.modifiers, s.fast_scroll_modifier()),
+                            )
+                        })
+                        .unwrap_or((1, false));
+                    let step = step * sensitivity.max(1) * if fast { 5 } else { 1 };
+                    let cell = this.cell_at(ev.position);
+                    match wheel_action(
+                        &WheelInput {
+                            lines: step,
+                            col: cell.0,
+                            row: cell.1,
+                            mods: to_term_mods(&ev.modifiers),
+                        },
+                        &this.mode(),
+                    ) {
+                        WheelAction::Bytes(bytes) => this.send_input(&bytes),
+                        WheelAction::Scrollback(n) if n != 0 => this.scroll_lines(n),
+                        WheelAction::Scrollback(_) => {}
+                    }
+                    cx.notify();
+                }),
+            )
+            .on_action(cx.listener(|this, action: &SendText, _window, cx| {
+                this.send_text(&action.text, cx);
+            }))
+            .on_action(cx.listener(|this, action: &SendKeystroke, _window, cx| {
+                match Keystroke::parse(&action.keystroke) {
+                    Ok(ks) => this.process_keystroke(&ks, cx),
+                    Err(error) => tracing::warn!(
+                        keystroke = %action.keystroke,
+                        %error,
+                        "terminal::SendKeystroke: unparseable keystroke"
+                    ),
+                }
+            }))
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
+                let ks = &ev.keystroke;
+                if this.reconnectable
+                    && ks.key == "enter"
+                    && !ks.modifiers.modified()
+                    && matches!(this.handle.status(), SessionStatus::Exited(_))
+                {
+                    cx.emit(ReconnectRequested);
+                    return;
+                }
+                this.process_keystroke(ks, cx);
+            }))
+            .on_drop(cx.listener(|this, d: &DraggedPaths, _window, _cx| {
+                // Explorer file dragged onto the terminal → insert its quoted
+                // path(s), like the reference "drag file into shell" workflow.
+                if d.paths.is_empty() {
+                    return;
+                }
+                let text = format!("{} ", quote_paths(&d.paths));
+                this.send_input(text.as_bytes());
+            }))
+            .children(background_layer)
+            .children(run_elements)
+            .children(search_elements)
+            .children(selection_elements)
+            .children(cursor_element)
+            .when_some(exited, |el, code| {
+                el.child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .px_3()
+                        .py_1()
+                        .bg(with_alpha(fg, 0.08))
+                        .text_color(fg)
+                        .text_size(px(font_px))
+                        .child(SharedString::from(if reconnectable {
+                            "Connection closed \u{2014} press Enter to reconnect, \u{2318}W to close this tab".to_string()
+                        } else {
+                            format!("Shell exited ({code}) \u{2014} press \u{2318}W to close this tab")
+                        })),
+                )
+            })
+            .children(
+                self.resume_offer
+                    .clone()
+                    .map(|command| self.render_resume_banner(&command, cx)),
+            )
+            .children(
+                self.handle
+                    .hosted_link()
+                    .filter(|link| *link != HostedLink::Live)
+                    .map(|link| self.render_host_link_banner(link, cx)),
+            )
+            .children(
+                self.handle
+                    .hosted_attachment_status()
+                    .filter(|status| status.attached_count > 1)
+                    .map(|status| self.render_shared_host_status(status, cx)),
+            )
+            .children(self.menu.map(|pos| self.render_menu(pos, cx)))
+            .into_any_element()
+    }
+}
+
+impl TerminalView {
+    fn render_menu(&self, pos: Point<Pixels>, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let has_selection = self
+            .handle
+            .with(|s| s.selection_text())
+            .ok()
+            .flatten()
+            .is_some_and(|t| !t.is_empty());
+        let view = cx.entity();
+        let items = vec![
+            MenuItem::new("term-copy", "Copy")
+                .icon(IconName::Copy)
+                .disabled(!has_selection)
+                .on_click({
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.menu = None;
+                            this.copy_selection(cx);
+                        })
+                    }
+                }),
+            MenuItem::new("term-paste", "Paste").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.menu = None;
+                        this.paste_from_clipboard(cx);
+                    })
+                }
+            }),
+            MenuItem::new("term-clear", "Clear").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, _cx| {
+                        this.menu = None;
+                        this.send_input(b"\x0c");
+                    })
+                }
+            }),
+        ];
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.menu = None;
+                    cx.notify();
+                })
+            }
+        };
+        context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        )
+    }
+}
+
+/// The cursor overlay div, or `None` when the cursor is hidden (blink "off"
+/// phase, `CursorShape::Hidden`, or scrolled out of view).
+fn cursor_overlay(
+    screen: &RenderableScreen,
+    cell_w: f32,
+    cell_h: f32,
+    color: Hsla,
+    blink_hidden: bool,
+    active: bool,
+) -> Option<gpui::Div> {
+    if blink_hidden || screen.display_offset != 0 {
+        return None;
+    }
+    let cur = screen.cursor;
+    if cur.line < 0 || cur.line as usize >= screen.screen_lines {
+        return None;
+    }
+    let x = px(cur.column as f32 * cell_w);
+    let y = px(cur.line as f32 * cell_h);
+    let base = div().absolute();
+    // Without focus every shape degrades to the outline (xterm's
+    // `cursorInactiveStyle: "outline"`), so only the focused pane looks live.
+    let shape = if active || cur.shape == CursorShape::Hidden {
+        cur.shape
+    } else {
+        CursorShape::HollowBlock
+    };
+    Some(match shape {
+        CursorShape::Hidden => return None,
+        // xterm's bar cursor is `cursorWidth` CSS px wide (default 1, and the
+        // reference never overrides it — `rendererPool.ts::termOptions`).
+        CursorShape::Beam => base.left(x).top(y).w(px(1.0)).h(px(cell_h)).bg(color),
+        // xterm's underline cursor is a 1px rule on the cell's baseline edge.
+        CursorShape::Underline => base
+            .left(x)
+            .top(px(cur.line as f32 * cell_h + cell_h - 1.0))
+            .w(px(cell_w))
+            .h(px(1.0))
+            .bg(color),
+        // Inactive/unfocused block: xterm's `cursorInactiveStyle: "outline"`
+        // (`terminalSessionRegistry.ts`) — a 1px ring, no fill.
+        CursorShape::HollowBlock => base
+            .left(x)
+            .top(y)
+            .w(px(cell_w))
+            .h(px(cell_h))
+            .border_1()
+            .border_color(color),
+        // Focused block: translucent fill so the glyph shows through (we don't
+        // repaint the glyph in the background color the way xterm does).
+        _ => base
+            .left(x)
+            .top(y)
+            .w(px(cell_w))
+            .h(px(cell_h))
+            .bg(with_alpha(color, 0.55)),
+    })
+}
+
+/// Terminal background opacity in percent from the live preferences (T13-003).
+/// T19-002: real `TerminalSettings::get(cx)` consumer (was `GlobalPreferences`).
+fn terminal_opacity(cx: &App) -> u32 {
+    labonair_settings::TerminalSettings::try_get(cx)
+        .map(|s| s.terminal_opacity())
+        .unwrap_or(100)
+}
+
+/// Whether selecting text should copy it to the clipboard (T13-003).
+/// T19-002: real `TerminalSettings::get(cx)` consumer (was `GlobalPreferences`).
+fn copy_on_select(cx: &App) -> bool {
+    labonair_settings::TerminalSettings::try_get(cx)
+        .map(|s| s.copy_on_select())
+        .unwrap_or(false)
+}
+
+/// Whether the configured `terminalFastScrollModifier` is currently held.
+fn fast_scroll_held(
+    mods: &gpui::Modifiers,
+    modifier: labonair_settings::content::terminal::FastScrollModifier,
+) -> bool {
+    use labonair_settings::content::terminal::FastScrollModifier as M;
+    match modifier {
+        M::None => false,
+        M::Alt => mods.alt,
+        M::Ctrl => mods.control,
+        M::Shift => mods.shift,
+    }
+}
+
+fn to_hsla(c: Rgb, alpha: f32) -> Hsla {
+    gpui::Rgba {
+        r: c.r as f32 / 255.0,
+        g: c.g as f32 / 255.0,
+        b: c.b as f32 / 255.0,
+        a: alpha,
+    }
+    .into()
+}
+
+fn with_alpha(mut color: Hsla, alpha: f32) -> Hsla {
+    color.a = alpha;
+    color
+}
+
+/// Translate GPUI [`Modifiers`](gpui::Modifiers) to the engine's [`Modifiers`].
+fn to_term_mods(m: &gpui::Modifiers) -> Modifiers {
+    Modifiers {
+        shift: m.shift,
+        alt: m.alt,
+        ctrl: m.control,
+        logo: m.platform,
+    }
+}
+
+/// Map a GPUI keystroke to a framework-agnostic [`KeyInput`] for
+/// [`key_to_bytes`]. Returns `None` for keys the terminal never consumes (bare
+/// modifiers, unknown named keys).
+///
+/// With `option_as_meta`, Option+key encodes the base key (`ESC b`) rather
+/// than the platform-composed character (`∫`).
+fn keystroke_to_input(ks: &Keystroke, option_as_meta: bool) -> Option<KeyInput> {
+    let mods = to_term_mods(&ks.modifiers);
+    let key = ks.key.as_str();
+
+    let named = match key {
+        "enter" => Some(NamedKey::Enter),
+        "tab" => Some(NamedKey::Tab),
+        "backspace" => Some(NamedKey::Backspace),
+        "escape" => Some(NamedKey::Escape),
+        "space" => Some(NamedKey::Space),
+        "up" => Some(NamedKey::Up),
+        "down" => Some(NamedKey::Down),
+        "left" => Some(NamedKey::Left),
+        "right" => Some(NamedKey::Right),
+        "home" => Some(NamedKey::Home),
+        "end" => Some(NamedKey::End),
+        "pageup" => Some(NamedKey::PageUp),
+        "pagedown" => Some(NamedKey::PageDown),
+        "insert" => Some(NamedKey::Insert),
+        "delete" => Some(NamedKey::Delete),
+        _ => key
+            .strip_prefix('f')
+            .and_then(|n| n.parse::<u8>().ok())
+            .filter(|n| (1..=20).contains(n))
+            .map(NamedKey::Function),
+    };
+
+    if let Some(named) = named {
+        return Some(KeyInput {
+            key: Key::Named(named),
+            mods,
+            text: None,
+        });
+    }
+
+    // Text-producing key. Prefer the platform-resolved char; for Ctrl combos
+    // GPUI often reports no `key_char`, so fall back to the key name.
+    let key_char = ks
+        .key_char
+        .clone()
+        .filter(|_| !(option_as_meta && ks.modifiers.alt));
+    let ch = key_char
+        .as_deref()
+        .filter(|t| t.chars().count() == 1)
+        .and_then(|t| t.chars().next())
+        .or_else(|| {
+            let mut it = key.chars();
+            match (it.next(), it.next()) {
+                // A parsed keystroke (`shift-a`) has no `key_char`.
+                (Some(c), None) if ks.modifiers.shift && c.is_ascii_alphabetic() => {
+                    Some(c.to_ascii_uppercase())
+                }
+                (Some(c), None) => Some(c),
+                _ => None,
+            }
+        })?;
+
+    Some(KeyInput {
+        key: Key::Char(ch),
+        mods,
+        text: key_char,
+    })
+}
+
+/// Find a local dev-server URL in terminal output. Scans newest line first and
+/// only accepts loopback hosts (`localhost` / `127.0.0.1` / `0.0.0.0` / `[::1]`).
+pub fn detect_preview_url(lines: &[String]) -> Option<String> {
+    const LOOPBACK: [&str; 4] = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"];
+    for line in lines.iter().rev() {
+        for scheme in ["https://", "http://"] {
+            let Some(i) = line.find(scheme) else { continue };
+            let rest = &line[i..];
+            let end = rest
+                .find(|c: char| {
+                    c.is_whitespace() || matches!(c, '"' | '\'' | ')' | ']' | '>' | ',' | '`')
+                })
+                .unwrap_or(rest.len());
+            let url = rest[..end].trim_end_matches(['.', ':', '/']);
+            let host = &url[scheme.len()..];
+            if LOOPBACK.iter().any(|h| host.starts_with(h)) {
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_preview_url_finds_loopback() {
+        let lines = vec![
+            "  VITE v5.0  ready in 200 ms".to_string(),
+            "  ➜  Local:   http://localhost:5173/".to_string(),
+            "  ➜  Network: http://192.168.1.5:5173/".to_string(),
+        ];
+        assert_eq!(
+            detect_preview_url(&lines),
+            Some("http://localhost:5173".to_string())
+        );
+        assert_eq!(detect_preview_url(&["no url here".to_string()]), None);
+        assert_eq!(
+            detect_preview_url(&["listening on http://127.0.0.1:3000".to_string()]),
+            Some("http://127.0.0.1:3000".to_string())
+        );
+    }
+
+    fn ks(key: &str, mods: gpui::Modifiers) -> Keystroke {
+        Keystroke {
+            modifiers: mods,
+            key: key.into(),
+            key_char: None,
+        }
+    }
+
+    fn bytes(ks: &Keystroke) -> Option<Vec<u8>> {
+        key_to_bytes(&keystroke_to_input(ks, false)?, &ModeState::default())
+    }
+
+    #[test]
+    fn control_letter_maps_to_control_byte() {
+        let m = gpui::Modifiers {
+            control: true,
+            ..Default::default()
+        };
+        assert_eq!(bytes(&ks("c", m)), Some(vec![0x03]));
+    }
+
+    #[test]
+    fn named_keys_map_to_expected_sequences() {
+        let m = gpui::Modifiers::default();
+        assert_eq!(bytes(&ks("enter", m)), Some(vec![b'\r']));
+        assert_eq!(bytes(&ks("backspace", m)), Some(vec![0x7f]));
+        assert_eq!(bytes(&ks("up", m)), Some(vec![0x1b, b'[', b'A']));
+        assert_eq!(bytes(&ks("f5", m)), Some(b"\x1b[15~".to_vec()));
+    }
+
+    #[test]
+    fn app_cursor_mode_changes_arrow_keys() {
+        let mode = ModeState {
+            app_cursor: true,
+            ..ModeState::default()
+        };
+        let input = keystroke_to_input(&ks("left", gpui::Modifiers::default()), false).unwrap();
+        assert_eq!(key_to_bytes(&input, &mode), Some(vec![0x1b, b'O', b'D']));
+    }
+
+    #[test]
+    fn option_as_meta_sends_the_base_key_not_the_composed_char() {
+        let alt = gpui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        let mut k = ks("b", alt);
+        k.key_char = Some("\u{222b}".into()); // macOS Option+B
+        let input = keystroke_to_input(&k, true).unwrap();
+        assert_eq!(
+            key_to_bytes(&input, &ModeState::default()),
+            Some(vec![0x1b, b'b'])
+        );
+    }
+
+    #[test]
+    fn parsed_keystrokes_encode_like_typed_ones() {
+        let enc = |s: &str| bytes(&Keystroke::parse(s).unwrap());
+        assert_eq!(enc("ctrl-l"), Some(vec![0x0c]));
+        assert_eq!(enc("alt-b"), Some(vec![0x1b, b'b']));
+        assert_eq!(enc("shift-a"), Some(vec![b'A']));
+        assert_eq!(enc("escape"), Some(vec![0x1b]));
+        assert_eq!(enc("cmd-l"), None);
+    }
+
+    #[test]
+    fn printable_char_passes_through_and_alt_prefixes_escape() {
+        let m = gpui::Modifiers::default();
+        let mut k = ks("a", m);
+        k.key_char = Some("a".into());
+        assert_eq!(bytes(&k), Some(vec![b'a']));
+
+        let alt = gpui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        let mut k = ks("b", alt);
+        k.key_char = Some("b".into());
+        assert_eq!(bytes(&k), Some(vec![0x1b, b'b']));
+    }
+
+    #[test]
+    fn platform_shortcuts_produce_no_pty_bytes() {
+        let m = gpui::Modifiers {
+            platform: true,
+            ..Default::default()
+        };
+        let mut k = ks("c", m);
+        k.key_char = Some("c".into());
+        assert_eq!(bytes(&k), None);
+    }
+
+    #[test]
+    fn to_hsla_maps_white_and_black() {
+        let white = to_hsla(
+            Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
+            1.0,
+        );
+        assert!(white.l > 0.99);
+        let black = to_hsla(Rgb { r: 0, g: 0, b: 0 }, 1.0);
+        assert!(black.l < 0.01);
+    }
+}

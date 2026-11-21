@@ -1,0 +1,30 @@
+[package]
+name = "labonair-ssh-transport"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_ssh_transport"
+path = "src/lib.rs"
+
+[dependencies]
+labonair-errors = { path = "../errors" }
+labonair-events = { path = "../events" }
+labonair-filesystem = { path = "../filesystem" }
+labonair-persistence = { path = "../persistence" }
+labonair-secrets = { path = "../secrets" }
+labonair-ssh = { path = "../ssh" }
+labonair-terminal-integration = { path = "../terminal-integration" }
+rusqlite = { workspace = true }
+russh = { workspace = true }
+russh-sftp = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7"
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = "0.4"
+md5 = "0.7"
+socket2 = "0.5"
+uuid = { workspace = true }
+dirs = { workspace = true }

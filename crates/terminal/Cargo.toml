@@ -1,0 +1,21 @@
+[package]
+name = "labonair-terminal"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-terminal-core = { path = "../terminal-core" }
+labonair-theme = { path = "../theme" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+alacritty_terminal = { workspace = true }
+tokio = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }
+
+# The detached session host client (ADR 0009). Unix-only: the host is.
+[target.'cfg(unix)'.dependencies]
+labonair-terminal-host = { path = "../terminal-host" }
+
+[dev-dependencies]
+uuid = { workspace = true }

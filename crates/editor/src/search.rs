@@ -1,0 +1,1373 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Typed in-buffer find and replace.
+//!
+//! Matching operates on one immutable [`BufferSnapshot`]. Regex compilation
+//! and byte-to-position conversion stay in the editor owner, while mutation
+//! is returned as transaction-ready edits for [`crate::Document`].
+
+use regex::RegexBuilder;
+use serde::{Deserialize, Serialize};
+
+use crate::buffer::{Anchor, AnchorAffinity, BufferSnapshot, Edit, Position, TextRange};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchOptions {
+    pub case_sensitive: bool,
+    pub smart_case: bool,
+    pub whole_word: bool,
+    pub regex: bool,
+    pub multiline: bool,
+    pub preserve_case: bool,
+    pub wrap: bool,
+}
+
+impl Default for SearchOptions {
+    fn default() -> Self {
+        Self {
+            case_sensitive: false,
+            smart_case: true,
+            whole_word: false,
+            regex: false,
+            multiline: false,
+            preserve_case: false,
+            wrap: true,
+        }
+    }
+}
+
+/// The three case modes exposed by the in-buffer search UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchCaseMode {
+    Sensitive,
+    Insensitive,
+    Smart,
+}
+
+impl SearchOptions {
+    pub fn case_mode(self) -> SearchCaseMode {
+        if self.case_sensitive {
+            SearchCaseMode::Sensitive
+        } else if self.smart_case {
+            SearchCaseMode::Smart
+        } else {
+            SearchCaseMode::Insensitive
+        }
+    }
+
+    pub fn with_case_mode(mut self, mode: SearchCaseMode) -> Self {
+        (self.case_sensitive, self.smart_case) = match mode {
+            SearchCaseMode::Sensitive => (true, false),
+            SearchCaseMode::Insensitive => (false, false),
+            SearchCaseMode::Smart => (false, true),
+        };
+        self
+    }
+}
+
+/// Return the identifier-style word at or immediately before a Unicode
+/// scalar column. Letters, numbers, and underscores form words.
+pub fn word_at_cursor(line: &str, column: usize) -> Option<String> {
+    let characters = line.chars().collect::<Vec<_>>();
+    let column = column.min(characters.len());
+    let is_word = |character: char| character.is_alphanumeric() || character == '_';
+    let index = if characters
+        .get(column)
+        .is_some_and(|character| is_word(*character))
+    {
+        column
+    } else {
+        column.checked_sub(1).filter(|index| {
+            characters
+                .get(*index)
+                .is_some_and(|character| is_word(*character))
+        })?
+    };
+
+    let mut start = index;
+    while start > 0 && is_word(characters[start - 1]) {
+        start -= 1;
+    }
+    let mut end = index + 1;
+    while end < characters.len() && is_word(characters[end]) {
+        end += 1;
+    }
+    Some(characters[start..end].iter().collect())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchQuery {
+    pub text: String,
+    // These fields remain flat so version-2 Editor session payloads retain
+    // their shape. SearchOptions is the typed construction boundary.
+    pub case_sensitive: bool,
+    #[serde(default)]
+    pub smart_case: bool,
+    pub whole_word: bool,
+    pub regex: bool,
+    pub multiline: bool,
+    pub preserve_case: bool,
+    pub wrap: bool,
+    /// Optional byte range that limits buffer matches to one selection.
+    /// This is transient UI state and is deliberately omitted from sessions.
+    #[serde(default, skip_serializing)]
+    pub selection_range: Option<TextRange>,
+}
+
+impl Default for SearchQuery {
+    fn default() -> Self {
+        Self::new(String::new(), SearchOptions::default())
+    }
+}
+
+impl SearchQuery {
+    pub fn new(text: impl Into<String>, options: SearchOptions) -> Self {
+        Self {
+            text: text.into(),
+            case_sensitive: options.case_sensitive,
+            smart_case: options.smart_case,
+            whole_word: options.whole_word,
+            regex: options.regex,
+            multiline: options.multiline,
+            preserve_case: options.preserve_case,
+            wrap: options.wrap,
+            selection_range: None,
+        }
+    }
+
+    /// Limit matches to those fully contained in the selected byte range.
+    pub fn with_selection_range(mut self, range: Option<TextRange>) -> Self {
+        self.selection_range = range.filter(|range| range.start <= range.end);
+        self
+    }
+
+    /// Keep the selection scope attached to its text after replacement edits.
+    pub fn map_selection_range_through_edits(&mut self, edits: &[Edit]) {
+        let Some(range) = self.selection_range else {
+            return;
+        };
+        self.selection_range = Some(map_range_through_edits(range, edits));
+    }
+
+    pub fn options(&self) -> SearchOptions {
+        SearchOptions {
+            case_sensitive: self.case_sensitive,
+            smart_case: self.smart_case,
+            whole_word: self.whole_word,
+            regex: self.regex,
+            multiline: self.multiline,
+            preserve_case: self.preserve_case,
+            wrap: self.wrap,
+        }
+    }
+
+    pub fn case_mode(&self) -> SearchCaseMode {
+        self.options().case_mode()
+    }
+
+    pub fn case_sensitive_for_matching(&self) -> bool {
+        self.case_sensitive || (self.smart_case && self.text.chars().any(char::is_uppercase))
+    }
+}
+
+/// Map a byte range through ordered, non-overlapping edit coordinates.
+pub fn map_range_through_edits(range: TextRange, edits: &[Edit]) -> TextRange {
+    let mut start = Anchor::new(range.start, AnchorAffinity::Before);
+    let mut end = Anchor::new(range.end, AnchorAffinity::After);
+    let mut delta = 0isize;
+    for edit in edits {
+        let edit_start = if delta.is_negative() {
+            edit.range.start.saturating_sub(delta.unsigned_abs())
+        } else {
+            edit.range.start.saturating_add(delta as usize)
+        };
+        let edit_end = edit_start.saturating_add(edit.range.len());
+        let edit_range = TextRange::new(edit_start, edit_end);
+        start.map_through(edit_range, edit.replacement.len());
+        end.map_through(edit_range, edit.replacement.len());
+        delta = delta.saturating_add(edit.replacement.len() as isize - edit.range.len() as isize);
+    }
+    TextRange::new(start.offset(), end.offset())
+}
+
+/// Options that the filesystem-backed project search can apply safely.
+///
+/// Multiline matching is intentionally not part of this contract: the
+/// filesystem provider is line-oriented and must not pretend to support a
+/// cross-file multiline mode it cannot implement consistently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProjectSearchOptions {
+    pub case_sensitive: bool,
+    pub smart_case: bool,
+    pub whole_word: bool,
+    pub regex: bool,
+    pub include_ignored: bool,
+    pub only_open_files: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchScope {
+    CurrentFile,
+    Project,
+}
+
+impl Default for ProjectSearchOptions {
+    fn default() -> Self {
+        Self {
+            case_sensitive: false,
+            smart_case: true,
+            whole_word: false,
+            regex: false,
+            include_ignored: false,
+            only_open_files: false,
+        }
+    }
+}
+
+impl ProjectSearchOptions {
+    pub fn from_search_options(options: SearchOptions) -> Self {
+        Self {
+            case_sensitive: options.case_sensitive,
+            smart_case: options.smart_case,
+            whole_word: options.whole_word,
+            regex: options.regex,
+            include_ignored: false,
+            only_open_files: false,
+        }
+    }
+
+    pub fn case_sensitive_for_matching(self, text: &str) -> bool {
+        self.case_sensitive || (self.smart_case && text.chars().any(char::is_uppercase))
+    }
+}
+
+/// A project-wide search request. `generation` is allocated by the Editor
+/// owner and is the only identity a provider needs to echo back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSearchQuery {
+    pub text: String,
+    pub options: ProjectSearchOptions,
+    pub max_results: usize,
+    pub include_globs: Vec<String>,
+    pub exclude_globs: Vec<String>,
+}
+
+impl ProjectSearchQuery {
+    pub const DEFAULT_MAX_RESULTS: usize = 200;
+    pub const MAX_RESULTS: usize = 2_000;
+
+    pub fn new(text: impl Into<String>, options: ProjectSearchOptions, max_results: usize) -> Self {
+        Self {
+            text: text.into(),
+            options,
+            max_results: max_results.clamp(1, Self::MAX_RESULTS),
+            include_globs: Vec::new(),
+            exclude_globs: Vec::new(),
+        }
+    }
+
+    /// Restrict results to paths matching an include glob and remove paths
+    /// matching any exclude glob. Empty lists leave that side unfiltered.
+    pub fn with_path_filters(
+        mut self,
+        include_globs: Vec<String>,
+        exclude_globs: Vec<String>,
+    ) -> Self {
+        self.include_globs = include_globs;
+        self.exclude_globs = exclude_globs;
+        self
+    }
+
+    /// Translate the Editor query to the regex accepted by the existing
+    /// filesystem grep provider. Literal and whole-word semantics are encoded
+    /// here so the adapter does not grow a second matcher.
+    pub fn backend_pattern(&self) -> Result<String, SearchError> {
+        if self.text.is_empty() {
+            return Err(SearchError {
+                message: "empty pattern".to_string(),
+            });
+        }
+        let pattern = if self.options.regex {
+            self.text.clone()
+        } else {
+            regex::escape(&self.text)
+        };
+        let pattern = if self.options.whole_word {
+            format!(r"\b(?:{pattern})\b")
+        } else {
+            pattern
+        };
+        RegexBuilder::new(&pattern)
+            .case_insensitive(!self.options.case_sensitive_for_matching(&self.text))
+            .multi_line(false)
+            .build()
+            .map_err(|error| SearchError {
+                message: format!("invalid project search pattern: {error}"),
+            })?;
+        Ok(pattern)
+    }
+
+    /// Return the first match's character columns for a provider result line.
+    /// Filesystem search remains the only operation that walks files; this
+    /// method only projects already-returned line text into Editor coordinates.
+    pub fn first_match_columns(&self, line: &str) -> Result<Option<(usize, usize)>, SearchError> {
+        let pattern = self.backend_pattern()?;
+        let regex = RegexBuilder::new(&pattern)
+            .case_insensitive(!self.options.case_sensitive_for_matching(&self.text))
+            .multi_line(false)
+            .build()
+            .map_err(|error| SearchError {
+                message: format!("invalid project search pattern: {error}"),
+            })?;
+        Ok(regex.find(line).map(|matched| {
+            (
+                line[..matched.start()].chars().count(),
+                line[..matched.end()].chars().count(),
+            )
+        }))
+    }
+}
+
+/// Build ascending source edits for a project query against one open buffer.
+/// The document owner applies the edits together as one undoable transaction.
+pub fn replace_project_all_checked(
+    snapshot: &BufferSnapshot,
+    query: &ProjectSearchQuery,
+    replacement: &str,
+) -> Result<Vec<Edit>, SearchError> {
+    let pattern = query.backend_pattern()?;
+    let regex = RegexBuilder::new(&pattern)
+        .case_insensitive(!query.options.case_sensitive_for_matching(&query.text))
+        .multi_line(false)
+        .build()
+        .map_err(|error| SearchError {
+            message: format!("invalid project search pattern: {error}"),
+        })?;
+    let text = snapshot.text();
+    Ok(regex
+        .captures_iter(&text)
+        .filter_map(|captures| {
+            let matched = captures.get(0)?;
+            let mut expanded = String::new();
+            captures.expand(replacement, &mut expanded);
+            Some(Edit::new(
+                TextRange::new(matched.start(), matched.end()),
+                expanded,
+            ))
+        })
+        .collect())
+}
+
+/// One line returned by a project search provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSearchHit {
+    pub path: String,
+    pub relative_path: String,
+    pub line: u64,
+    pub text: String,
+    pub start_column: usize,
+    pub end_column: usize,
+}
+
+impl ProjectSearchHit {
+    pub fn new(
+        path: impl Into<String>,
+        line: u64,
+        text: impl Into<String>,
+        start_column: usize,
+        end_column: usize,
+    ) -> Self {
+        let path = path.into();
+        Self {
+            relative_path: path.clone(),
+            path,
+            line,
+            text: text.into(),
+            start_column,
+            end_column,
+        }
+    }
+
+    pub fn with_relative_path(
+        path: impl Into<String>,
+        relative_path: impl Into<String>,
+        line: u64,
+        text: impl Into<String>,
+        start_column: usize,
+        end_column: usize,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            relative_path: relative_path.into(),
+            line,
+            text: text.into(),
+            start_column,
+            end_column,
+        }
+    }
+}
+
+/// Result envelope returned by an asynchronous project-search provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSearchResult {
+    pub generation: u64,
+    pub hits: Vec<ProjectSearchHit>,
+    pub truncated: bool,
+    pub files_scanned: usize,
+}
+
+impl ProjectSearchResult {
+    pub fn new(
+        generation: u64,
+        hits: Vec<ProjectSearchHit>,
+        truncated: bool,
+        files_scanned: usize,
+    ) -> Self {
+        Self {
+            generation,
+            hits,
+            truncated,
+            files_scanned,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ProjectSearchStatus {
+    #[default]
+    Idle,
+    Loading,
+    Empty,
+    Ready,
+    Error(String),
+}
+
+/// Public Editor-owned snapshot used by the existing workspace overlay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSearchSnapshot {
+    pub query: Option<ProjectSearchQuery>,
+    pub generation: u64,
+    pub status: ProjectSearchStatus,
+    pub hits: Vec<ProjectSearchHit>,
+    pub selected: Option<usize>,
+    pub truncated: bool,
+    pub files_scanned: usize,
+    pub replacement_status: ProjectReplaceStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ProjectReplaceStatus {
+    #[default]
+    Idle,
+    Applying,
+    Complete {
+        files_changed: usize,
+        replacements: usize,
+    },
+    Error(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReplaceRequest {
+    pub generation: u64,
+    pub query: ProjectSearchQuery,
+    pub replacement: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReplaceResult {
+    pub generation: u64,
+    pub matched_paths: Vec<String>,
+    pub files_changed: usize,
+    pub replacements: usize,
+}
+
+/// Read-only Editor snapshot supplied by the Workspace composition adapter
+/// when planning a project replacement across currently open buffers.
+#[derive(Debug, Clone)]
+pub struct ProjectBufferCandidate {
+    pub path: String,
+    pub snapshot: BufferSnapshot,
+    pub can_edit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReplaceTarget {
+    pub path: String,
+    pub revision: crate::Revision,
+    pub replacements: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectReplacePlan {
+    pub generation: u64,
+    pub matched_paths: Vec<String>,
+    pub targets: Vec<ProjectReplaceTarget>,
+    pub replacements: usize,
+}
+
+/// Build a revision-bound plan for open Editor buffers. Matching, editability
+/// checks, and replacement counts remain inside the Editor capability; the
+/// Workspace only maps typed targets back to their live GPUI entities.
+pub fn plan_project_replace(
+    request: &ProjectReplaceRequest,
+    hits: &[ProjectSearchHit],
+    buffers: &[ProjectBufferCandidate],
+) -> Result<ProjectReplacePlan, SearchError> {
+    let matched_paths = hits
+        .iter()
+        .map(|hit| hit.path.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut targets = Vec::new();
+    let mut replacement_count = 0;
+    for buffer in buffers {
+        if !matched_paths.contains(&buffer.path) {
+            continue;
+        }
+        let edits =
+            replace_project_all_checked(&buffer.snapshot, &request.query, &request.replacement)?;
+        if edits.is_empty() {
+            continue;
+        }
+        if !buffer.can_edit {
+            return Err(SearchError {
+                message: format!("{} is read-only", buffer.path),
+            });
+        }
+        replacement_count += edits.len();
+        targets.push(ProjectReplaceTarget {
+            path: buffer.path.clone(),
+            revision: buffer.snapshot.revision(),
+            replacements: edits.len(),
+        });
+    }
+    targets.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(ProjectReplacePlan {
+        generation: request.generation,
+        matched_paths: matched_paths.into_iter().collect(),
+        targets,
+        replacements: replacement_count,
+    })
+}
+
+/// Editor-owned lifecycle for asynchronous project search.
+///
+/// `begin` invalidates every previous request. `accept` and `fail` are
+/// generation-checked, so dropping a provider task is an optimisation rather
+/// than a correctness requirement.
+#[derive(Debug, Default)]
+pub struct ProjectSearchSession {
+    query: Option<ProjectSearchQuery>,
+    generation: u64,
+    status: ProjectSearchStatus,
+    hits: Vec<ProjectSearchHit>,
+    selected: Option<usize>,
+    truncated: bool,
+    files_scanned: usize,
+    replacement_status: ProjectReplaceStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSearchRequest {
+    pub generation: u64,
+    pub query: ProjectSearchQuery,
+}
+
+impl ProjectSearchSession {
+    pub fn begin(&mut self, query: ProjectSearchQuery) -> ProjectSearchRequest {
+        self.generation = self.generation.saturating_add(1);
+        self.query = Some(query.clone());
+        self.hits.clear();
+        self.selected = None;
+        self.truncated = false;
+        self.files_scanned = 0;
+        self.replacement_status = ProjectReplaceStatus::Idle;
+        self.status = if query.text.is_empty() {
+            ProjectSearchStatus::Empty
+        } else {
+            ProjectSearchStatus::Loading
+        };
+        ProjectSearchRequest {
+            generation: self.generation,
+            query,
+        }
+    }
+
+    pub fn cancel(&mut self) {
+        self.generation = self.generation.saturating_add(1);
+        self.query = None;
+        self.hits.clear();
+        self.selected = None;
+        self.truncated = false;
+        self.files_scanned = 0;
+        self.replacement_status = ProjectReplaceStatus::Idle;
+        self.status = ProjectSearchStatus::Idle;
+    }
+
+    pub fn accept(&mut self, result: ProjectSearchResult) -> bool {
+        if result.generation != self.generation {
+            return false;
+        }
+        self.hits = result.hits;
+        self.selected = (!self.hits.is_empty()).then_some(0);
+        self.truncated = result.truncated;
+        self.files_scanned = result.files_scanned;
+        self.status = if self.hits.is_empty() {
+            ProjectSearchStatus::Empty
+        } else {
+            ProjectSearchStatus::Ready
+        };
+        true
+    }
+
+    pub fn fail(&mut self, generation: u64, message: impl Into<String>) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+        self.hits.clear();
+        self.selected = None;
+        self.truncated = false;
+        self.files_scanned = 0;
+        self.status = ProjectSearchStatus::Error(message.into());
+        true
+    }
+
+    pub fn select(&mut self, index: usize) -> Option<ProjectSearchHit> {
+        let index = index.min(self.hits.len().saturating_sub(1));
+        let hit = self.hits.get(index)?.clone();
+        self.selected = Some(index);
+        Some(hit)
+    }
+
+    pub fn move_selection(&mut self, delta: isize) -> Option<ProjectSearchHit> {
+        let len = self.hits.len();
+        if len == 0 {
+            return None;
+        }
+        let current = self.selected.unwrap_or(0) as isize;
+        let index = (current + delta).rem_euclid(len as isize) as usize;
+        self.select(index)
+    }
+
+    pub fn selected_hit(&self) -> Option<&ProjectSearchHit> {
+        self.selected.and_then(|index| self.hits.get(index))
+    }
+
+    pub fn begin_replace(
+        &mut self,
+        replacement: impl Into<String>,
+    ) -> Result<ProjectReplaceRequest, SearchError> {
+        let Some(query) = self.query.clone() else {
+            return Err(SearchError {
+                message: "there is no active project search to replace".to_string(),
+            });
+        };
+        if self.truncated {
+            return Err(SearchError {
+                message: "project results are truncated; refine the query before replacing"
+                    .to_string(),
+            });
+        }
+        if self.status != ProjectSearchStatus::Ready {
+            return Err(SearchError {
+                message: "wait for project search results before replacing".to_string(),
+            });
+        }
+        self.replacement_status = ProjectReplaceStatus::Applying;
+        Ok(ProjectReplaceRequest {
+            generation: self.generation,
+            query,
+            replacement: replacement.into(),
+        })
+    }
+
+    pub fn accept_replace(&mut self, result: ProjectReplaceResult) -> bool {
+        if result.generation != self.generation
+            || self.replacement_status != ProjectReplaceStatus::Applying
+        {
+            return false;
+        }
+        self.replacement_status = ProjectReplaceStatus::Complete {
+            files_changed: result.files_changed,
+            replacements: result.replacements,
+        };
+        true
+    }
+
+    pub fn fail_replace(&mut self, generation: u64, message: impl Into<String>) -> bool {
+        if generation != self.generation
+            || self.replacement_status != ProjectReplaceStatus::Applying
+        {
+            return false;
+        }
+        self.replacement_status = ProjectReplaceStatus::Error(message.into());
+        true
+    }
+
+    pub fn snapshot(&self) -> ProjectSearchSnapshot {
+        ProjectSearchSnapshot {
+            query: self.query.clone(),
+            generation: self.generation,
+            status: self.status.clone(),
+            hits: self.hits.clone(),
+            selected: self.selected,
+            truncated: self.truncated,
+            files_scanned: self.files_scanned,
+            replacement_status: self.replacement_status.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Match {
+    pub start: Position,
+    pub end: Position,
+}
+
+impl Match {
+    pub fn text_range(self, snapshot: &BufferSnapshot) -> TextRange {
+        TextRange::new(
+            snapshot.position_to_byte(self.start),
+            snapshot.position_to_byte(self.end),
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchResult {
+    pub matches: Vec<Match>,
+    pub active: Option<usize>,
+    pub revision: crate::Revision,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchError {
+    pub message: String,
+}
+
+impl std::fmt::Display for SearchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for SearchError {}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Find all matches, returning inline-validation errors for invalid regexes.
+pub fn find(snapshot: &BufferSnapshot, query: &SearchQuery) -> Result<SearchResult, SearchError> {
+    if query.text.is_empty() {
+        return Ok(SearchResult {
+            matches: Vec::new(),
+            active: None,
+            revision: snapshot.revision(),
+        });
+    }
+    let regex = compile(query)?;
+    let text = snapshot.text();
+    let matches = search_hits(&regex, &text, query, None)
+        .into_iter()
+        .map(|hit| Match {
+            start: snapshot.byte_to_position(hit.range.start),
+            end: snapshot.byte_to_position(hit.range.end),
+        })
+        .collect();
+    Ok(SearchResult {
+        matches,
+        active: None,
+        revision: snapshot.revision(),
+    })
+}
+
+struct SearchHit {
+    range: TextRange,
+    matched_text: String,
+    expanded_replacement: Option<String>,
+}
+
+fn compile(query: &SearchQuery) -> Result<regex::Regex, SearchError> {
+    let pattern = if query.regex {
+        query.text.clone()
+    } else {
+        regex::escape(&query.text)
+    };
+    RegexBuilder::new(&pattern)
+        .case_insensitive(!query.case_sensitive_for_matching())
+        .multi_line(query.multiline)
+        .dot_matches_new_line(query.multiline)
+        .build()
+        .map_err(|error| SearchError {
+            message: error.to_string(),
+        })
+}
+
+fn search_hits(
+    regex: &regex::Regex,
+    text: &str,
+    query: &SearchQuery,
+    replacement: Option<&str>,
+) -> Vec<SearchHit> {
+    regex
+        .captures_iter(text)
+        .filter_map(|captures| {
+            let matched = captures.get(0)?;
+            if query
+                .selection_range
+                .is_some_and(|range| matched.start() < range.start || matched.end() > range.end)
+            {
+                return None;
+            }
+            if !query.multiline
+                && (matched.as_str().contains('\n') || matched.as_str().contains('\r'))
+            {
+                return None;
+            }
+            if query.whole_word {
+                let before = text[..matched.start()].chars().next_back();
+                let after = text[matched.end()..].chars().next();
+                if before.is_some_and(is_word_char) || after.is_some_and(is_word_char) {
+                    return None;
+                }
+            }
+            let expanded_replacement = replacement.map(|replacement| {
+                let mut expanded = String::new();
+                captures.expand(replacement, &mut expanded);
+                expanded
+            });
+            Some(SearchHit {
+                range: TextRange::new(matched.start(), matched.end()),
+                matched_text: matched.as_str().to_string(),
+                expanded_replacement,
+            })
+        })
+        .collect()
+}
+
+/// Compatibility helper used by existing consumers. Invalid regex input is
+/// represented as no matches; UI callers should use [`find`] for validation.
+pub fn find_all(snapshot: &BufferSnapshot, query: &SearchQuery) -> Vec<Match> {
+    find(snapshot, query)
+        .map(|result| result.matches)
+        .unwrap_or_default()
+}
+
+/// Index of the first match at or after `from`, optionally wrapping, if any.
+pub fn next_match(matches: &[Match], from: Position, forward: bool) -> Option<usize> {
+    next_match_with_wrap(matches, from, forward, true)
+}
+
+pub fn next_match_with_wrap(
+    matches: &[Match],
+    from: Position,
+    forward: bool,
+    wrap: bool,
+) -> Option<usize> {
+    if matches.is_empty() {
+        return None;
+    }
+    if forward {
+        matches
+            .iter()
+            .position(|m| m.start >= from)
+            .or_else(|| wrap.then_some(0))
+    } else {
+        matches
+            .iter()
+            .rposition(|m| m.start < from)
+            .or_else(|| wrap.then_some(matches.len() - 1))
+    }
+}
+
+/// Build one transaction-ready edit per match. The canonical document owner
+/// applies these edits in one undoable transaction.
+pub fn replace_all(snapshot: &BufferSnapshot, query: &SearchQuery, replacement: &str) -> Vec<Edit> {
+    replace_all_checked(snapshot, query, replacement).unwrap_or_default()
+}
+
+/// Build the edit for one indexed match. The index is in document order and
+/// is the same index returned in [`SearchResult::matches`].
+pub fn replace_one(
+    snapshot: &BufferSnapshot,
+    query: &SearchQuery,
+    replacement: &str,
+    match_index: usize,
+) -> Result<Option<Edit>, SearchError> {
+    let regex = compile(query)?;
+    let text = snapshot.text();
+    let Some(hit) = search_hits(&regex, &text, query, Some(replacement))
+        .into_iter()
+        .nth(match_index)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(Edit::new(
+        hit.range,
+        hit.replacement(replacement, query),
+    )))
+}
+
+/// Build all replacement edits in ascending source order. The document owner
+/// applies them as one transaction, so replacement ordering and undo history
+/// stay deterministic even when replacement lengths differ.
+pub fn replace_all_checked(
+    snapshot: &BufferSnapshot,
+    query: &SearchQuery,
+    replacement: &str,
+) -> Result<Vec<Edit>, SearchError> {
+    let regex = compile(query)?;
+    let text = snapshot.text();
+    Ok(search_hits(&regex, &text, query, Some(replacement))
+        .into_iter()
+        .map(|hit| Edit::new(hit.range, hit.replacement(replacement, query)))
+        .collect())
+}
+
+impl SearchHit {
+    fn replacement(&self, replacement: &str, query: &SearchQuery) -> String {
+        replacement_for_match(
+            &self.matched_text,
+            self.expanded_replacement.as_deref().unwrap_or(replacement),
+            query.preserve_case,
+        )
+    }
+}
+
+fn replacement_for_match(matched: &str, replacement: &str, preserve_case: bool) -> String {
+    if !preserve_case || replacement.is_empty() {
+        return replacement.to_string();
+    }
+    if matched
+        .chars()
+        .all(|c| !c.is_alphabetic() || c.is_uppercase())
+    {
+        return replacement.chars().flat_map(char::to_uppercase).collect();
+    }
+    if matched.chars().next().is_some_and(|c| c.is_uppercase()) {
+        let mut chars = replacement.chars();
+        return chars
+            .next()
+            .map(|first| first.to_uppercase().chain(chars).collect())
+            .unwrap_or_default();
+    }
+    replacement.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot(text: &str) -> BufferSnapshot {
+        crate::EditorBuffer::from_text(text).snapshot()
+    }
+
+    #[test]
+    fn literal_options_and_unicode_crlf_are_position_safe() {
+        let source = snapshot("Grüße\r\nGRÜße\r\nbar barrier");
+        let query = SearchQuery::new(
+            "grüße",
+            SearchOptions {
+                whole_word: true,
+                ..Default::default()
+            },
+        );
+        let result = find(&source, &query).unwrap();
+        assert_eq!(result.matches.len(), 2);
+        assert_eq!(result.matches[1].start, Position::new(1, 0));
+        let bar = SearchQuery::new(
+            "bar",
+            SearchOptions {
+                whole_word: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(find_all(&source, &bar).len(), 1);
+    }
+
+    #[test]
+    fn word_at_cursor_uses_unicode_scalar_columns_and_identifier_characters() {
+        assert_eq!(word_at_cursor("alpha beta", 2).as_deref(), Some("alpha"));
+        assert_eq!(word_at_cursor("alpha beta", 5).as_deref(), Some("alpha"));
+        assert_eq!(word_at_cursor("alpha beta", 6).as_deref(), Some("beta"));
+        assert_eq!(word_at_cursor("café_2 λ", 3).as_deref(), Some("café_2"));
+        assert_eq!(word_at_cursor("...", 2), None);
+        assert_eq!(word_at_cursor("", 0), None);
+    }
+
+    #[test]
+    fn selection_scope_limits_find_and_replacement_to_fully_contained_matches() {
+        let source = snapshot("one hit\ntwo hit\nthree hit");
+        let scope = TextRange::new(4, 15);
+        let query =
+            SearchQuery::new("hit", SearchOptions::default()).with_selection_range(Some(scope));
+
+        let result = find(&source, &query).expect("valid search");
+        assert_eq!(result.matches.len(), 2);
+        let edits = replace_all_checked(&source, &query, "found").expect("valid replacement");
+        assert_eq!(edits.len(), 2);
+    }
+
+    #[test]
+    fn selection_scope_maps_through_replacement_edits_and_is_not_serialized() {
+        let source = snapshot("hit elsewhere hit");
+        let query = SearchQuery::new("hit", SearchOptions::default())
+            .with_selection_range(Some(TextRange::new(0, 3)));
+        let edits = replace_all_checked(&source, &query, "longer").expect("valid replacement");
+        let mut query = query;
+        query.map_selection_range_through_edits(&edits);
+
+        assert_eq!(query.selection_range, Some(TextRange::new(0, 6)));
+        let encoded = serde_json::to_value(&query).expect("serializes");
+        assert!(encoded.get("selection_range").is_none());
+    }
+
+    #[test]
+    fn regex_multiline_and_invalid_input_are_typed() {
+        let source = snapshot("one\ntwo\nthree");
+        let query = SearchQuery::new(
+            "^t[^\\n]*$",
+            SearchOptions {
+                regex: true,
+                multiline: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(find(&source, &query).unwrap().matches.len(), 2);
+        let invalid = SearchQuery::new(
+            "[",
+            SearchOptions {
+                regex: true,
+                ..Default::default()
+            },
+        );
+        assert!(find(&source, &invalid).is_err());
+    }
+
+    #[test]
+    fn smart_case_and_multiline_dotall_are_explicit_options() {
+        let source = snapshot("foo\nFOO\nstart middle\nend");
+        let smart = SearchQuery::new("FOO", SearchOptions::default());
+        assert_eq!(find(&source, &smart).unwrap().matches.len(), 1);
+
+        let insensitive = SearchQuery::new(
+            "FOO",
+            SearchOptions::default().with_case_mode(SearchCaseMode::Insensitive),
+        );
+        assert_eq!(find(&source, &insensitive).unwrap().matches.len(), 2);
+
+        let across_lines = SearchQuery::new(
+            "start.*end",
+            SearchOptions {
+                regex: true,
+                multiline: true,
+                ..Default::default()
+            },
+        );
+        let result = find(&source, &across_lines).unwrap();
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].start, Position::new(2, 0));
+        assert_eq!(result.matches[0].end, Position::new(3, 3));
+    }
+
+    #[test]
+    fn replace_all_can_preserve_case() {
+        let source = snapshot("Foo foo FOO");
+        let query = SearchQuery::new(
+            "foo",
+            SearchOptions {
+                preserve_case: true,
+                ..Default::default()
+            },
+        );
+        let edits = replace_all(&source, &query, "bar");
+        assert_eq!(
+            edits
+                .iter()
+                .map(|edit| edit.replacement.as_str())
+                .collect::<Vec<_>>(),
+            ["Bar", "bar", "BAR"]
+        );
+    }
+
+    #[test]
+    fn next_match_wraps_in_both_directions() {
+        let matches = [
+            Match {
+                start: Position::new(0, 1),
+                end: Position::new(0, 2),
+            },
+            Match {
+                start: Position::new(1, 0),
+                end: Position::new(1, 1),
+            },
+        ];
+        assert_eq!(next_match(&matches, Position::new(2, 0), true), Some(0));
+        assert_eq!(next_match(&matches, Position::new(0, 0), false), Some(1));
+        assert_eq!(
+            next_match_with_wrap(&matches, Position::new(2, 0), true, false),
+            None
+        );
+    }
+
+    #[test]
+    fn replacement_is_ordered_replace_one_is_indexed_and_regex_captures_expand() {
+        let source = snapshot("one two three");
+        let query = SearchQuery::new(
+            "\\w+",
+            SearchOptions {
+                regex: true,
+                ..Default::default()
+            },
+        );
+        let all = replace_all_checked(&source, &query, "x").unwrap();
+        assert_eq!(
+            all.iter().map(|edit| edit.range).collect::<Vec<_>>(),
+            [
+                TextRange::new(0, 3),
+                TextRange::new(4, 7),
+                TextRange::new(8, 13)
+            ]
+        );
+        let one = replace_one(&source, &query, "$0!", 1).unwrap().unwrap();
+        assert_eq!(one.range, TextRange::new(4, 7));
+        assert_eq!(one.replacement, "two!");
+
+        let captures = snapshot("left:right");
+        let capture_query = SearchQuery::new(
+            "(\\w+):(\\w+)",
+            SearchOptions {
+                regex: true,
+                ..Default::default()
+            },
+        );
+        let edits = replace_all_checked(&captures, &capture_query, "$2/$1").unwrap();
+        assert_eq!(edits[0].replacement, "right/left");
+    }
+
+    #[test]
+    fn invalid_regex_is_safe_for_replace() {
+        let source = snapshot("text");
+        let query = SearchQuery::new(
+            "[",
+            SearchOptions {
+                regex: true,
+                ..Default::default()
+            },
+        );
+        assert!(replace_one(&source, &query, "x", 0).is_err());
+        assert!(replace_all_checked(&source, &query, "x").is_err());
+    }
+
+    #[test]
+    fn project_query_translates_literal_and_whole_word_options() {
+        let query = ProjectSearchQuery::new(
+            "a+b",
+            ProjectSearchOptions {
+                whole_word: true,
+                ..Default::default()
+            },
+            10_000,
+        );
+        assert_eq!(query.max_results, ProjectSearchQuery::MAX_RESULTS);
+        assert_eq!(query.backend_pattern().unwrap(), r"\b(?:a\+b)\b");
+        assert_eq!(query.first_match_columns("x a+b y").unwrap(), Some((2, 5)));
+    }
+
+    #[test]
+    fn project_query_keeps_typed_path_filters() {
+        let query = ProjectSearchQuery::new(
+            "needle",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        )
+        .with_path_filters(vec!["src/**/*.rs".into()], vec!["**/generated/**".into()]);
+        assert_eq!(query.include_globs, ["src/**/*.rs"]);
+        assert_eq!(query.exclude_globs, ["**/generated/**"]);
+    }
+
+    #[test]
+    fn project_edit_builder_uses_query_options_and_expands_regex_captures() {
+        let query = ProjectSearchQuery::new(
+            r"(cat)(\d+)",
+            ProjectSearchOptions {
+                regex: true,
+                whole_word: true,
+                ..Default::default()
+            },
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+        let edits =
+            replace_project_all_checked(&snapshot("cat12 scat34 CAT5"), &query, "$2-$1").unwrap();
+        assert_eq!(
+            edits
+                .iter()
+                .map(|edit| edit.replacement.as_str())
+                .collect::<Vec<_>>(),
+            ["12-cat", "5-CAT"]
+        );
+        let invalid = ProjectSearchQuery::new(
+            "[",
+            ProjectSearchOptions {
+                regex: true,
+                ..Default::default()
+            },
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+        assert!(replace_project_all_checked(&snapshot("text"), &invalid, "x").is_err());
+    }
+
+    #[test]
+    fn project_replace_planning_is_open_buffer_scoped_and_preflights_read_only_targets() {
+        let query = ProjectSearchQuery::new(
+            "needle",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+        let request = ProjectReplaceRequest {
+            generation: 9,
+            query,
+            replacement: "updated".to_string(),
+        };
+        let hits = [
+            ProjectSearchHit::new("src/open.rs", 1, "needle", 0, 6),
+            ProjectSearchHit::new("src/closed.rs", 1, "needle", 0, 6),
+        ];
+        let buffers = [ProjectBufferCandidate {
+            path: "src/open.rs".to_string(),
+            snapshot: snapshot("needle needle"),
+            can_edit: true,
+        }];
+
+        let plan = plan_project_replace(&request, &hits, &buffers).unwrap();
+        assert_eq!(plan.generation, 9);
+        assert_eq!(plan.matched_paths, ["src/closed.rs", "src/open.rs"]);
+        assert_eq!(plan.targets.len(), 1);
+        assert_eq!(plan.targets[0].path, "src/open.rs");
+        assert_eq!(plan.targets[0].replacements, 2);
+        assert_eq!(plan.replacements, 2);
+
+        let read_only = [ProjectBufferCandidate {
+            path: "src/open.rs".to_string(),
+            snapshot: snapshot("needle"),
+            can_edit: false,
+        }];
+        assert!(plan_project_replace(&request, &hits, &read_only)
+            .unwrap_err()
+            .message
+            .contains("read-only"));
+    }
+
+    #[test]
+    fn project_replace_session_is_generation_checked_and_resets_with_new_search() {
+        let mut session = ProjectSearchSession::default();
+        let query = ProjectSearchQuery::new(
+            "needle",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        );
+        let search = session.begin(query);
+        assert!(session.accept(ProjectSearchResult::new(
+            search.generation,
+            vec![ProjectSearchHit::new("src/main.rs", 1, "needle", 0, 6)],
+            false,
+            1,
+        )));
+        let replace = session.begin_replace("replacement").unwrap();
+        assert_eq!(replace.generation, search.generation);
+        assert_eq!(
+            session.snapshot().replacement_status,
+            ProjectReplaceStatus::Applying
+        );
+        assert!(session.accept_replace(ProjectReplaceResult {
+            generation: replace.generation,
+            matched_paths: vec!["src/main.rs".to_string()],
+            files_changed: 1,
+            replacements: 1,
+        }));
+        assert_eq!(
+            session.snapshot().replacement_status,
+            ProjectReplaceStatus::Complete {
+                files_changed: 1,
+                replacements: 1,
+            }
+        );
+
+        session.begin(ProjectSearchQuery::new(
+            "next",
+            ProjectSearchOptions::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        ));
+        assert_eq!(
+            session.snapshot().replacement_status,
+            ProjectReplaceStatus::Idle
+        );
+    }
+
+    #[test]
+    fn project_session_rejects_stale_results_and_cancellation() {
+        let mut session = ProjectSearchSession::default();
+        let first = session.begin(ProjectSearchQuery::new(
+            "first",
+            Default::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        ));
+        let second = session.begin(ProjectSearchQuery::new(
+            "second",
+            Default::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        ));
+        assert!(!session.accept(ProjectSearchResult::new(
+            first.generation,
+            vec![ProjectSearchHit::new("first.rs", 1, "first", 0, 5)],
+            false,
+            1,
+        )));
+        assert!(session.accept(ProjectSearchResult::new(
+            second.generation,
+            vec![ProjectSearchHit::new("second.rs", 2, "second", 0, 6)],
+            true,
+            2,
+        )));
+        assert_eq!(session.snapshot().selected, Some(0));
+        assert!(session.snapshot().truncated);
+        assert!(session.begin_replace("x").is_err());
+        session.cancel();
+        assert!(!session.fail(second.generation, "late failure"));
+        assert_eq!(session.snapshot().status, ProjectSearchStatus::Idle);
+    }
+
+    #[test]
+    fn project_session_navigation_wraps_and_empty_results_are_local() {
+        let mut session = ProjectSearchSession::default();
+        let request = session.begin(ProjectSearchQuery::new(
+            "x",
+            Default::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        ));
+        assert!(session.accept(ProjectSearchResult::new(
+            request.generation,
+            vec![
+                ProjectSearchHit::new("a", 1, "x", 0, 1),
+                ProjectSearchHit::new("b", 2, "x", 0, 1),
+            ],
+            false,
+            2,
+        )));
+        assert_eq!(session.move_selection(-1).unwrap().path, "b");
+        let empty = session.begin(ProjectSearchQuery::new(
+            "missing",
+            Default::default(),
+            ProjectSearchQuery::DEFAULT_MAX_RESULTS,
+        ));
+        assert!(session.accept(ProjectSearchResult::new(
+            empty.generation,
+            Vec::new(),
+            false,
+            4,
+        )));
+        assert_eq!(session.snapshot().status, ProjectSearchStatus::Empty);
+    }
+}

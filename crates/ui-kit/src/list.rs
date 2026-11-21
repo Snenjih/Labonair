@@ -1,0 +1,251 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Shared `List` row primitives — `ListHeader`, `ListItem`, `ListSeparator`.
+//!
+//! Port of the "row with icon + label + trailing" and "section heading above
+//! a row group" shapes hand-rolled across the app (the command palette's
+//! result rows, the settings search-results list, the host list, …). This
+//! module is the shared building block those views assemble from.
+//!
+//! Reference: `reference-src/src/components/ui/item.tsx` +
+//! `command.tsx` (`CommandGroup` heading, `CommandItem` row,
+//! `ListHeader`, `ListSeparator`).
+//!
+//! ```ignore
+//! div()
+//!     .child(list_header("Recent", c.muted))
+//!     .child(
+//!         ListItem::new("row-1", c.fg, c.muted, c.accent)
+//!             .selected(true)
+//!             .on_click(cx.listener(|this, _, _w, cx| this.open(cx)))
+//!             .child("Item"),
+//!     )
+//!     .child(list_separator(c.border))
+//! ```
+
+use std::rc::Rc;
+
+use gpui::{
+    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId, FontWeight, Hsla,
+    InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
+    StatefulInteractiveElement, StyleRefinement, Styled, Window,
+};
+
+use crate::animation::state_fill;
+use crate::divider::{divider, Axis};
+use crate::icon::IconName;
+use crate::palette::Palette;
+
+/// A small, muted section heading above a group of [`ListItem`]s.
+pub fn list_header(label: impl Into<SharedString>, muted: Hsla) -> Div {
+    div()
+        .px(px(8.0))
+        .py(px(4.0))
+        .text_size(px(11.0))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(muted)
+        .child(label.into())
+}
+
+/// A full-width 1px separator between list groups.
+pub fn list_separator(border: Hsla) -> Div {
+    divider(Axis::Horizontal, border).my(px(4.0))
+}
+
+/// One selectable/hoverable row: optional leading icon, label child(ren),
+/// optional trailing element, `selected`/`disabled` state.
+pub struct ListItem {
+    id: ElementId,
+    icon: Option<IconName>,
+    leading: Option<AnyElement>,
+    trailing: Option<AnyElement>,
+    selected: bool,
+    disabled: bool,
+    c: Palette,
+    children: Vec<AnyElement>,
+    #[allow(clippy::type_complexity)]
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+    #[allow(clippy::type_complexity)]
+    hover: Option<Box<dyn Fn(StyleRefinement) -> StyleRefinement + 'static>>,
+    #[allow(clippy::type_complexity)]
+    extra: Option<Box<dyn FnOnce(Stateful<Div>) -> Stateful<Div>>>,
+}
+
+impl ListItem {
+    pub fn new(id: impl Into<ElementId>, c: Palette) -> Self {
+        Self {
+            id: id.into(),
+            icon: None,
+            leading: None,
+            trailing: None,
+            selected: false,
+            disabled: false,
+            c,
+            children: Vec::new(),
+            on_click: None,
+            hover: None,
+            extra: None,
+        }
+    }
+
+    pub fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    /// A custom leading element (e.g. a tab tile) replacing the icon.
+    pub fn leading(mut self, el: impl IntoElement) -> Self {
+        self.leading = Some(el.into_any_element());
+        self
+    }
+
+    pub fn trailing(mut self, el: impl IntoElement) -> Self {
+        self.trailing = Some(el.into_any_element());
+        self
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Row click handler. Never fires on a `disabled` row.
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Rc::new(handler));
+        self
+    }
+
+    /// Replace the default background-fill hover with a custom hover style.
+    /// Use this instead of calling `.hover(..)` inside [`extra`](Self::extra) —
+    /// GPUI panics with "hover style already set" if `.hover(..)` is applied
+    /// twice on the same element.
+    pub fn hover_style(mut self, f: impl Fn(StyleRefinement) -> StyleRefinement + 'static) -> Self {
+        self.hover = Some(Box::new(f));
+        self
+    }
+
+    /// Escape hatch for behaviour the builder doesn't have a named method for
+    /// (drag sources/targets, right-click menus, a one-off background
+    /// override) — applied last, after every other style/handler, so it can
+    /// override anything above. Keeps call sites like the explorer tree row
+    /// (drag-and-drop, drop-target highlight) on the shared row chrome
+    /// instead of hand-rolling their own `div()`.
+    pub fn extra(mut self, f: impl FnOnce(Stateful<Div>) -> Stateful<Div> + 'static) -> Self {
+        self.extra = Some(Box::new(f));
+        self
+    }
+}
+
+impl ParentElement for ListItem {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
+}
+
+impl IntoElement for ListItem {
+    type Element = Stateful<Div>;
+
+    fn into_element(self) -> Self::Element {
+        let c = self.c;
+        let leading_none = self.leading.is_none();
+        let text_color = if self.disabled { c.muted } else { c.fg };
+        let mut row = div()
+            .id(self.id.clone())
+            .relative()
+            .flex()
+            .items_center()
+            .gap(c.space(8.0))
+            .w_full()
+            .min_h(c.control_space(28.0))
+            .px(c.space(8.0))
+            .rounded(px(c.radius.md))
+            .text_size(c.control_space(13.0))
+            .text_color(text_color)
+            .when(self.selected, |d| d.font_weight(FontWeight::SEMIBOLD))
+            // The selected fill is an always-built layer that crossfades; it
+            // paints behind the icon and children added below.
+            .child(state_fill(
+                (self.id, "sel"),
+                c,
+                self.selected,
+                c.selected_fill,
+                None,
+                px(c.radius.md),
+                px(0.0),
+            ))
+            .when_some(self.leading, |d, el| d.child(el))
+            .when_some(self.icon.filter(|_| leading_none), |d, icon| {
+                d.child(icon.svg(text_color).size(px(14.0)))
+            })
+            .children(self.children);
+        if self.disabled {
+            row = row.opacity(super::DISABLED_OPACITY);
+        } else {
+            row = row.cursor_pointer();
+            if let Some(hover) = self.hover {
+                row = row.hover(hover);
+            } else {
+                // Also on a selected row: the hover fill sits under the fading
+                // selection layer, so clicking a hovered row blends in.
+                let hover_fill = c.accent;
+                row = row.hover(move |s| s.bg(hover_fill));
+            }
+            if let Some(h) = self.on_click {
+                row = row.on_click(move |ev, w, cx| h(ev, w, cx));
+            }
+        }
+        if let Some(trailing) = self.trailing {
+            row = row.child(div().ml_auto().child(trailing));
+        }
+        if let Some(extra) = self.extra {
+            row = extra(row);
+        }
+        row
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::test_palette;
+    use gpui::black;
+
+    #[test]
+    fn header_and_separator_build() {
+        let _ = list_header("Section", black());
+        let _ = list_separator(black());
+    }
+
+    #[test]
+    fn extra_hook_runs_after_the_builder() {
+        let _ = ListItem::new("row", test_palette())
+            .child("Label")
+            .extra(|row| row.opacity(0.5))
+            .into_element();
+    }
+
+    #[test]
+    fn item_builds_in_every_state() {
+        for selected in [true, false] {
+            for disabled in [true, false] {
+                let _ = ListItem::new("row", test_palette())
+                    .icon(IconName::File)
+                    .trailing("⌘K")
+                    .selected(selected)
+                    .disabled(disabled)
+                    .on_click(|_, _, _| {})
+                    .child("Label")
+                    .into_element();
+            }
+        }
+    }
+}

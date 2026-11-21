@@ -1,0 +1,17 @@
+[package]
+name = "labonair-snippets"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+labonair-errors = { path = "../errors" }
+labonair-persistence = { path = "../persistence" }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+libc = "0.2"
+labonair-command-palette-core = { path = "../command-palette-core" }
+
+[dev-dependencies]

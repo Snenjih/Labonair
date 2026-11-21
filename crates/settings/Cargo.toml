@@ -1,0 +1,47 @@
+[package]
+name = "labonair-settings"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_settings"
+path = "src/settings.rs"
+
+[dependencies]
+# The typed settings tree (T19-001) this store layers default < user <
+# os/profile < project < language. Pure data model, no GPUI/UI dep.
+labonair-settings-content = { path = "../settings-content" }
+# Surgical single-node `settings.json` text edits (T19-005) — comments and
+# formatting of everything but the changed leaf(s) survive a GUI write.
+labonair-settings-json = { path = "../settings-json" }
+# `#[derive(RegisterSetting)]` (this task) alongside the pre-existing
+# `#[derive(MergeFrom)]` (T19-001) — shared derive-macro crate, still no
+# non-macro deps of its own.
+labonair-settings-macros = { path = "../settings-macros" }
+# Store as a GPUI `Global` + `App`/`AsyncApp` access for `register()`/`get()`
+# and the fs-watch poll task. This is the store's only GPUI-ish dependency —
+# no `gpui-component`, no other UI crate.
+gpui = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Accepts the same JSONC-tolerant `config.json` the shipped
+# `default.json` uses (mirrors `labonair-settings-content::fallible`).
+jsonc-parser = { version = "0.23", features = ["serde"] }
+# Live fs-watch on the user settings file (same crates + debounce pattern as
+# `labonair-filesystem`).
+notify = "6"
+notify-debouncer-mini = "0.4"
+# Compile-time `Settings` registration (`#[derive(RegisterSetting)]` +
+inventory = "0.3"
+dirs = { workspace = true }
+tracing = { workspace = true }
+log = "0.4"
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+jsonschema = { version = "0.53.0", default-features = false }
+schemars = "0.8"
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+uuid = { workspace = true }

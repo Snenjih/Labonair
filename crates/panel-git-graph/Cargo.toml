@@ -1,0 +1,21 @@
+[package]
+name = "labonair-panel-git-graph"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_panel_git_graph"
+path = "src/panel_git_graph.rs"
+
+[dependencies]
+gpui = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-notifications = { path = "../notifications" }
+labonair-git = { path = "../git" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

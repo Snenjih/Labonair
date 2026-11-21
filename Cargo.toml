@@ -1,0 +1,151 @@
+[workspace]
+resolver = "2"
+default-members = ["crates/app"]
+members = [
+    "crates/app",
+    "crates/gpui-ext",
+    "crates/ui-kit",
+    "crates/notifications",
+    "crates/notifications-core",
+    "crates/activity",
+    "crates/activity-ui",
+    "crates/mcp-core",
+    "crates/mcp-server",
+    "crates/command-palette",
+    "crates/command-palette-core",
+    "crates/command-palette-runtime",
+    "crates/panel",
+    "crates/explorer-host",
+    "crates/background-host",
+    "crates/workspace",
+    "crates/workspace-storage",
+    "crates/settings-ui",
+    "crates/settings",
+    "crates/settings-json",
+    "crates/settings-content",
+    "crates/settings-macros",
+    "crates/hosts-ui",
+    "crates/hosts-host",
+    "crates/panel-explorer",
+    "crates/panel-scm",
+    "crates/panel-git-graph",
+    "crates/panel-snippets",
+    "crates/shell",
+    "crates/terminal",
+    "crates/terminal-core",
+    "crates/terminal-host",
+    "crates/terminal-integration",
+    "crates/editor",
+    "crates/editor-ui",
+    "crates/filesystem",
+    "crates/secrets",
+    "crates/errors",
+    "crates/events",
+    "crates/persistence",
+    "crates/hosts",
+    "crates/credentials",
+    "crates/snippets",
+    "crates/snippets-ssh",
+    "crates/snippets-host",
+    "crates/git",
+    "crates/git-transport",
+    "crates/ssh",
+    "crates/ssh-transport",
+    "crates/sftp",
+    "crates/sftp-ssh",
+    "crates/transfers",
+    "crates/transfers-ssh",
+    "crates/transfers-ui",
+    "crates/keymap",
+    "crates/keymap-ui",
+    "crates/ai",
+    "crates/theme",
+    "crates/theme-tokens",
+    "crates/theme-ui",
+    "crates/background",
+    "crates/updater",
+    "crates/updater-ui",
+    "crates/onboarding",
+]
+
+[workspace.package]
+version = "1.0.0"
+
+[workspace.dependencies]
+# GPUI, the GPU-accelerated native UI framework.
+gpui = "0.2.2"
+# gpui-component — shared primitive/component library (Button, Input, Select,
+# Dropdown, Dialog, Tooltip, Switch, Badge, ContextMenu, Lucide icons). Pinned
+# to the release that targets gpui 0.2.2 (matches the `gpui` line above).
+gpui-component = "0.5.1"
+
+# Terminal
+alacritty_terminal = "0.24"
+vte = "0.13"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# SSH — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
+russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2"] }
+russh-sftp = "2.3.0"
+
+# Git — NO git2/libgit2. The original shells out to the `git` CLI
+# (local AND remote-over-SSH via GitExecutor). Parity = keep the same strategy.
+
+# SQLite
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# Keyring
+keyring = "3"
+
+# HTTP (for AI provider APIs)
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Color space conversion (Oklch -> sRGB for the theme tokens)
+palette = "0.7"
+
+# JSON
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Compile-time asset embedding (the icon SVG bundle in labonair-shell)
+rust-embed = "8"
+
+# PTY
+portable-pty = "0.9"
+libc = "0.2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Image decoding (terminal / app background images)
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
+# GPUI's image path is raster-only; native SVG previews need a vector renderer.
+resvg = { version = "0.45.1", default-features = false, features = ["text", "system-fonts", "raster-images"] }
+
+# Utilities
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Dev builds of a GPUI app are unusably slow at opt-level 0 (every layout and
+# paint pass runs unoptimized). Own crates stay quick to rebuild at 1;
+# dependencies (gpui, alacritty_terminal, tree-sitter, ...) change rarely and
+# get full optimization.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# Vendored gpui 0.2.2 with one patch: a runtime-settable glyph coverage gamma
+# (`gpui::set_glyph_coverage_gamma`) so `appearance.fontSmoothing` really
+# changes how text is rasterised. See vendor/gpui/src/text_system.rs.
+[patch.crates-io]
+gpui = { path = "vendor/gpui" }

@@ -1,0 +1,25 @@
+[package]
+name = "labonair-ui-kit"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_ui_kit"
+path = "src/ui_kit.rs"
+
+[features]
+# Force the component gallery (`gallery.rs` + `open_gallery_window`) to compile
+# even in a release build. It is always compiled in debug builds regardless;
+# this flag only exists so `cargo check --features gallery` exercises it and so
+# a release build could ship it if ever wanted (T20-004).
+gallery = []
+
+[dependencies]
+gpui = { workspace = true }
+gpui-component = { workspace = true }
+labonair-theme-tokens = { path = "../theme-tokens" }
+labonair-gpui-ext = { path = "../gpui-ext" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

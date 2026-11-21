@@ -1,0 +1,704 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Background-owned editor for persisted background preferences.
+//!
+//! Embedded inline on the Settings "Themes" page (ADR 0006). The view is a
+//! stack of `settings_row`s separated by hairlines; the Settings page supplies
+//! the surrounding card, so nothing here draws its own panel.
+
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Duration;
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, img, px, App, AppContext, Context, Div, ElementId, Entity, Image, InteractiveElement,
+    IntoElement, KeyDownEvent, ObjectFit, ParentElement, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Timer, Window,
+};
+use gpui_component::color_picker::{ColorPicker, ColorPickerEvent, ColorPickerState};
+use labonair_theme::ThemeStore;
+use labonair_ui_kit::{
+    button, button_disabled, divider, segmented_control, settings_row, slider_row, Axis,
+    ButtonSize, ButtonVariant, Palette, SegmentSize, SegmentVariant, SettingsRow, SliderEvent,
+    SliderState, SliderValue,
+};
+
+use crate::{
+    background_delete, background_import, BackgroundFit, BackgroundStore, BackgroundTarget,
+};
+
+type ErrorSink = Rc<dyn Fn(String, &mut App)>;
+
+/// How long a slider drag waits for a pause before the store persists it.
+const COMMIT_DELAY: Duration = Duration::from_millis(180);
+
+/// The three sliders of the editor, for keyboard stepping.
+#[derive(Clone, Copy)]
+enum BackgroundSlider {
+    Opacity,
+    Blur,
+    TintOpacity,
+}
+
+/// Background capability UI. It edits values through `BackgroundStore` and
+/// never mirrors persistence into Settings.
+pub struct BackgroundSettingsView {
+    store: Entity<BackgroundStore>,
+    theme: Entity<ThemeStore>,
+    tint_picker: Entity<ColorPickerState>,
+    opacity: Entity<SliderState>,
+    blur: Entity<SliderState>,
+    tint_opacity: Entity<SliderState>,
+    confirm_delete: Option<String>,
+    importing: bool,
+    deleting: Option<String>,
+    pending_opacity: Option<u8>,
+    pending_blur: Option<u8>,
+    pending_tint_opacity: Option<u8>,
+    opacity_commit: Task<()>,
+    blur_commit: Task<()>,
+    tint_opacity_commit: Task<()>,
+    /// Downscaled grid previews by filename (never the full image).
+    thumbs: HashMap<String, Arc<Image>>,
+    thumbs_pending: HashSet<String>,
+    report_error: ErrorSink,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl BackgroundSettingsView {
+    /// Build the editor with owner entities and a Shell-provided notification
+    /// sink for filesystem failures.
+    pub fn new(
+        store: Entity<BackgroundStore>,
+        theme: Entity<ThemeStore>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        report_error: impl Fn(String, &mut App) + 'static,
+    ) -> Self {
+        let settings = store.read(cx).settings().clone();
+        let tint_picker = cx.new(|cx| {
+            let mut state = ColorPickerState::new(window, cx);
+            if let Ok(color) = labonair_theme::parse_color(&settings.background_tint_color) {
+                state = state.default_value(color);
+            }
+            state
+        });
+        let opacity = cx.new(|_| slider_state(settings.background_opacity));
+        let blur = cx.new(|_| slider_state(settings.background_blur));
+        let tint_opacity = cx.new(|_| slider_state(settings.background_tint_opacity));
+
+        let mut subscriptions = Vec::new();
+        // Store-level failures (load, decode, save) are reported once, app-wide,
+        // by the shell's `BackgroundEvent` subscription; this view only reports
+        // its own filesystem failures.
+        let report_error: ErrorSink = Rc::new(report_error);
+        let tint_store = store.clone();
+        subscriptions.push(cx.subscribe(
+            &tint_picker,
+            move |_, _, event: &ColorPickerEvent, cx| {
+                let ColorPickerEvent::Change(Some(color)) = event else {
+                    return;
+                };
+                // The tint's alpha is its own opacity slider; keep `#rrggbb`.
+                let hex = labonair_theme::to_hex(*color)[..7].to_string();
+                tint_store.update(cx, |store, cx| store.set_tint_color(hex, cx));
+            },
+        ));
+
+        subscriptions.push(cx.subscribe(&opacity, |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(SliderValue::Single(value)) = event {
+                let value = percent(*value);
+                this.pending_opacity = Some(value);
+                this.opacity_commit = cx.spawn(async move |this, cx| {
+                    Timer::after(COMMIT_DELAY).await;
+                    let _ = this.update(cx, |this, cx| {
+                        if let Some(value) = this.pending_opacity.take() {
+                            this.store
+                                .update(cx, |store, cx| store.set_opacity(value, cx));
+                        }
+                    });
+                });
+                cx.notify();
+            }
+        }));
+        subscriptions.push(cx.subscribe(&blur, |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(SliderValue::Single(value)) = event {
+                let value = percent(*value);
+                this.pending_blur = Some(value);
+                this.blur_commit = cx.spawn(async move |this, cx| {
+                    Timer::after(COMMIT_DELAY).await;
+                    let _ = this.update(cx, |this, cx| {
+                        if let Some(value) = this.pending_blur.take() {
+                            this.store.update(cx, |store, cx| store.set_blur(value, cx));
+                        }
+                    });
+                });
+                cx.notify();
+            }
+        }));
+        subscriptions.push(
+            cx.subscribe(&tint_opacity, |this, _, event: &SliderEvent, cx| {
+                if let SliderEvent::Change(SliderValue::Single(value)) = event {
+                    let value = percent(*value);
+                    this.pending_tint_opacity = Some(value);
+                    this.tint_opacity_commit = cx.spawn(async move |this, cx| {
+                        Timer::after(COMMIT_DELAY).await;
+                        let _ = this.update(cx, |this, cx| {
+                            if let Some(value) = this.pending_tint_opacity.take() {
+                                this.store
+                                    .update(cx, |store, cx| store.set_tint_opacity(value, cx));
+                            }
+                        });
+                    });
+                    cx.notify();
+                }
+            }),
+        );
+
+        cx.observe(&store, |_, _, cx| cx.notify()).detach();
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        cx.observe(&opacity, |_, _, cx| cx.notify()).detach();
+        cx.observe(&blur, |_, _, cx| cx.notify()).detach();
+        cx.observe(&tint_opacity, |_, _, cx| cx.notify()).detach();
+
+        Self {
+            store,
+            theme,
+            tint_picker,
+            opacity,
+            blur,
+            tint_opacity,
+            confirm_delete: None,
+            importing: false,
+            deleting: None,
+            pending_opacity: None,
+            pending_blur: None,
+            pending_tint_opacity: None,
+            opacity_commit: Task::ready(()),
+            blur_commit: Task::ready(()),
+            tint_opacity_commit: Task::ready(()),
+            thumbs: HashMap::new(),
+            thumbs_pending: HashSet::new(),
+            report_error,
+            _subscriptions: subscriptions,
+        }
+    }
+
+    fn update_setting(
+        &self,
+        cx: &mut Context<Self>,
+        update: impl FnOnce(&mut BackgroundStore, &mut Context<BackgroundStore>),
+    ) {
+        self.store.update(cx, update);
+    }
+
+    /// Step a slider by `delta` percent from the keyboard and persist at once.
+    fn step_slider(
+        &mut self,
+        which: BackgroundSlider,
+        delta: i32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (slider, pending, commit) = match which {
+            BackgroundSlider::Opacity => (
+                &self.opacity,
+                &mut self.pending_opacity,
+                &mut self.opacity_commit,
+            ),
+            BackgroundSlider::Blur => (&self.blur, &mut self.pending_blur, &mut self.blur_commit),
+            BackgroundSlider::TintOpacity => (
+                &self.tint_opacity,
+                &mut self.pending_tint_opacity,
+                &mut self.tint_opacity_commit,
+            ),
+        };
+        let current = slider_value(slider, cx).unwrap_or(0);
+        let next = (i32::from(current) + delta).clamp(0, 100) as u8;
+        *pending = None;
+        *commit = Task::ready(());
+        slider.update(cx, |slider, cx| {
+            slider.set_value(f32::from(next), window, cx)
+        });
+        self.store.update(cx, |store, cx| match which {
+            BackgroundSlider::Opacity => store.set_opacity(next, cx),
+            BackgroundSlider::Blur => store.set_blur(next, cx),
+            BackgroundSlider::TintOpacity => store.set_tint_opacity(next, cx),
+        });
+    }
+
+    /// A slider row that the arrow keys step while it has keyboard focus.
+    fn keyboard_slider(
+        &self,
+        id: &'static str,
+        which: BackgroundSlider,
+        row: SettingsRow,
+        c: Palette,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        div()
+            .id(id)
+            .w_full()
+            .tab_index(0)
+            .focus(move |style| style.bg(c.accent))
+            .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
+                let delta = match event.keystroke.key.as_str() {
+                    "left" | "down" => -1,
+                    "right" | "up" => 1,
+                    "pagedown" => -10,
+                    "pageup" => 10,
+                    _ => return,
+                };
+                this.step_slider(which, delta, window, cx);
+                cx.stop_propagation();
+            }))
+            .child(row)
+    }
+
+    fn request_import(&mut self, cx: &mut Context<Self>) {
+        if self.importing {
+            return;
+        }
+        self.importing = true;
+        cx.notify();
+        let receiver = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Choose background image".into()),
+        });
+        let store = self.store.clone();
+        let report_error = self.report_error.clone();
+        cx.spawn(async move |this, cx| {
+            let path = match receiver.await {
+                Ok(Ok(Some(paths))) => paths.into_iter().next(),
+                _ => None,
+            };
+            let imported = if let Some(path) = path {
+                Some(
+                    cx.background_executor()
+                        .spawn(async move { background_import(path.to_string_lossy().to_string()) })
+                        .await,
+                )
+            } else {
+                None
+            };
+            let _ = cx.update(|cx| {
+                if let Some(result) = imported {
+                    match result {
+                        Ok(info) => {
+                            store.update(cx, |store, cx| {
+                                store.select_imported(info, cx);
+                            });
+                        }
+                        Err(message) => report_error(message, cx),
+                    }
+                }
+            });
+            let _ = this.update(cx, |this, cx| {
+                this.importing = false;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn remove_image(&mut self, filename: String, cx: &mut Context<Self>) {
+        self.confirm_delete = None;
+        self.deleting = Some(filename.clone());
+        cx.notify();
+        let store = self.store.clone();
+        let report_error = self.report_error.clone();
+        cx.spawn(async move |this, cx| {
+            let delete_name = filename.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { background_delete(delete_name) })
+                .await;
+            let _ = cx.update(|cx| match result {
+                Ok(()) => store.update(cx, |store, cx| store.forget_deleted(&filename, cx)),
+                Err(message) => report_error(message, cx),
+            });
+            let _ = this.update(cx, |this, cx| {
+                this.deleting = None;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+}
+
+impl Render for BackgroundSettingsView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let c = Palette::from_theme(self.theme.read(cx));
+        let settings = self.store.read(cx).settings().clone();
+        let image_loading = self.store.read(cx).is_loading();
+        let images = self.store.read(cx).available();
+        let empty_images = images.is_empty();
+        let selected = settings.background_image.clone();
+        let selected_fit = match settings.background_fit {
+            BackgroundFit::Cover => "cover",
+            BackgroundFit::Contain => "contain",
+            BackgroundFit::Tile => "tile",
+        };
+        let selected_target = match settings.background_target {
+            BackgroundTarget::Both => "both",
+            BackgroundTarget::App => "app",
+            BackgroundTarget::Terminal => "terminal",
+        };
+
+        // Kick off thumbnail decodes for tiles that don't have one yet.
+        for image in &images {
+            if self.thumbs.contains_key(&image.filename)
+                || !self.thumbs_pending.insert(image.filename.clone())
+            {
+                continue;
+            }
+            let filename = image.filename.clone();
+            let job = {
+                let filename = filename.clone();
+                cx.background_executor()
+                    .spawn(async move { crate::load_thumbnail(&filename) })
+            };
+            cx.spawn(async move |this, cx| {
+                let result = job.await;
+                let _ = this.update(cx, |this, cx| {
+                    this.thumbs_pending.remove(&filename);
+                    if let Ok(image) = result {
+                        this.thumbs.insert(filename, Arc::new(image));
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+
+        let tile = |id: ElementId, label: SharedString, thumb: Option<Arc<Image>>, active: bool| {
+            let preview = div()
+                .w(px(132.0))
+                .h(px(82.0))
+                .overflow_hidden()
+                .rounded(px(c.radius.md))
+                .border_2()
+                .border_color(if active { c.primary } else { c.border })
+                .bg(c.muted_bg)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(c.control_space(11.0))
+                .text_color(c.muted)
+                .map(|d| match thumb {
+                    Some(image) => d.child(img(image).object_fit(ObjectFit::Cover).size_full()),
+                    None => d.child("None"),
+                });
+            div()
+                .id(id)
+                .flex()
+                .flex_col()
+                .gap(c.space(4.0))
+                .w(px(132.0))
+                .cursor_pointer()
+                .child(preview)
+                .child(
+                    div()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_size(c.control_space(11.0))
+                        .text_color(if active { c.fg } else { c.muted })
+                        .child(label),
+                )
+        };
+        let mut image_rows = vec![tile(
+            "background-image-none".into(),
+            "None".into(),
+            None,
+            selected.is_empty(),
+        )
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.update_setting(cx, |store, cx| store.set_image("", cx));
+            this.confirm_delete = None;
+        }))
+        .into_any_element()];
+        image_rows.extend(images.into_iter().map(|image| {
+            let filename = image.filename;
+            let action = filename.clone();
+            tile(
+                ElementId::Name(format!("background-image-{filename}").into()),
+                filename.clone().into(),
+                self.thumbs.get(&filename).cloned(),
+                selected == filename,
+            )
+            .on_click(cx.listener(move |this, _, _window, cx| {
+                this.update_setting(cx, |store, cx| store.set_image(action.clone(), cx));
+                this.confirm_delete = None;
+            }))
+            .into_any_element()
+        }));
+
+        let selected_for_delete = selected.clone();
+        let selected_for_removal = selected.clone();
+        let delete_controls = if self.deleting.as_deref() == Some(selected.as_str()) {
+            button_disabled(
+                "background-delete-pending",
+                c,
+                ButtonVariant::OutlinedGhost,
+                ButtonSize::Xs,
+            )
+            .child("Removing…")
+            .into_any_element()
+        } else if self.confirm_delete.as_deref() == Some(selected.as_str()) {
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    button(
+                        "background-delete-cancel",
+                        c,
+                        ButtonVariant::OutlinedGhost,
+                        ButtonSize::Xs,
+                    )
+                    .child("Cancel")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.confirm_delete = None;
+                        cx.notify();
+                    })),
+                )
+                .child(
+                    button(
+                        "background-delete-confirm",
+                        c,
+                        ButtonVariant::TintedError,
+                        ButtonSize::Xs,
+                    )
+                    .child("Remove image")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.remove_image(selected_for_removal.clone(), cx)
+                    })),
+                )
+                .into_any_element()
+        } else if !selected.is_empty() {
+            button(
+                "background-delete-start",
+                c,
+                ButtonVariant::OutlinedGhost,
+                ButtonSize::Xs,
+            )
+            .child("Remove selected…")
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.confirm_delete = Some(selected_for_delete.clone());
+                cx.notify();
+            }))
+            .into_any_element()
+        } else {
+            button_disabled(
+                "background-delete-start",
+                c,
+                ButtonVariant::OutlinedGhost,
+                ButtonSize::Xs,
+            )
+            .child("Remove selected…")
+            .into_any_element()
+        };
+        let import_button = if self.importing {
+            button_disabled(
+                "background-import",
+                c,
+                ButtonVariant::Outlined,
+                ButtonSize::Xs,
+            )
+            .child("Adding image…")
+            .into_any_element()
+        } else {
+            button(
+                "background-import",
+                c,
+                ButtonVariant::Outlined,
+                ButtonSize::Xs,
+            )
+            .child("Add image…")
+            .on_click(cx.listener(|this, _, _, cx| this.request_import(cx)))
+            .into_any_element()
+        };
+
+        let opacity_value = slider_value(&self.opacity, cx).unwrap_or(settings.background_opacity);
+        let blur_value = slider_value(&self.blur, cx).unwrap_or(settings.background_blur);
+        let tint_opacity_value =
+            slider_value(&self.tint_opacity, cx).unwrap_or(settings.background_tint_opacity);
+
+        let hairline = || divider(Axis::Horizontal, c.line_subtle);
+        div()
+            .id("background-settings")
+            .flex()
+            .flex_col()
+            .w_full()
+            .child(
+                settings_row("background-image", c, "Image")
+                    .description("Choose an image shown behind the app and terminal.")
+                    .control(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(import_button)
+                            .child(delete_controls),
+                    ),
+            )
+            .child(
+                div()
+                    .id("background-image-list")
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .gap(c.space(10.0))
+                    .max_h(c.space(300.0))
+                    .overflow_y_scroll()
+                    .px(c.control_space(12.0))
+                    .pb(c.control_space(12.0))
+                    .children(image_rows)
+                    .when(empty_images, |list| {
+                        list.child(
+                            div()
+                                .px(c.space(8.0))
+                                .py(c.space(4.0))
+                                .text_size(c.control_space(12.0))
+                                .text_color(c.muted)
+                                .child("No background images have been added."),
+                        )
+                    })
+                    .when(image_loading, |list| {
+                        list.child(
+                            div()
+                                .px(c.space(8.0))
+                                .py(c.space(4.0))
+                                .text_size(c.control_space(12.0))
+                                .text_color(c.muted)
+                                .child("Preparing background preview…"),
+                        )
+                    }),
+            )
+            .child(hairline())
+            .child(
+                self.keyboard_slider(
+                    "background-opacity",
+                    BackgroundSlider::Opacity,
+                    slider_row(
+                        "background-opacity-row",
+                        c,
+                        "Opacity",
+                        &self.opacity,
+                        format!("{opacity_value} %"),
+                    )
+                    .description("How strongly the image shows through the interface."),
+                    c,
+                    cx,
+                ),
+            )
+            .child(hairline())
+            .child(self.keyboard_slider(
+                "background-blur",
+                BackgroundSlider::Blur,
+                slider_row(
+                    "background-blur-row",
+                    c,
+                    "Blur",
+                    &self.blur,
+                    format!("{blur_value} px"),
+                ),
+                c,
+                cx,
+            ))
+            .child(hairline())
+            .child(
+                settings_row("background-tint-color", c, "Tint color")
+                    .description("A color laid over the image.")
+                    .control(ColorPicker::new(&self.tint_picker)),
+            )
+            .child(hairline())
+            .child(self.keyboard_slider(
+                "background-tint-opacity",
+                BackgroundSlider::TintOpacity,
+                slider_row(
+                    "background-tint-opacity-row",
+                    c,
+                    "Tint opacity",
+                    &self.tint_opacity,
+                    format!("{tint_opacity_value} %"),
+                ),
+                c,
+                cx,
+            ))
+            .child(hairline())
+            .child(
+                settings_row("background-fit", c, "Image scaling").control(
+                    segmented_control("background-fit-control", c, selected_fit)
+                        .size(SegmentSize::Sm)
+                        .variant(SegmentVariant::Outline)
+                        .segment("cover", "Cover")
+                        .segment("contain", "Contain")
+                        .segment("tile", "Tile")
+                        .on_select(cx.listener(|this, key: &SharedString, _, cx| {
+                            let fit = match key.as_ref() {
+                                "contain" => BackgroundFit::Contain,
+                                "tile" => BackgroundFit::Tile,
+                                _ => BackgroundFit::Cover,
+                            };
+                            this.update_setting(cx, |store, cx| store.set_fit(fit, cx));
+                        })),
+                ),
+            )
+            .child(hairline())
+            .child(
+                settings_row("background-target", c, "Show behind").control(
+                    segmented_control("background-target-control", c, selected_target)
+                        .size(SegmentSize::Sm)
+                        .variant(SegmentVariant::Outline)
+                        .segment("both", "App + terminal")
+                        .segment("app", "App")
+                        .segment("terminal", "Terminal")
+                        .on_select(cx.listener(|this, key: &SharedString, _, cx| {
+                            let target = match key.as_ref() {
+                                "app" => BackgroundTarget::App,
+                                "terminal" => BackgroundTarget::Terminal,
+                                _ => BackgroundTarget::Both,
+                            };
+                            this.update_setting(cx, |store, cx| store.set_target(target, cx));
+                        })),
+                ),
+            )
+    }
+}
+
+fn slider_state(value: u8) -> SliderState {
+    SliderState::new()
+        .min(0.0)
+        .max(100.0)
+        .step(1.0)
+        .default_value(f32::from(value))
+}
+
+fn percent(value: f32) -> u8 {
+    value.round().clamp(0.0, 100.0) as u8
+}
+
+fn slider_value(state: &Entity<SliderState>, cx: &App) -> Option<u8> {
+    match state.read(cx).value() {
+        SliderValue::Single(value) => Some(percent(value)),
+        SliderValue::Range(_, _) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::percent;
+
+    #[test]
+    fn slider_values_round_and_clamp_to_percent() {
+        assert_eq!(percent(-5.0), 0);
+        assert_eq!(percent(29.6), 30);
+        assert_eq!(percent(140.0), 100);
+    }
+}

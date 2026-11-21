@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Shared `Disclosure` primitive — a clickable chevron + label row that
+//! toggles a collapsed/expanded flag the caller owns.
+//!
+//! It replaces the section-header pattern in
+//! `crates/settings-ui/src/panes/generic.rs::render_section_header` with icon
+//! glyphs ([`IconName::ChevronRight`]/[`IconName::ChevronDown`]) instead of text
+//! arrows, same click-to-toggle contract (the state lives in the caller, this
+//! only renders + fires `on_click`).
+//!
+//! ```ignore
+//! disclosure("section-Terminal", "Terminal", collapsed, muted, fg)
+//!     .on_click(cx.listener(move |this, _, _, cx| this.toggle_section(label, cx)))
+//! ```
+
+use gpui::{
+    div, px, ElementId, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, Styled,
+};
+
+use crate::animation::state_fade_ambient;
+use crate::icon::IconName;
+
+/// Builds the disclosure row. `collapsed` selects the chevron direction;
+/// `fg` is the hover text color, `muted` the resting one. Callers chain
+/// `.on_click(..)` to flip their own collapsed flag.
+pub fn disclosure(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    collapsed: bool,
+    muted: Hsla,
+    fg: Hsla,
+) -> Stateful<gpui::Div> {
+    // GPUI cannot rotate, so both chevrons are layered and crossfaded; motion
+    // tokens come from the active theme (no palette in this signature).
+    const CHEVRON_SIZE: f32 = 12.0;
+    let id = id.into();
+    let layer = |icon: IconName, visible: bool, suffix: &'static str| {
+        let glyph = div()
+            .absolute()
+            .inset_0()
+            .child(icon.svg(muted).size(px(CHEVRON_SIZE)));
+        state_fade_ambient(glyph, (id.clone(), suffix), visible)
+    };
+
+    let chevrons = div()
+        .relative()
+        .flex_shrink_0()
+        .size(px(CHEVRON_SIZE))
+        .child(layer(IconName::ChevronRight, collapsed, "right"))
+        .child(layer(IconName::ChevronDown, !collapsed, "down"));
+
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_1()
+        .cursor_pointer()
+        .text_size(px(11.0))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(muted)
+        .hover(move |style| style.text_color(fg))
+        .child(chevrons)
+        .child(label.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chevron_direction_follows_collapsed() {
+        // Smoke test: both directions build without panicking.
+        let _ = disclosure("d1", "Section", true, gpui::black(), gpui::white());
+        let _ = disclosure("d2", "Section", false, gpui::black(), gpui::white());
+    }
+}

@@ -1,0 +1,13 @@
+[package]
+name = "labonair-errors"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+rusqlite = { version = "0.40", features = ["bundled"] }
+russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "2.3.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "1"

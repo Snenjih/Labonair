@@ -1,0 +1,248 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! `labonair-settings-content` — the fully typed settings tree (T19-001).
+//!
+//! It has **no** GPUI, UI, or application-composition dependency
+//! (`docs/settings.md`
+//! track) — it is a pure data model that `T19-002`'s `SettingsStore` layers
+//! (default < user < project). Historical flat `Preferences` input is read
+//! only by `labonair_settings::legacy_migrations` and never becomes a runtime
+//! source of truth.
+
+mod merge_from;
+
+pub mod areas;
+pub mod fallible;
+
+pub mod appearance;
+pub mod connections;
+pub mod editor;
+pub mod file_manager;
+pub mod general;
+// Migration-only wire types; MCP runtime configuration belongs to the
+// AI/MCP capability and is not part of SettingsContent.
+pub mod mcp;
+// Migration-only wire types; statusbar/panel layout belongs to Workspace.
+pub mod personalization;
+pub mod terminal;
+pub mod workspace;
+
+pub use areas::{AreaKind, AreaMeta, AREAS};
+pub use fallible::{parse, FieldError};
+pub use merge_from::MergeFrom;
+// `#[derive(MergeFrom)]` — see `labonair-settings-macros`. Lives in a
+// different namespace than the `MergeFrom` trait above, so both can share the
+// name (mirrors `serde`'s `Serialize` trait + derive macro).
+pub use labonair_settings_macros::MergeFrom;
+
+use serde::{Deserialize, Serialize};
+
+use appearance::AppearanceContent;
+use connections::ConnectionsContent;
+use editor::EditorContent;
+use file_manager::FileManagerContent;
+use general::GeneralContent;
+use terminal::TerminalContent;
+use workspace::WorkspaceContent;
+
+/// The fully typed settings tree. Every leaf field across the area structs is
+/// `Option<T>` (`None` = "not set at this layer", distinct from "set to the
+/// zero value") so that [`MergeFrom`] can tell an unset field from an
+/// explicit override when layering default < user < project settings files.
+#[derive(
+    Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema, MergeFrom,
+)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SettingsContent {
+    pub general: GeneralContent,
+    pub appearance: AppearanceContent,
+    pub terminal: TerminalContent,
+    pub editor: EditorContent,
+    #[serde(rename = "fileManager")]
+    pub file_manager: FileManagerContent,
+    pub workspace: WorkspaceContent,
+    pub connections: ConnectionsContent,
+}
+
+impl SettingsContent {
+    /// The fully populated default tree — every leaf is `Some(..)`. Must
+    /// stay in sync with `assets/settings/default.json`
+    /// (`tests::defaults_matches_shipped_default_json` enforces this).
+    pub fn defaults() -> Self {
+        Self {
+            general: GeneralContent::defaults(),
+            appearance: AppearanceContent::defaults(),
+            terminal: TerminalContent::defaults(),
+            editor: EditorContent::defaults(),
+            file_manager: FileManagerContent::defaults(),
+            workspace: WorkspaceContent::defaults(),
+            connections: ConnectionsContent::defaults(),
+        }
+    }
+}
+
+/// The shipped, documented default tree (`assets/settings/default.json`,
+pub const DEFAULT_JSON: &str = include_str!("../assets/settings/default.json");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `SettingsContent`'s actual top-level field names — the only valid
+    /// `AreaMeta::target_module` values (`every_area_hits_a_real_module`).
+    const FIELD_NAMES: &[&str] = &[
+        "general",
+        "appearance",
+        "terminal",
+        "editor",
+        "file_manager",
+        "workspace",
+        "connections",
+    ];
+
+    #[test]
+    fn defaults_matches_shipped_default_json() {
+        let (from_json, errors) = fallible::parse(DEFAULT_JSON);
+        assert!(
+            errors.is_empty(),
+            "default.json failed to parse cleanly: {errors:?}"
+        );
+        assert_eq!(
+            SettingsContent::defaults(),
+            from_json,
+            "SettingsContent::defaults() and assets/settings/default.json drifted"
+        );
+    }
+
+    #[test]
+    fn reference_typography_defaults_are_canonical() {
+        let defaults = SettingsContent::defaults();
+
+        assert_eq!(
+            defaults.appearance.app_font_family.as_deref(),
+            Some("\"Inter Variable\", sans-serif")
+        );
+        assert_eq!(defaults.appearance.app_font_size, Some(13));
+        assert_eq!(
+            defaults.terminal.terminal_font_family.as_deref(),
+            Some("\"JetBrains Mono\", SFMono-Regular, Menlo, monospace")
+        );
+        assert_eq!(defaults.terminal.terminal_font_size, Some(14));
+        assert_eq!(
+            defaults.terminal.terminal_font_weight,
+            Some(terminal::TerminalFontWeight::Normal)
+        );
+        assert_eq!(defaults.terminal.terminal_line_height, Some(1.05));
+        assert_eq!(
+            defaults.editor.editor_font_family.as_deref(),
+            Some("\"JetBrains Mono\", SFMono-Regular, Menlo, monospace")
+        );
+        assert_eq!(defaults.editor.editor_font_size, Some(13));
+        assert_eq!(defaults.editor.editor_line_height, Some(1.55));
+    }
+
+    #[test]
+    fn shipped_default_json_contains_only_typed_fields() {
+        let raw = jsonc_parser::parse_to_serde_value(DEFAULT_JSON, &Default::default())
+            .expect("shipped default JSON must parse")
+            .expect("shipped default JSON must contain a value");
+        let typed = serde_json::to_value(SettingsContent::defaults()).unwrap();
+        assert_same_object_shape(&raw, &typed, "$");
+    }
+
+    fn assert_same_object_shape(raw: &serde_json::Value, typed: &serde_json::Value, path: &str) {
+        let (Some(raw), Some(typed)) = (raw.as_object(), typed.as_object()) else {
+            return;
+        };
+        assert_eq!(
+            raw.keys().collect::<Vec<_>>(),
+            typed.keys().collect::<Vec<_>>(),
+            "default JSON shape drift at {path}"
+        );
+        for (key, value) in raw {
+            assert_same_object_shape(value, &typed[key], &format!("{path}.{key}"));
+        }
+    }
+
+    #[test]
+    fn every_area_hits_a_real_module() {
+        for area in AREAS {
+            assert!(
+                FIELD_NAMES.contains(&area.target_module),
+                "AREAS entry {:?} points at unknown target_module {:?}",
+                area.key,
+                area.target_module
+            );
+        }
+    }
+
+    #[test]
+    fn custom_areas_match_settings_guidelines_rule_4() {
+        let custom: Vec<&str> = AREAS
+            .iter()
+            .filter(|a| a.kind == AreaKind::Custom)
+            .map(|a| a.key)
+            .collect();
+        assert!(
+            custom.is_empty(),
+            "Settings has no integration-owned custom areas"
+        );
+    }
+
+    #[test]
+    fn capability_management_areas_are_not_settings_categories() {
+        for removed in ["themes", "hosts", "shortcuts", "keymap"] {
+            assert!(
+                !AREAS.iter().any(|area| area.key == removed),
+                "{removed} must be owned by its capability, not Settings"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_from_layers_user_over_default_over_project() {
+        let mut layered = SettingsContent::defaults();
+        assert_eq!(layered.terminal.terminal_font_size, Some(14));
+
+        let mut user = SettingsContent::default();
+        user.terminal.terminal_font_size = Some(18);
+        layered.merge_from(&user);
+        assert_eq!(layered.terminal.terminal_font_size, Some(18));
+        // Unrelated fields survive the merge untouched.
+        assert_eq!(layered.terminal.terminal_scrollback, Some(5_000));
+
+        let mut project = SettingsContent::default();
+        project.terminal.terminal_font_size = Some(22);
+        layered.merge_from(&project);
+        assert_eq!(layered.terminal.terminal_font_size, Some(22));
+    }
+
+    #[test]
+    fn merge_from_none_never_overwrites() {
+        let mut layered = SettingsContent::defaults();
+        let empty_layer = SettingsContent::default();
+        layered.merge_from(&empty_layer);
+        assert_eq!(layered, SettingsContent::defaults());
+    }
+
+    #[test]
+    fn legacy_capability_sections_are_not_parsed_or_serialized() {
+        let (content, errors) = fallible::parse(
+            r#"{
+                "hosts": { "entries": [{ "name": "legacy" }] },
+                "keymap": { "baseKeymap": "vscode" }
+            }"#,
+        );
+        assert!(errors.is_empty());
+
+        let json = serde_json::to_value(content).unwrap();
+        let json_str = json.to_string();
+        for forbidden in ["hosts", "keymap", "legacy", "baseKeymap"] {
+            assert!(
+                !json_str.to_lowercase().contains(&forbidden.to_lowercase()),
+                "settings JSON must never contain removed capability field {forbidden}"
+            );
+        }
+    }
+}

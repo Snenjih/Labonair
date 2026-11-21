@@ -1,0 +1,377 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Workspace-owned status-bar contributions.
+//!
+//! Status items that expose workspace state or workspace-scoped agent access
+//! belong here. The shell only inserts the resulting registrations into the
+//! shared status-item registry.
+
+use gpui::{
+    canvas, div, px, AnyElement, App, AppContext, Bounds, ClickEvent, Context, Entity,
+    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window,
+};
+use labonair_mcp_core::SessionKind;
+use labonair_panel::{StatusItem, StatusSide};
+use labonair_theme::store::ThemeStore;
+use labonair_ui_kit::{
+    icon_button_builder, ButtonSize, ButtonVariant, IconName, ListItem, Palette,
+};
+
+use crate::agent_access::{AgentAccessEntry, AgentAccessStore};
+use crate::Workspace;
+
+/// Statusbar badge exposing the workspace-scoped MCP agent grants.
+pub struct AgentAccessStatusItem {
+    store: Entity<AgentAccessStore>,
+    workspace: Entity<Workspace>,
+    theme: Entity<ThemeStore>,
+    open: bool,
+    /// The badge trigger's window-space bounds from the last paint; the
+    /// dropdown drops from `bounds.bottom_left()`.
+    trigger_bounds: Option<Bounds<Pixels>>,
+    /// Click position that opened the dropdown — used only before the first
+    /// paint records `trigger_bounds`.
+    fallback_anchor: Point<Pixels>,
+    focus: gpui::FocusHandle,
+}
+
+impl AgentAccessStatusItem {
+    pub fn new(
+        store: Entity<AgentAccessStore>,
+        workspace: Entity<Workspace>,
+        theme: Entity<ThemeStore>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&store, |_, _, cx| cx.notify()).detach();
+        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        Self {
+            store,
+            workspace,
+            theme,
+            open: false,
+            trigger_bounds: None,
+            fallback_anchor: Point::default(),
+            focus: cx.focus_handle(),
+        }
+    }
+
+    fn render_badge(
+        &mut self,
+        entries: Vec<AgentAccessEntry>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let (fg, border, accent) = {
+            let t = self.theme.read(cx);
+            (t.foreground(), t.border(), t.accent())
+        };
+        let palette = Palette::from_theme(self.theme.read(cx));
+        let count = entries.len();
+
+        let badge = icon_button_builder("agent-access-badge", palette, IconName::Shield)
+            .size(ButtonSize::IconXxs)
+            .selected(self.open)
+            .tooltip("AI agent access")
+            .render()
+            .track_focus(&self.focus)
+            .key_context("StatusPopover")
+            .relative()
+            .child({
+                let weak = cx.weak_entity();
+                canvas(
+                    move |bounds, _window, cx| {
+                        let _ = weak.update(cx, |this, cx| {
+                            if this.trigger_bounds != Some(bounds) {
+                                this.trigger_bounds = Some(bounds);
+                                cx.notify();
+                            }
+                        });
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full()
+            })
+            .child(
+                div()
+                    .absolute()
+                    .top(px(-2.0))
+                    .right(px(-2.0))
+                    .min_w(px(13.0))
+                    .h(px(13.0))
+                    .px(px(2.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(accent)
+                    .text_color(fg)
+                    .text_size(px(8.0))
+                    .child(SharedString::from(count.to_string())),
+            )
+            .on_click(cx.listener(|this, ev: &ClickEvent, w, cx| {
+                if this.open {
+                    this.open = false;
+                } else {
+                    this.open = true;
+                    this.fallback_anchor = ev.position();
+                    w.focus(&this.focus);
+                }
+                cx.notify();
+            }))
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _w, cx| {
+                if this.open && ev.keystroke.key == "escape" {
+                    this.open = false;
+                    cx.notify();
+                    cx.stop_propagation();
+                }
+            }));
+
+        if !self.open {
+            return div()
+                .relative()
+                .flex_shrink_0()
+                .child(badge)
+                .into_any_element();
+        }
+        let anchor = self
+            .trigger_bounds
+            .map(|b| b.bottom_left())
+            .unwrap_or(self.fallback_anchor);
+
+        let view = cx.entity();
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.open = false;
+                    cx.notify();
+                })
+            }
+        };
+        let content = div()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(border)
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(fg)
+                    .child("AI Agent Access"),
+            )
+            .children(entries.into_iter().map(|entry| {
+                let tab_id = entry.tab_id;
+                let session_id = entry.session_id.clone();
+                ListItem::new(SharedString::from(format!("agent-jump-{tab_id}")), palette)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_xs()
+                            .truncate()
+                            .child(SharedString::from(entry.label.clone())),
+                    )
+                    .trailing(
+                        icon_button_builder(
+                            SharedString::from(format!("agent-revoke-{tab_id}")),
+                            palette,
+                            IconName::X,
+                        )
+                        .size(ButtonSize::IconXxs)
+                        .tooltip("Revoke access")
+                        .render()
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
+                                cx.stop_propagation();
+                                let session_id = session_id.clone();
+                                this.store.update(cx, |s, cx| {
+                                    s.set_grant(
+                                        tab_id,
+                                        session_id,
+                                        false,
+                                        String::new(),
+                                        SessionKind::Ssh,
+                                        None,
+                                        cx,
+                                    );
+                                });
+                                cx.notify();
+                            },
+                        )),
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.open = false;
+                        this.workspace
+                            .update(cx, |w, cx| w.reveal_tab(tab_id, window, cx));
+                        cx.notify();
+                    }))
+            }))
+            .into_any_element();
+
+        div()
+            .relative()
+            .flex_shrink_0()
+            .child(badge)
+            .child(labonair_ui_kit::popover(
+                anchor,
+                px(300.0),
+                Palette::from_theme(self.theme.read(cx)),
+                dismiss,
+                content,
+            ))
+            .into_any_element()
+    }
+}
+
+impl Render for AgentAccessStatusItem {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_status(window, cx)
+    }
+}
+
+impl StatusItem for AgentAccessStatusItem {
+    fn id(&self) -> &'static str {
+        "agent-access"
+    }
+
+    fn default_side(&self) -> StatusSide {
+        StatusSide::Right
+    }
+
+    fn order(&self) -> i32 {
+        30
+    }
+
+    fn group(&self) -> u32 {
+        1
+    }
+
+    fn is_empty(&self, cx: &App) -> bool {
+        let aa = self.store.read(cx);
+        !aa.bridge_enabled() || aa.entries().is_empty()
+    }
+
+    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let (enabled, entries) = {
+            let aa = self.store.read(cx);
+            (aa.bridge_enabled(), aa.entries())
+        };
+        if !enabled || entries.is_empty() {
+            return div().into_any_element();
+        }
+        self.render_badge(entries, cx)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workspace-derived informational items.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Statusbar item exposing the active native preview URL.
+pub struct PreviewUrlStatusItem {
+    workspace: Entity<Workspace>,
+    theme: Entity<ThemeStore>,
+}
+
+impl PreviewUrlStatusItem {
+    pub fn new(
+        workspace: Entity<Workspace>,
+        theme: Entity<ThemeStore>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        Self { workspace, theme }
+    }
+}
+
+impl Render for PreviewUrlStatusItem {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_status(window, cx)
+    }
+}
+
+impl StatusItem for PreviewUrlStatusItem {
+    fn id(&self) -> &'static str {
+        "preview-url"
+    }
+
+    fn default_side(&self) -> StatusSide {
+        StatusSide::Right
+    }
+
+    fn order(&self) -> i32 {
+        12
+    }
+
+    fn group(&self) -> u32 {
+        0
+    }
+
+    fn is_empty(&self, cx: &App) -> bool {
+        self.workspace.read(cx).active_preview_url(cx).is_none()
+    }
+
+    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let Some(url) = self.workspace.read(cx).active_preview_url(cx) else {
+            return div().into_any_element();
+        };
+        let palette = Palette::from_theme(self.theme.read(cx));
+        let open = url.clone();
+        icon_button_builder("bar-preview-url", palette, IconName::Globe)
+            .variant(ButtonVariant::Transparent)
+            .size(ButtonSize::Xxs)
+            .label(url.strip_prefix("http://").unwrap_or(&url).to_string())
+            .render()
+            .on_click(cx.listener(move |_, _: &ClickEvent, _window, cx| {
+                cx.open_url(&open);
+            }))
+            .into_any_element()
+    }
+}
+
+/// Build the preview-URL status-bar contribution.
+pub fn preview_url_registration(
+    workspace: &Entity<Workspace>,
+    theme: &Entity<ThemeStore>,
+    cx: &mut App,
+) -> labonair_panel::StatusItemRegistration {
+    let item = cx.new(|cx| PreviewUrlStatusItem::new(workspace.clone(), theme.clone(), cx));
+    let handle = item.clone();
+    labonair_panel::StatusItemRegistration {
+        id: item.read(cx).id(),
+        default_side: item.read(cx).default_side(),
+        order: item.read(cx).order(),
+        group: item.read(cx).group(),
+        build: std::sync::Arc::new(move |_window, _cx| {
+            std::sync::Arc::new(handle.clone()) as labonair_panel::AnyStatusItemHandle
+        }),
+    }
+}
+
+/// Build the Agent Access status-item contribution for application composition.
+pub fn status_item_registration(
+    store: &Entity<AgentAccessStore>,
+    workspace: &Entity<Workspace>,
+    theme: &Entity<ThemeStore>,
+    cx: &mut App,
+) -> labonair_panel::StatusItemRegistration {
+    let item = cx
+        .new(|cx| AgentAccessStatusItem::new(store.clone(), workspace.clone(), theme.clone(), cx));
+    let handle = item.clone();
+    labonair_panel::StatusItemRegistration {
+        id: item.read(cx).id(),
+        default_side: item.read(cx).default_side(),
+        order: item.read(cx).order(),
+        group: item.read(cx).group(),
+        build: std::sync::Arc::new(move |_window, _cx| {
+            std::sync::Arc::new(handle.clone()) as labonair_panel::AnyStatusItemHandle
+        }),
+    }
+}

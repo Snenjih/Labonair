@@ -1,0 +1,286 @@
+// Labonair default settings. This is the innermost layer of the
+// default < user < project merge (T19-002's SettingsStore); every value here
+// must exactly match SettingsContent::defaults() — enforced by
+// settings_content::tests::defaults_matches_shipped_default_json.
+//
+// Vocabulary note: every field here is documented at its Rust definition
+// (crates/settings-content/src/*.rs) — this file re-states only what a user
+// editing settings.json would need, not the full rationale.
+{
+  "general": {
+    // "system" follows the OS appearance; "light"/"dark" pin it.
+    "theme": "system",
+    "restoreWindowState": true,
+    // "terminal" opens one local terminal on launch; "empty" starts on the
+    // empty-workspace surface.
+    "defaultStartupTab": "empty",
+    "checkForUpdates": true,
+    "sessionRestore": false
+  },
+
+  "appearance": {
+    // "default" = the built-in light/dark JSON theme.
+    "appTheme": "default",
+    // "default" = the built-in "Labonair" file/folder glyph set.
+    "iconTheme": "default",
+    "themeVariantOverrides": {},
+    "appFontSize": 13,
+    "appFontFamily": "\"Inter Variable\", sans-serif",
+    // "system" (meant to follow the OS Reduce motion preference; currently behaves like "full") | "full" | "reduced" | "off".
+    "animations": "system",
+    // "comfortable" (floating panes) | "compact".
+    "paneLayout": "comfortable",
+    "paneHighlight": false,
+    "paneHighlightColor": "#3b82f6",
+    "paneHighlightOpacity": 100,
+    // Editor/terminal text (T20-007 theme_settings layer). Empty family = the
+    // theme's own mono font.
+    // "system" | "none" | "light" | "medium" | "strong" — macOS text smoothing.
+    "fontSmoothing": "system",
+    // "compact" | "default" | "comfortable" — spacing/size density.
+    "uiDensity": "default",
+    // Multiplier on the active theme's corner-radius scale (1.0 = unchanged).
+    "cornerRadiusScale": 1.0,
+    // Translucent window chrome/surfaces over the native blur (false = opaque).
+    "translucentSurfaces": false,
+    // How transparent Glassy surfaces are, 0-100 (only with Glassy).
+    "glassTransparency": 30,
+    // How strongly the desktop behind Glassy surfaces is blurred, 0-100 (only with Glassy, macOS).
+    "glassBlur": 40,
+    // "titlebar" or "sidebar".
+    "tabsLocation": "titlebar",
+    "tabFillSpace": false,
+    "dimInactivePanes": false,
+    "zenModeShowHeader": true,
+    "zenModeShowStatusbar": true
+  },
+
+  "terminal": {
+    // Empty = the user's login shell.
+    "terminalShell": "",
+    "terminalFontFamily": "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace",
+    "terminalFontSize": 14,
+    // Vertical line spacing as a multiple of the font size.
+    "terminalLineHeight": 1.05,
+    // "normal" | "medium" | "bold".
+    "terminalFontWeight": "normal",
+    "terminalScrollback": 5000,
+    // Rows of scrollback replayed on the next launch; 0 = persist all.
+    "sessionScrollbackLines": 1000,
+    "scrollbackMaxSizeMb": 10,
+    // 0 = keep the persisted scrollback file until the pane/session goes away.
+    "scrollbackRetentionDays": 0,
+    "terminalCursorStyle": "bar",
+    "terminalCursorBlink": true,
+    // Cursor blink half-period, in milliseconds.
+    "terminalCursorBlinkInterval": 1000,
+    "terminalCopyOnSelect": false,
+    "terminalRightClickPastes": false,
+    "terminalOptionAsMeta": false,
+    // Characters that end a double-click word selection.
+    "terminalWordSeparator": " ()[]{}',\"`",
+    // Multiplier applied to every mouse-wheel scroll step.
+    "terminalScrollSensitivity": 1,
+    // "none" | "alt" | "ctrl" | "shift" — held, multiplies the scroll step by 5.
+    "terminalFastScrollModifier": "alt",
+    "terminalBell": false,
+    // Ask before closing a terminal tab whose shell is still running.
+    "confirmCloseTerminalTab": false,
+    // Whole-pane background opacity in percent; 100 = fully opaque.
+    "terminalOpacity": 100,
+    // "KEY=value,KEY2=value2" applied to every new shell.
+    "terminalEnvironmentVariables": "",
+    // Whitespace-separated extra shell arguments (no quoting support).
+    "terminalShellArgs": "",
+    // "app" (sessions end with the app) | "detached" (background host keeps
+    // sessions alive after quit). Applies to newly opened sessions only.
+    "sessionHost": "app",
+    // "off" | "ask" | "auto" — re-run the foreground command of a restored terminal.
+    "resumeOnRestore": "ask",
+    // Process name -> command to re-run, e.g. { "claude": "claude --continue" }.
+    "resumeCommands": {},
+    // Scrollback rows the detached session host keeps per session.
+    "detachedScrollbackLines": 5000
+    // Agent integrations: tab logo + status marker + finished notification for
+    // coding agents running in a terminal (Resume settings above belong here too).
+    "agentIntegrations": true,
+    "agentIntegrationClaudeCode": true,
+    "agentIntegrationCodex": true,
+    "agentIntegrationPi": true,
+    "agentIntegrationOpenCode": true,
+    "agentIntegrationNotify": true,
+  },
+
+  "editor": {
+    "editorFontFamily": "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace",
+    "editorFontSize": 13,
+    "editorFontWeight": 400,
+    "editorLineHeight": 1.55,
+    "editorTabSize": 2,
+    "editorWordWrap": false,
+    "editorLineNumbers": true,
+    "editorRelativeLineNumbers": false,
+    "editorIndentWithTabs": false,
+    "editorAutoCloseBrackets": true,
+    "editorAutoSurround": true,
+    "editorDragAndDropSelection": true,
+    "editorMultiCursorModifier": "alt",
+    "editorMouseWheelZoom": false,
+    "editorScrollSensitivity": 1.0,
+    "editorFastScrollSensitivity": 4.0,
+    "editorVerticalScrollMargin": 3,
+    "editorIndentationGuides": true,
+    "editorWhitespace": "none",
+    "editorWhitespaceSpace": "•",
+    "editorWhitespaceTab": "→",
+    "editorMinimap": "never",
+    "editorMinimapDisplayIn": "active_editor",
+    "editorMinimapThumb": "always",
+    "editorMinimapThumbBorder": "left_open",
+    "editorMinimapCurrentLineHighlight": "inherit",
+    // "binary" uses KiB/MiB; "decimal" uses kB/MB.
+    "imageViewerUnit": "binary",
+    "editorMinimapMaxWidthColumns": 80,
+    "editorScrollbarShow": "auto",
+    "editorScrollbarCursors": true,
+    "editorScrollbarGitDiff": true,
+    "editorScrollbarSearchResults": true,
+    "editorScrollbarSelectedText": true,
+    "editorScrollbarSelectedSymbol": true,
+    "editorScrollbarDiagnostics": "all",
+    "editorScrollbarHorizontal": true,
+    "editorScrollbarVertical": true,
+    "editorBracketMatching": true,
+    "editorRulers": "",
+    "editorScrollBeyondLastLine": true,
+    "editorStickyContext": false,
+    "editorDiagnostics": true,
+    "editorDiagnosticsMaxSeverity": "all",
+    "editorLspDocumentColors": "inlay",
+    "editorErrorLens": false,
+    "editorErrorLensDelayMs": 150,
+    "editorErrorLensSpacing": 4,
+    "editorErrorLensMinimumColumn": 0,
+    "editorSemanticTokens": true,
+    "editorCodeLens": false,
+    "editorInlayHints": false,
+    "editorInlayTypeHints": true,
+    "editorInlayParameterHints": true,
+    "editorInlayOtherHints": true,
+    "editorInlayShowBackground": false,
+    "editorInlayEditDebounceMs": 700,
+    "editorInlayScrollDebounceMs": 50,
+    "editorGitGutter": true,
+    "editorGitWordDiff": true,
+    // DiffView layout: "split" (side by side) or "unified".
+    "editorDiffViewStyle": "split",
+    // Editor columns below which a split diff renders unified (0 = never).
+    "editorMinimumSplitDiffWidth": 100,
+    // Which hunks render hollow in a DiffView: "stagedHollow" or "unstagedHollow".
+    "editorDiffHunkStyle": "stagedHollow",
+    // Show the Stage / Unstage / Restore controls on diff hunks.
+    "editorDiffShowStageRestoreButtons": true,
+    // Unchanged lines shown around each change in a DiffView.
+    // What "git: Diff" compares the working tree with: "head" or "defaultBranch".
+    "editorDiffBase": "head",
+    // Fold untracked files when a DiffView first lists them.
+    "editorDiffCollapseUntracked": false,
+    // Single-file diffs start with the whole file shown.
+    "editorDiffSoloShowFullFile": true,
+    "editorDiffExcerptContextLines": 2,
+    // Lines revealed per click on a DiffView expand control.
+    "editorDiffExpandExcerptLines": 5,
+    "editorGitBlameStatus": false,
+    "editorCompletion": true,
+    "editorHover": true,
+    "editorFormatOnSave": false,
+    "editorAutoSave": false,
+    "editorAutoSaveDelay": 1000,
+    "editorTrimTrailingWhitespace": false,
+    "editorInsertFinalNewline": false,
+    "editorShowCursorPosition": true,
+    "editorShowSelectionStats": false,
+    "editorShowOutline": false,
+    "editorSelectionsMenu": true,
+    "editorToolbarBreadcrumbs": true,
+    "editorToolbarQuickActions": true,
+    "editorToolbarCodeActions": false,
+    "editorAutocompleteDebounceMs": 350,
+    "editorMaxFileSizeMb": 10,
+    "searchCaseSensitive": false,
+    "searchSmartCase": false,
+    "searchWholeWord": false,
+    "searchRegex": false,
+    "searchWrap": true,
+    "searchCenterOnMatch": false,
+    "searchIncludeIgnored": false,
+    "searchOnType": true,
+    "searchSeedFromCursor": "always",
+    "editorMode": "normal",
+    "vimMode": false,
+    // Syntax colour scheme slug; "auto" (not the default) follows the app theme.
+    "editorTheme": "atomone",
+    // Folded in from the legacy standalone "editor" settings-file key.
+    "vimHlsearch": true,
+    "vimIncsearch": true,
+    "vimSmartcase": true,
+    "editorHighlightCurrentLine": true,
+    "editorSelectionHighlight": true,
+    "editorRoundedSelection": true,
+    "editorCursorBlink": true,
+    // Caret blink half-period, in milliseconds.
+    "editorCursorBlinkIntervalMs": 530,
+    // "block" | "underline" | "bar".
+    "editorCursorStyle": "bar",
+    "vimCursorShapeNormal": "block",
+    "vimCursorShapeInsert": "inherit",
+    "vimCursorShapeReplace": "underline",
+    "vimCursorShapeVisual": "block"
+  },
+
+  "fileManager": {
+    "explorerShowHiddenByDefault": false,
+    "explorerIndentGuides": true,
+    "explorerStickyAncestors": true,
+    "explorerAutoRevealActiveFile": false,
+    "explorerFoldSingleChildDirs": false,
+    "explorerGitDecorations": true,
+    "scmFileTree": false,
+
+    // SFTP dual-pane browser
+    "sftpShowHiddenFiles": false,
+    "sftpShowUpFolder": true,
+    "sftpZebraStriping": true,
+    "sftpRelativeTimes": true,
+    "sftpColumns": ["size", "modified", "permissions"],
+    "sftpSplitRatio": 0.5,
+    "sftpColumnWidths": {}
+  },
+
+  "workspace": {
+    "commandPaletteSearchMode": "contains",
+    "commandPaletteShowRecent": true,
+    "commandPaletteOpacity": 95,
+    // "top" | "high" | "center".
+    "commandPalettePosition": "top",
+    // Size modifier in percent (50-200).
+    "commandPaletteSize": 100,
+    "commandPaletteHistorySize": 5,
+    "commandPaletteCloseOnOverlayClick": true,
+    "showNavHistoryButtons": false,
+    "showTabBarButtons": true,
+    "showEditorTabGitStatus": true,
+    "showEditorTabDiagnostics": false,
+    // Block the first quit attempt while a terminal/SSH shell is running.
+    "confirmQuitWithActiveSessions": true
+  },
+
+  "connections": {
+    // Seconds to wait for the initial TCP+SSH handshake before giving up.
+    "sshConnectTimeoutSecs": 20,
+    // Fallback keep-alive ping interval for hosts that don't set their own.
+    "sshKeepaliveIntervalSecs": 25,
+    // Fallback missed-ping tolerance for hosts that don't set their own.
+    "sshKeepaliveMaxFailures": 3
+  },
+}

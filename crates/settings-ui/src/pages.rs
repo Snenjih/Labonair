@@ -1,0 +1,1194 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Declarative Settings navigation and field placement.
+//!
+//! Visible pages are independent of `SettingsContent`'s persisted JSON groups.
+//! Page rows use stable JSON paths, while unplaced fields fall back to the
+//! first page that owns their persisted group. This lets the UI taxonomy evolve
+//! without renaming stored settings or creating duplicate field editors.
+
+use crate::schema::AnyField;
+use crate::services::{SettingsSurface, SettingsSurfaceId};
+
+/// One row in a generated page's body.
+pub enum SettingsPageItem {
+    /// A collapsible disclosure heading.
+    SectionHeader(&'static str),
+    /// An [`AnyField`], referenced by its stable JSON path.
+    Item(&'static str),
+    /// Navigate to the canonical feature-owned surface for this preference.
+    OwnerSurface(SettingsSurfaceId),
+    /// A full-width button row opening the page's sub-page with this slug
+    /// (the Hosts-style entry point to a power-user / advanced area).
+    SubPageLink(&'static str),
+}
+
+/// What a page or sub-page renders below the standard chrome.
+pub enum PageBody {
+    /// Rendered from curated placement groups plus its owning fallback fields.
+    Generated(Vec<SettingsPageItem>),
+}
+
+/// A `SubPageLink` target for content too large for one scrolling page.
+pub struct SubPage {
+    pub title: &'static str,
+    /// Deep-link slug suffix, e.g. `"advanced"` under `terminal/advanced`.
+    pub slug: &'static str,
+    /// One-line summary shown on the [`SettingsPageItem::SubPageLink`] row.
+    pub description: &'static str,
+    pub body: PageBody,
+}
+
+/// A visible Settings category. `fallback_areas` name persisted value groups;
+/// they are deliberately separate from the page key and title.
+pub struct SettingsPage {
+    pub key: &'static str,
+    pub title: &'static str,
+    pub slug: &'static str,
+    pub fallback_areas: &'static [&'static str],
+    pub body: PageBody,
+    pub sub_pages: Vec<SubPage>,
+}
+
+/// Resolved location for a field in the Settings navigation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FieldLocation {
+    pub page_index: usize,
+    pub sub_page_slug: Option<&'static str>,
+    pub section: Option<&'static str>,
+}
+
+type Group = (&'static str, &'static [&'static str]);
+
+macro_rules! paths {
+    ($area:literal: $($key:literal),* $(,)?) => {
+        &[$(concat!($area, ".", $key)),*]
+    };
+}
+
+/// Build the Settings navigation in its visible product order: the seven
+/// generated categories, then the owner pages (Keymap, Hosts) that owners
+/// contribute at [`labonair_settings::FIRST_OWNER_PAGE_INDEX`].
+pub fn pages(surfaces: &[SettingsSurface]) -> Vec<SettingsPage> {
+    let mut pages = vec![
+        page(
+            "general",
+            "General",
+            &["general", "workspace"],
+            GENERAL_GROUPS,
+            vec![sub_page(
+                "Command Palette",
+                "command-palette",
+                "Position, size, opacity, history and search mode of the command palette.",
+                GENERAL_PALETTE,
+            )],
+        ),
+        page(
+            "appearance",
+            "Appearance",
+            &["appearance"],
+            APPEARANCE_GROUPS,
+            vec![sub_page(
+                "Pane Focus",
+                "pane-focus",
+                "Active-pane highlight colour and opacity, dimming of inactive panes.",
+                APPEARANCE_PANE_FOCUS,
+            )],
+        ),
+        // Owner surfaces (colour theme, icon theme, background) are inserted
+        // into these sections by `compose_owner_surfaces`; the page owns no
+        // persisted fields.
+        page("themes", "Themes", &[], THEMES_SECTIONS, vec![]),
+        SettingsPage {
+            key: "editor",
+            title: "Editor",
+            slug: "editor",
+            fallback_areas: &["editor"],
+            body: PageBody::Generated(items_from_groups(EDITOR_GROUPS)),
+            sub_pages: vec![sub_page(
+                "Minimap & Scrollbar",
+                "minimap-scrollbar",
+                "Minimap placement and thumb, scrollbar markers and axes.",
+                EDITOR_MINIMAP_SCROLLBAR,
+            )],
+        },
+        page(
+            "languages-tools",
+            "Languages & Tools",
+            &[],
+            LANGUAGE_GROUPS,
+            vec![sub_page(
+                "Error Lens & Inlay Hints",
+                "inline-hints",
+                "Inline diagnostics, inlay hint kinds and their debounce timings.",
+                LANGUAGE_INLINE,
+            )],
+        ),
+        page(
+            "search-files",
+            "Search & Files",
+            &["file_manager"],
+            FILE_GROUPS,
+            vec![
+                sub_page(
+                    "Explorer",
+                    "explorer",
+                    "Tree guides, sticky ancestors, auto-reveal and Git decorations.",
+                    FILE_EXPLORER,
+                ),
+                sub_page(
+                    "SFTP Browser",
+                    "sftp",
+                    "Hidden files, zebra striping, relative times and columns.",
+                    FILE_SFTP,
+                ),
+            ],
+        ),
+        SettingsPage {
+            key: "terminal",
+            title: "Terminal",
+            slug: "terminal",
+            fallback_areas: &["terminal", "connections"],
+            body: PageBody::Generated(items_from_groups(TERMINAL_MAIN)),
+            sub_pages: vec![
+                #[cfg(unix)]
+                SubPage {
+                    title: "Background Hosts",
+                    slug: "background-hosts",
+                    description: "Host status and the sessions running in the background.",
+                    body: PageBody::Generated(items_from_groups(TERMINAL_BACKGROUND_HOST)),
+                },
+                SubPage {
+                    title: "Agent Integrations",
+                    slug: "agents",
+                    description: "Per-agent detection (Claude Code, Codex, Pi, OpenCode) and finish notifications.",
+                    body: PageBody::Generated(items_from_groups(TERMINAL_AGENTS)),
+                },
+                SubPage {
+                    title: "Advanced",
+                    slug: "advanced",
+                    description: "Input behaviour, tab confirmation and environment variables.",
+                    body: PageBody::Generated(items_from_groups(TERMINAL_ADVANCED)),
+                },
+            ],
+        },
+    ];
+    compose_owner_surfaces(&mut pages, surfaces);
+    pages
+}
+
+fn sub_page(
+    title: &'static str,
+    slug: &'static str,
+    description: &'static str,
+    groups: &'static [Group],
+) -> SubPage {
+    SubPage {
+        title,
+        slug,
+        description,
+        body: PageBody::Generated(items_from_groups(groups)),
+    }
+}
+
+fn page(
+    key: &'static str,
+    title: &'static str,
+    fallback_areas: &'static [&'static str],
+    groups: &'static [Group],
+    sub_pages: Vec<SubPage>,
+) -> SettingsPage {
+    SettingsPage {
+        key,
+        title,
+        slug: key,
+        fallback_areas,
+        body: PageBody::Generated(items_from_groups(groups)),
+        sub_pages,
+    }
+}
+
+fn compose_owner_surfaces(pages: &mut Vec<SettingsPage>, surfaces: &[SettingsSurface]) {
+    let mut contributed_pages: Vec<(usize, &'static str, SettingsPage)> = Vec::new();
+    for surface in surfaces {
+        if let Some(page) = pages.iter_mut().find(|page| page.slug == surface.page.slug) {
+            insert_owner_surface(page, surface);
+            continue;
+        }
+
+        if let Some((_, _, page)) = contributed_pages
+            .iter_mut()
+            .find(|(_, slug, _)| *slug == surface.page.slug)
+        {
+            insert_owner_surface(page, surface);
+            continue;
+        }
+
+        let mut page = SettingsPage {
+            key: surface.page.slug,
+            title: surface.page.title,
+            slug: surface.page.slug,
+            fallback_areas: &[],
+            body: PageBody::Generated(Vec::new()),
+            sub_pages: Vec::new(),
+        };
+        insert_owner_surface(&mut page, surface);
+        let insert_at = surface.page.insert_at.unwrap_or(pages.len());
+        contributed_pages.push((insert_at, surface.page.slug, page));
+    }
+
+    contributed_pages.sort_by_key(|(insert_at, slug, _)| (*insert_at, *slug));
+    for (inserted, (insert_at, _, page)) in contributed_pages.into_iter().enumerate() {
+        let position = insert_at.saturating_add(inserted).min(pages.len());
+        pages.insert(position, page);
+    }
+}
+
+fn insert_owner_surface(page: &mut SettingsPage, surface: &SettingsSurface) {
+    let PageBody::Generated(items) = &mut page.body;
+    let Some(section_index) = items.iter().position(
+        |item| matches!(item, SettingsPageItem::SectionHeader(section) if *section == surface.page.section),
+    ) else {
+        items.push(SettingsPageItem::SectionHeader(surface.page.section));
+        items.push(SettingsPageItem::OwnerSurface(surface.id));
+        return;
+    };
+    let insert_at = items[section_index + 1..]
+        .iter()
+        .position(|item| matches!(item, SettingsPageItem::SectionHeader(_)))
+        .map(|offset| section_index + 1 + offset)
+        .unwrap_or(items.len());
+    items.insert(insert_at, SettingsPageItem::OwnerSurface(surface.id));
+}
+
+/// Resolve a deep-link slug (`"terminal"`, `"terminal/advanced"`) to a
+/// `(page index, sub-page index)` pair.
+pub fn resolve_slug(pages: &[SettingsPage], slug: &str) -> Option<(usize, Option<usize>)> {
+    let (page_slug, sub_slug) = match slug.split_once('/') {
+        Some((page, sub_page)) => (page, Some(sub_page)),
+        None => (slug, None),
+    };
+    let page_index = pages.iter().position(|page| page.slug == page_slug)?;
+    let sub_page_index = sub_slug.and_then(|slug| {
+        pages[page_index]
+            .sub_pages
+            .iter()
+            .position(|page| page.slug == slug)
+    });
+    Some((page_index, sub_page_index))
+}
+
+/// Resolve an explicit placement first, then the page that owns the field's
+/// persisted value group. Search and deep links use this same route.
+pub fn field_location(pages: &[SettingsPage], field: &AnyField) -> Option<FieldLocation> {
+    if let Some(location) = explicit_field_location(pages, field.json_path) {
+        return Some(location);
+    }
+    pages
+        .iter()
+        .position(|page| page.fallback_areas.contains(&field.area()))
+        .map(|page_index| FieldLocation {
+            page_index,
+            sub_page_slug: None,
+            section: None,
+        })
+}
+
+/// Fields not explicitly placed in any page and owned by this page's fallback
+/// groups. An explicit cross-page placement always wins, so a field is never
+/// rendered twice merely because its stored group has a fallback page.
+pub fn leftover_fields<'a>(
+    page_index: usize,
+    pages: &[SettingsPage],
+    fields: &'a [AnyField],
+) -> Vec<&'a AnyField> {
+    fields
+        .iter()
+        .filter(|field| {
+            explicit_field_location(pages, field.json_path).is_none()
+                && field_location(pages, field).is_some_and(|location| {
+                    location.page_index == page_index
+                        && pages[page_index].fallback_areas.contains(&field.area())
+                })
+        })
+        .collect()
+}
+
+/// Find the page, sub-page slug, and section of a field explicitly placed by
+/// the page groups. Fallback fields are intentionally returned as `None` so
+/// callers can keep them in the page's trailing “Other” section.
+pub fn section_label_for_field(pages: &[SettingsPage], json_path: &str) -> Option<FieldLocation> {
+    explicit_field_location(pages, json_path)
+}
+
+fn explicit_field_location(pages: &[SettingsPage], json_path: &str) -> Option<FieldLocation> {
+    for (page_index, page) in pages.iter().enumerate() {
+        let PageBody::Generated(items) = &page.body;
+        if let Some(section) = section_for_path(items, json_path) {
+            return Some(FieldLocation {
+                page_index,
+                sub_page_slug: None,
+                section: Some(section),
+            });
+        }
+        for sub_page in &page.sub_pages {
+            let PageBody::Generated(items) = &sub_page.body;
+            if let Some(section) = section_for_path(items, json_path) {
+                return Some(FieldLocation {
+                    page_index,
+                    sub_page_slug: Some(sub_page.slug),
+                    section: Some(section),
+                });
+            }
+        }
+    }
+    None
+}
+
+/// The page index and section title that host the owner surface `id`.
+pub fn surface_location(
+    pages: &[SettingsPage],
+    id: SettingsSurfaceId,
+) -> Option<(usize, &'static str)> {
+    for (page_index, page) in pages.iter().enumerate() {
+        let PageBody::Generated(items) = &page.body;
+        let mut section = None;
+        for item in items {
+            match item {
+                SettingsPageItem::SectionHeader(label) => section = Some(*label),
+                SettingsPageItem::OwnerSurface(surface) if *surface == id => {
+                    return section.map(|section| (page_index, section));
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+fn section_for_path(items: &[SettingsPageItem], json_path: &str) -> Option<&'static str> {
+    let mut section = None;
+    for item in items {
+        match item {
+            SettingsPageItem::SectionHeader(label) => section = Some(*label),
+            SettingsPageItem::Item(path) if *path == json_path => return section,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Expand curated `(section, &[entry])` groups into page rows. An entry is a
+/// field's JSON path, or `">slug"` for a [`SettingsPageItem::SubPageLink`] row
+/// that sits inline among the section's fields.
+fn items_from_groups(groups: &'static [Group]) -> Vec<SettingsPageItem> {
+    let mut items = Vec::new();
+    for (label, paths) in groups {
+        items.push(SettingsPageItem::SectionHeader(label));
+        for path in *paths {
+            items.push(match path.strip_prefix('>') {
+                Some(slug) => SettingsPageItem::SubPageLink(slug),
+                None => SettingsPageItem::Item(path),
+            });
+        }
+    }
+    items
+}
+
+const GENERAL_GROUPS: &[Group] = &[
+    (
+        "Startup",
+        paths!("general": "defaultStartupTab", "restoreWindowState", "sessionRestore"),
+    ),
+    ("Updates", paths!("general": "checkForUpdates")),
+    ("Quit", paths!("workspace": "confirmQuitWithActiveSessions")),
+    ("Command Palette", &[">command-palette"]),
+];
+
+const GENERAL_PALETTE: &[Group] = &[(
+    "Command Palette",
+    paths!("workspace":
+        "commandPaletteOpacity",
+        "commandPalettePosition",
+        "commandPaletteSize",
+        "commandPaletteShowRecent",
+        "commandPaletteHistorySize",
+        "commandPaletteSearchMode",
+        "commandPaletteCloseOnOverlayClick"
+    ),
+)];
+
+/// Appearance owns app-wide chrome only: colour scheme, tabs, panes, UI font
+/// and glyph smoothing (which affects UI, editor and terminal text alike), and
+/// Zen Mode. Editor and terminal fonts live on their own pages.
+const APPEARANCE_GROUPS: &[Group] = &[
+    // Colour scheme and interface-style tiles share one card, side by side.
+    (
+        "Interface",
+        &[
+            "general.theme",
+            "appearance.translucentSurfaces",
+            "appearance.uiDensity",
+            "appearance.glassTransparency",
+            "appearance.glassBlur",
+        ],
+    ),
+    ("Tabs", paths!("appearance": "tabsLocation", "tabFillSpace")),
+    (
+        "Panes",
+        &[
+            "appearance.paneLayout",
+            "appearance.cornerRadiusScale",
+            ">pane-focus",
+        ],
+    ),
+    (
+        "Typography",
+        paths!("appearance":
+            "appFontFamily",
+            "appFontSize",
+            "fontSmoothing"
+        ),
+    ),
+    ("Motion", paths!("appearance": "animations")),
+    (
+        "Zen Mode",
+        paths!("appearance":
+            "zenModeShowHeader",
+            "zenModeShowStatusbar"
+        ),
+    ),
+];
+
+const APPEARANCE_PANE_FOCUS: &[Group] = &[(
+    "Pane focus",
+    paths!("appearance":
+        "paneHighlight",
+        "paneHighlightColor",
+        "paneHighlightOpacity",
+        "dimInactivePanes"
+    ),
+)];
+
+/// Section headers of the Themes page; the owners of the colour theme, icon
+/// theme and background contribute their surfaces into them.
+const THEMES_SECTIONS: &[Group] = &[
+    ("Color theme", &[]),
+    ("Icon theme", &[]),
+    ("Background", &[]),
+];
+
+const EDITOR_GROUPS: &[Group] = &[
+    (
+        "Keybindings",
+        paths!("editor":
+            "editorMode",
+            "editorRelativeLineNumbers",
+            "vimHlsearch",
+            "vimIncsearch",
+            "vimSmartcase"
+        ),
+    ),
+    ("Theme", paths!("editor": "editorTheme")),
+    (
+        "Font",
+        paths!("editor":
+            "editorFontFamily",
+            "editorFontSize",
+            "editorFontWeight",
+            "editorLineHeight"
+        ),
+    ),
+    (
+        "Behaviour",
+        paths!("editor":
+            "editorTabSize",
+            "editorAutoCloseBrackets",
+            "editorAutoSurround",
+            "editorDragAndDropSelection"
+        ),
+    ),
+    ("Indentation", paths!("editor": "editorIndentWithTabs")),
+    (
+        "Formatting & Save",
+        paths!("editor":
+            "editorFormatOnSave",
+            "editorAutoSave",
+            "editorAutoSaveDelay",
+            "editorTrimTrailingWhitespace",
+            "editorInsertFinalNewline"
+        ),
+    ),
+    (
+        "Display",
+        &[
+            "editor.editorLineNumbers",
+            "editor.editorWordWrap",
+            "editor.editorWhitespace",
+            "editor.editorRulers",
+            "editor.editorScrollBeyondLastLine",
+            "editor.editorStickyContext",
+            "editor.editorMouseWheelZoom",
+            "editor.editorScrollSensitivity",
+            "editor.editorFastScrollSensitivity",
+            "editor.editorVerticalScrollMargin",
+            "editor.editorHighlightCurrentLine",
+            "editor.editorBracketMatching",
+            "editor.editorShowCursorPosition",
+            "editor.editorShowSelectionStats",
+            ">minimap-scrollbar",
+        ],
+    ),
+    (
+        "Caret",
+        paths!("editor":
+            "editorCursorStyle",
+            "editorCursorBlink",
+            "editorCursorBlinkIntervalMs"
+        ),
+    ),
+    (
+        "Toolbar",
+        paths!("editor":
+            "editorToolbarBreadcrumbs",
+            "editorToolbarQuickActions",
+            "editorSelectionsMenu",
+            "editorToolbarCodeActions",
+            "editorShowOutline"
+        ),
+    ),
+    (
+        "Git",
+        paths!("editor":
+            "editorGitGutter",
+            "editorGitWordDiff"
+        ),
+    ),
+];
+
+const EDITOR_MINIMAP_SCROLLBAR: &[Group] = &[
+    (
+        "Minimap",
+        paths!("editor":
+            "editorMinimap",
+            "editorMinimapDisplayIn",
+            "editorMinimapThumb",
+            "editorMinimapThumbBorder",
+            "editorMinimapCurrentLineHighlight",
+            "editorMinimapMaxWidthColumns"
+        ),
+    ),
+    (
+        "Scrollbar",
+        paths!("editor":
+            "editorScrollbarShow",
+            "editorScrollbarCursors",
+            "editorScrollbarGitDiff",
+            "editorScrollbarSearchResults",
+            "editorScrollbarSelectedText",
+            "editorScrollbarSelectedSymbol",
+            "editorScrollbarDiagnostics",
+            "editorScrollbarHorizontal",
+            "editorScrollbarVertical"
+        ),
+    ),
+];
+
+const LANGUAGE_GROUPS: &[Group] = &[(
+    "Language Services",
+    &[
+        "editor.editorDiagnostics",
+        "editor.editorDiagnosticsMaxSeverity",
+        "editor.editorSemanticTokens",
+        "editor.editorCodeLens",
+        "editor.editorCompletion",
+        "editor.editorHover",
+        "editor.editorMaxFileSizeMb",
+        ">inline-hints",
+    ],
+)];
+
+const LANGUAGE_INLINE: &[Group] = &[
+    (
+        "Error Lens",
+        paths!("editor":
+            "editorErrorLens",
+            "editorErrorLensDelayMs",
+            "editorErrorLensSpacing",
+            "editorErrorLensMinimumColumn"
+        ),
+    ),
+    (
+        "Inlay Hints",
+        paths!("editor":
+            "editorInlayHints",
+            "editorInlayTypeHints",
+            "editorInlayParameterHints",
+            "editorInlayOtherHints",
+            "editorInlayShowBackground",
+            "editorInlayEditDebounceMs",
+            "editorInlayScrollDebounceMs"
+        ),
+    ),
+    (
+        "Completion",
+        paths!("editor": "editorAutocompleteDebounceMs"),
+    ),
+];
+
+const FILE_GROUPS: &[Group] = &[
+    (
+        "Search",
+        paths!("editor":
+            "searchCaseSensitive",
+            "searchSmartCase",
+            "searchWholeWord",
+            "searchRegex",
+            "searchWrap",
+            "searchIncludeIgnored",
+            "searchOnType",
+            "searchSeedFromCursor"
+        ),
+    ),
+    (
+        "Browsing",
+        &[
+            "file_manager.explorerShowHiddenByDefault",
+            ">explorer",
+            ">sftp",
+        ],
+    ),
+];
+
+const FILE_EXPLORER: &[Group] = &[
+    (
+        "Explorer Tree",
+        paths!("file_manager":
+            "explorerIndentGuides",
+            "explorerStickyAncestors",
+            "explorerAutoRevealActiveFile",
+            "explorerFoldSingleChildDirs"
+        ),
+    ),
+    (
+        "Explorer & Source Control",
+        paths!("file_manager":
+            "explorerGitDecorations",
+            "scmFileTree"
+        ),
+    ),
+];
+
+const FILE_SFTP: &[Group] = &[(
+    "SFTP Browser",
+    paths!("file_manager":
+        "sftpShowHiddenFiles",
+        "sftpShowUpFolder",
+        "sftpZebraStriping",
+        "sftpRelativeTimes",
+        "sftpColumns"
+    ),
+)];
+
+const TERMINAL_MAIN: &[Group] = &[
+    ("Shell", paths!("terminal": "terminalShell")),
+    (
+        "Font",
+        &[
+            "terminal.terminalFontFamily",
+            "terminal.terminalFontSize",
+            "terminal.terminalLineHeight",
+            "terminal.terminalFontWeight",
+        ],
+    ),
+    (
+        "Cursor",
+        paths!("terminal":
+            "terminalCursorStyle",
+            "terminalCursorBlink",
+            "terminalCursorBlinkInterval"
+        ),
+    ),
+    (
+        "Scrolling",
+        paths!("terminal":
+            "terminalScrollback",
+            "terminalScrollSensitivity",
+            "terminalFastScrollModifier",
+            "sessionScrollbackLines",
+            "scrollbackMaxSizeMb",
+            "scrollbackRetentionDays"
+        ),
+    ),
+    ("Integrations", &["terminal.agentIntegrations", ">agents"]),
+    (
+        "Sessions",
+        &[
+            "terminal.resumeOnRestore",
+            // The background session host is unix-only.
+            #[cfg(unix)]
+            ">background-hosts",
+        ],
+    ),
+    ("Bell", paths!("terminal": "terminalBell")),
+    ("Appearance", paths!("terminal": "terminalOpacity")),
+    (
+        "Connection",
+        paths!("connections":
+            "sshConnectTimeoutSecs",
+            "sshKeepaliveIntervalSecs",
+            "sshKeepaliveMaxFailures"
+        ),
+    ),
+    ("Advanced", &[">advanced"]),
+];
+
+const TERMINAL_AGENTS: &[Group] = &[(
+    "Agents",
+    paths!("terminal":
+        "agentIntegrationClaudeCode",
+        "agentIntegrationCodex",
+        "agentIntegrationPi",
+        "agentIntegrationOpenCode",
+        "agentIntegrationNotify"
+    ),
+)];
+
+#[cfg(unix)]
+const TERMINAL_BACKGROUND_HOST: &[Group] = &[(
+    "Background host",
+    paths!("terminal": "sessionHost", "detachedScrollbackLines"),
+)];
+
+const TERMINAL_ADVANCED: &[Group] = &[
+    (
+        "Input",
+        paths!("terminal":
+            "terminalCopyOnSelect",
+            "terminalRightClickPastes",
+            "terminalOptionAsMeta",
+            "terminalWordSeparator"
+        ),
+    ),
+    ("Tabs", paths!("terminal": "confirmCloseTerminalTab")),
+    (
+        "Environment",
+        paths!("terminal":
+            "terminalEnvironmentVariables",
+            "terminalShellArgs"
+        ),
+    ),
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::all_fields;
+
+    fn pages() -> Vec<SettingsPage> {
+        let surfaces = [
+            SettingsSurface::new(
+                SettingsSurfaceId::new("app-themes"),
+                "App theme",
+                "Choose a color theme and preview its variants.",
+                "Choose theme…",
+                crate::services::SettingsSurfacePage::section("themes", "Themes", "Color theme"),
+            ),
+            SettingsSurface::new(
+                SettingsSurfaceId::new("icon-themes"),
+                "Icon theme",
+                "Choose the icon set used throughout the app.",
+                "Choose icons…",
+                crate::services::SettingsSurfacePage::section("themes", "Themes", "Icon theme"),
+            ),
+            SettingsSurface::new(
+                SettingsSurfaceId::new("backgrounds"),
+                "Background image",
+                "Choose a background image and adjust its appearance.",
+                "Choose background…",
+                crate::services::SettingsSurfacePage::section("themes", "Themes", "Background"),
+            )
+            .inline(),
+            SettingsSurface::new(
+                SettingsSurfaceId::new("keymap"),
+                "Keyboard shortcuts",
+                "Browse and edit the shortcuts provided by Labonair.",
+                "Open keymap editor…",
+                crate::services::SettingsSurfacePage::new_page(
+                    "keymap",
+                    "Keymap",
+                    "Keyboard shortcuts",
+                    labonair_settings::FIRST_OWNER_PAGE_INDEX,
+                ),
+            ),
+        ];
+        super::pages(&surfaces)
+    }
+    use std::collections::HashSet;
+
+    fn all_placed_paths(pages: &[SettingsPage]) -> Vec<&'static str> {
+        let mut paths = Vec::new();
+        for page in pages {
+            collect(&page.body, &mut paths);
+            for sub_page in &page.sub_pages {
+                collect(&sub_page.body, &mut paths);
+            }
+        }
+        paths
+    }
+
+    fn collect(body: &PageBody, paths: &mut Vec<&'static str>) {
+        let PageBody::Generated(items) = body;
+        for item in items {
+            if let SettingsPageItem::Item(path) = item {
+                paths.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn every_field_resolves_to_one_page_without_duplicate_explicit_rows() {
+        let pages = pages();
+        let fields = all_fields();
+        let placed = all_placed_paths(&pages);
+        let mut unique = HashSet::new();
+        for path in &placed {
+            assert!(unique.insert(path), "explicit placement repeats `{path}`");
+            assert!(
+                fields.iter().any(|field| field.json_path == *path),
+                "explicit placement references missing field `{path}`"
+            );
+        }
+
+        for field in &fields {
+            assert!(
+                field_location(&pages, field).is_some(),
+                "field `{}` is not reachable from Settings",
+                field.json_path
+            );
+        }
+    }
+
+    #[test]
+    fn typography_is_split_by_owner_and_smoothing_is_not_duplicated() {
+        let pages = pages();
+        let place = |path: &str| {
+            section_label_for_field(&pages, path)
+                .map(|location| (pages[location.page_index].key, location.section))
+        };
+        for path in [
+            "appearance.appFontFamily",
+            "appearance.appFontSize",
+            "appearance.fontSmoothing",
+        ] {
+            assert_eq!(
+                place(path),
+                Some(("appearance", Some("Typography"))),
+                "{path}"
+            );
+        }
+        for path in [
+            "editor.editorFontFamily",
+            "editor.editorFontSize",
+            "editor.editorFontWeight",
+            "editor.editorLineHeight",
+        ] {
+            assert_eq!(place(path), Some(("editor", Some("Font"))), "{path}");
+        }
+        for path in [
+            "terminal.terminalFontFamily",
+            "terminal.terminalFontSize",
+            "terminal.terminalFontWeight",
+            "terminal.terminalLineHeight",
+        ] {
+            assert_eq!(place(path), Some(("terminal", Some("Font"))), "{path}");
+        }
+    }
+
+    #[test]
+    fn sub_page_links_sit_inline_in_a_topical_section() {
+        let pages = pages();
+        for page in &pages {
+            let PageBody::Generated(items) = &page.body;
+            assert!(
+                !items
+                    .iter()
+                    .any(|i| matches!(i, SettingsPageItem::SectionHeader("More settings"))),
+                "{}: no catch-all link section",
+                page.key
+            );
+        }
+        let section_of_link = |page: &str, slug: &str| {
+            let page = pages.iter().find(|p| p.key == page).unwrap();
+            let PageBody::Generated(items) = &page.body;
+            let mut section = "";
+            for item in items {
+                match item {
+                    SettingsPageItem::SectionHeader(label) => section = label,
+                    SettingsPageItem::SubPageLink(s) if *s == slug => return Some(section),
+                    _ => {}
+                }
+            }
+            None
+        };
+        assert_eq!(section_of_link("appearance", "pane-focus"), Some("Panes"));
+        assert_eq!(
+            section_of_link("editor", "minimap-scrollbar"),
+            Some("Display")
+        );
+        assert_eq!(section_of_link("terminal", "agents"), Some("Integrations"));
+        assert_eq!(section_of_link("search-files", "sftp"), Some("Browsing"));
+        #[cfg(unix)]
+        assert_eq!(
+            section_of_link("terminal", "background-hosts"),
+            Some("Sessions")
+        );
+    }
+
+    #[test]
+    fn power_user_sub_pages_are_linked_and_non_empty() {
+        let pages = pages();
+        for page in &pages {
+            let PageBody::Generated(items) = &page.body;
+            for sub in &page.sub_pages {
+                assert!(
+                    items
+                        .iter()
+                        .any(|i| matches!(i, SettingsPageItem::SubPageLink(s) if *s == sub.slug)),
+                    "{}/{} has no link",
+                    page.key,
+                    sub.slug
+                );
+                let PageBody::Generated(rows) = &sub.body;
+                assert!(rows.iter().any(|i| matches!(i, SettingsPageItem::Item(_))));
+            }
+        }
+        for slug in [
+            "general/command-palette",
+            "appearance/pane-focus",
+            "search-files/sftp",
+        ] {
+            assert!(
+                matches!(resolve_slug(&pages, slug), Some((_, Some(_)))),
+                "{slug}"
+            );
+        }
+    }
+
+    #[test]
+    fn navigation_taxonomy_is_independent_of_persisted_areas() {
+        let pages = pages();
+        let fields = all_fields();
+        let titles: Vec<_> = pages.iter().map(|page| page.title).collect();
+        assert_eq!(
+            titles,
+            [
+                "General",
+                "Appearance",
+                "Themes",
+                "Editor",
+                "Languages & Tools",
+                "Search & Files",
+                "Terminal",
+                "Keymap",
+            ]
+        );
+        // Owner pages start right after the generated categories.
+        assert_eq!(
+            pages.iter().position(|page| page.key == "keymap"),
+            Some(labonair_settings::FIRST_OWNER_PAGE_INDEX)
+        );
+        for removed in ["window-layout", "version-control", "network"] {
+            assert!(
+                pages.iter().all(|page| page.key != removed),
+                "`{removed}` page was folded into other categories"
+            );
+        }
+        for (page_index, page) in pages.iter().enumerate() {
+            let has_fields = fields.iter().any(|field| {
+                field_location(&pages, field)
+                    .is_some_and(|location| location.page_index == page_index)
+            });
+            let PageBody::Generated(items) = &page.body;
+            let has_owner_surface = items
+                .iter()
+                .any(|item| matches!(item, SettingsPageItem::OwnerSurface(_)));
+            assert!(
+                has_fields || has_owner_surface,
+                "Settings category `{}` has no content",
+                page.title
+            );
+        }
+    }
+
+    #[test]
+    fn redistributed_fields_land_on_their_new_pages() {
+        let pages = pages();
+        let place = |path: &str| {
+            section_label_for_field(&pages, path)
+                .map(|location| (pages[location.page_index].key, location.section))
+        };
+        assert_eq!(
+            place("appearance.tabsLocation"),
+            Some(("appearance", Some("Tabs")))
+        );
+        assert_eq!(
+            place("appearance.zenModeShowHeader"),
+            Some(("appearance", Some("Zen Mode")))
+        );
+        assert_eq!(
+            place("appearance.translucentSurfaces"),
+            Some(("appearance", Some("Interface")))
+        );
+        assert_eq!(
+            place("appearance.paneLayout"),
+            Some(("appearance", Some("Panes")))
+        );
+        assert_eq!(
+            place("appearance.animations"),
+            Some(("appearance", Some("Motion")))
+        );
+        assert_eq!(
+            place("general.restoreWindowState"),
+            Some(("general", Some("Startup")))
+        );
+        assert_eq!(
+            place("editor.editorGitGutter"),
+            Some(("editor", Some("Git")))
+        );
+        assert_eq!(
+            place("editor.editorGitWordDiff"),
+            Some(("editor", Some("Git")))
+        );
+        assert_eq!(
+            place("file_manager.explorerGitDecorations"),
+            Some(("search-files", Some("Explorer & Source Control")))
+        );
+        assert_eq!(
+            place("file_manager.scmFileTree"),
+            Some(("search-files", Some("Explorer & Source Control")))
+        );
+        for ssh in [
+            "connections.sshConnectTimeoutSecs",
+            "connections.sshKeepaliveIntervalSecs",
+            "connections.sshKeepaliveMaxFailures",
+        ] {
+            assert_eq!(place(ssh), Some(("terminal", Some("Connection"))));
+        }
+    }
+
+    #[test]
+    fn keymap_page_links_to_the_canonical_keymap_owner() {
+        let pages = pages();
+        let (page_index, sub_page_index) = resolve_slug(&pages, "keymap").unwrap();
+        assert_eq!(sub_page_index, None);
+        assert_eq!(pages[page_index].title, "Keymap");
+        let PageBody::Generated(items) = &pages[page_index].body;
+        assert!(items.iter().any(|item| matches!(
+            item,
+            SettingsPageItem::OwnerSurface(id) if *id == SettingsSurfaceId::new("keymap")
+        )));
+    }
+
+    #[test]
+    fn themes_page_hosts_the_owner_theme_icon_and_background_surfaces() {
+        let pages = pages();
+        let themes = pages
+            .iter()
+            .find(|page| page.key == "themes")
+            .expect("Themes page exists");
+        let PageBody::Generated(items) = &themes.body;
+        let mut section = "";
+        let mut placed = Vec::new();
+        for item in items {
+            match item {
+                SettingsPageItem::SectionHeader(label) => section = label,
+                SettingsPageItem::OwnerSurface(id) => placed.push((section, *id)),
+                SettingsPageItem::Item(path) => panic!("Themes owns no field rows: `{path}`"),
+                SettingsPageItem::SubPageLink(_) => {}
+            }
+        }
+        assert_eq!(
+            placed,
+            [
+                ("Color theme", SettingsSurfaceId::new("app-themes")),
+                ("Icon theme", SettingsSurfaceId::new("icon-themes")),
+                ("Background", SettingsSurfaceId::new("backgrounds")),
+            ]
+        );
+        // Appearance keeps only value fields; no owner surface lives there.
+        let appearance = pages.iter().find(|page| page.key == "appearance").unwrap();
+        let PageBody::Generated(items) = &appearance.body;
+        assert!(items
+            .iter()
+            .all(|item| !matches!(item, SettingsPageItem::OwnerSurface(_))));
+        assert_eq!(
+            section_label_for_field(&pages, "general.theme").map(|location| location.section),
+            Some(Some("Interface"))
+        );
+    }
+
+    #[test]
+    fn field_section_lookup_routes_cross_group_placements() {
+        let pages = pages();
+        assert_eq!(
+            section_label_for_field(&pages, "terminal.terminalCursorStyle"),
+            Some(FieldLocation {
+                page_index: 6,
+                sub_page_slug: None,
+                section: Some("Cursor"),
+            })
+        );
+        assert_eq!(
+            section_label_for_field(&pages, "terminal.terminalCopyOnSelect"),
+            Some(FieldLocation {
+                page_index: 6,
+                sub_page_slug: Some("advanced"),
+                section: Some("Input"),
+            })
+        );
+        assert_eq!(
+            section_label_for_field(&pages, "editor.editorFormatOnSave"),
+            Some(FieldLocation {
+                page_index: 3,
+                sub_page_slug: None,
+                section: Some("Formatting & Save"),
+            })
+        );
+        assert_eq!(section_label_for_field(&pages, "terminal.notPresent"), None);
+    }
+
+    #[test]
+    fn explicit_cross_page_fields_are_not_in_their_storage_fallback() {
+        let pages = pages();
+        let fields = all_fields();
+        let appearance = pages
+            .iter()
+            .position(|page| page.key == "appearance")
+            .unwrap();
+        let general = pages.iter().position(|page| page.key == "general").unwrap();
+        // `general.theme` is stored under `general` but shown on Appearance.
+        assert!(leftover_fields(general, &pages, &fields)
+            .iter()
+            .all(|field| field.json_path != "general.theme"));
+        assert!(leftover_fields(appearance, &pages, &fields)
+            .iter()
+            .all(|field| field.json_path != "appearance.tabsLocation"));
+    }
+
+    #[test]
+    fn resolve_slug_rejects_unknown_page_or_sub_page() {
+        let pages = pages();
+        assert_eq!(resolve_slug(&pages, "does-not-exist"), None);
+        assert_eq!(resolve_slug(&pages, "window-layout"), None);
+        assert_eq!(
+            resolve_slug(&pages, "terminal/does-not-exist"),
+            Some((6, None))
+        );
+        assert_eq!(
+            resolve_slug(&pages, "terminal/advanced"),
+            Some((6, Some(2)))
+        );
+    }
+}

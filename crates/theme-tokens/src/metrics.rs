@@ -1,0 +1,372 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! T20-007: the runtime **metric** layer that scales the active [`Theme`].
+//!
+//! Colour comes from the [`ThemeRegistry`](crate::ThemeRegistry) via
+//! [`ThemeStore`](crate::ThemeStore); *metric* (font scales, UI density, corner
+//! radius, reduce-motion) comes from the user's theme settings. [`ActiveTheme`]
+//! combines the active color theme and metric settings.
+//!
+//! The metric half is [`ThemeMetrics`]; the density scalar set is [`UiDensity`].
+//! `labonair-theme`'s `ThemeStore` owns the live [`ThemeMetrics`]
+//! (`set_metrics`) and rebuilds its cached [`ActiveTheme`] on every colour
+//! **or** metric change; the same value is mirrored into the
+//! [`GlobalActiveTheme`] global by an observer installed in
+//! `labonair_theme::init_theme`, so `App`-level code can read it through
+//! [`crate::ActiveThemeExt`] without touching the store entity.
+
+use std::time::Duration;
+
+use crate::tokens::{Animation, RadiusScale, Theme, Typography};
+
+/// UI density — a spacing and size multiplier applied around the layout contract.
+///
+/// The factors are deliberately conservative (`docs/design-system.md`):
+/// `Compact` ≈ ×0.85, `Default` ×1.0, `Comfortable` ×1.15. They scale *around*
+/// the layout-contract heights (40px titlebar / 32px statusbar stay the
+/// reference), never replace them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UiDensity {
+    Compact,
+    #[default]
+    Default,
+    Comfortable,
+}
+
+impl UiDensity {
+    /// The spacing multiplier for this density.
+    pub fn spacing_scale(self) -> f32 {
+        match self {
+            UiDensity::Compact => 0.85,
+            UiDensity::Default => 1.0,
+            UiDensity::Comfortable => 1.15,
+        }
+    }
+
+    /// The stable settings token (`appearance.uiDensity`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            UiDensity::Compact => "compact",
+            UiDensity::Default => "default",
+            UiDensity::Comfortable => "comfortable",
+        }
+    }
+
+    /// Parse the settings token; unknown / empty falls back to [`UiDensity::Default`].
+    pub fn from_str_or_default(s: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|density| density.as_str() == s)
+            .unwrap_or_default()
+    }
+
+    pub const ALL: [UiDensity; 3] = [
+        UiDensity::Compact,
+        UiDensity::Default,
+        UiDensity::Comfortable,
+    ];
+}
+
+/// The resolved UI motion level (`appearance.animations` after the `system`
+/// choice has been resolved against the OS "Reduce motion" preference).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnimationLevel {
+    /// All transitions.
+    #[default]
+    Full,
+    /// Fades only; no movement or resize transitions.
+    Reduced,
+    /// No transitions.
+    Off,
+}
+
+impl AnimationLevel {
+    /// Whether motion beyond a plain fade is suppressed.
+    pub fn is_reduced(self) -> bool {
+        self != AnimationLevel::Full
+    }
+}
+
+/// Pane arrangement inside a tab (`appearance.paneLayout`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaneLayout {
+    /// Floating, rounded panes separated by a gap.
+    #[default]
+    Comfortable,
+    /// Edge-to-edge panes separated by a hairline.
+    Compact,
+}
+
+/// Gap between floating panes (px, before density scaling).
+pub const PANE_GAP_COMFORTABLE: f32 = 8.0;
+
+/// The resolved metric bundle — the "settings" half of [`ActiveTheme`].
+///
+/// Built from the user's theme-settings by the settings → `ThemeStore` bridge
+/// (`labonair_theme_ui::apply_prefs_to_theme`). Defaults reproduce the
+/// typography defaults + `UiDensity::Default` + unit radius scale + motion on,
+/// so a store that never receives a `set_metrics` call still has the canonical
+/// reference typography metrics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemeMetrics {
+    /// UI-chrome font family (empty = the theme's own `app_font_family`).
+    pub ui_font_family: String,
+    /// UI-chrome font size, px.
+    pub ui_font_size: f32,
+    /// Spacing/size density.
+    pub density: UiDensity,
+    /// Multiplier applied to the theme's [`RadiusScale`] (1.0 = unchanged).
+    pub corner_radius_scale: f32,
+    /// Derived from [`Self::animations`] (`animations != Full`) for consumers
+    /// that only need a boolean. When `true` (and the level is not
+    /// [`AnimationLevel::Reduced`]), [`ActiveTheme::animation`] reports zero
+    /// durations.
+    pub reduce_motion: bool,
+    /// The resolved motion level; `Reduced` keeps fade durations.
+    pub animations: AnimationLevel,
+    /// Pane arrangement; see [`Self::pane_gap`].
+    pub pane_layout: PaneLayout,
+    /// Outline colour of the active pane (`None` = no highlight).
+    pub pane_highlight: Option<gpui::Hsla>,
+    /// `true` while a background image is shown in the window. Surface fills
+    /// then resolve to translucent alphas ([`VibrancyLayer::resolve`]) so the
+    /// image stays visible. Set by the shell from the background owner.
+    pub background_active: bool,
+    /// When `true`, window chrome and surfaces are painted with the
+    /// [`VibrancyLayer`](crate::VibrancyLayer) opacities over the native
+    /// blurred window material; `false` (default) keeps Ciel's opaque,
+    /// fill-contrast surfaces.
+    pub translucent_surfaces: bool,
+    /// Glass transparency 0–100 (`appearance.glassTransparency`), only used
+    /// while `translucent_surfaces` is on.
+    pub glass_transparency: u8,
+}
+
+impl Default for ThemeMetrics {
+    fn default() -> Self {
+        let ty = Typography::default();
+        Self {
+            ui_font_family: String::new(),
+            ui_font_size: ty.app_font_size,
+            density: UiDensity::Default,
+            corner_radius_scale: 1.0,
+            reduce_motion: false,
+            animations: AnimationLevel::Full,
+            pane_layout: PaneLayout::Comfortable,
+            pane_highlight: None,
+            background_active: false,
+            translucent_surfaces: false,
+            glass_transparency: crate::GLASS_TRANSPARENCY_DEFAULT,
+        }
+    }
+}
+
+impl ThemeMetrics {
+    /// Gap between panes in px: `0` in the compact layout, the density-scaled
+    /// floating gap otherwise.
+    pub fn pane_gap(&self) -> f32 {
+        if self.pane_layout == PaneLayout::Compact {
+            return 0.0;
+        }
+        self.space(PANE_GAP_COMFORTABLE)
+    }
+
+    /// A spacing value (px) scaled by the active density.
+    pub fn space(&self, px: f32) -> f32 {
+        px * self.density.spacing_scale()
+    }
+
+    /// `base` after applying [`Self::corner_radius_scale`].
+    pub fn scaled_radius(&self, base: RadiusScale) -> RadiusScale {
+        base.scaled(self.corner_radius_scale)
+    }
+}
+
+/// Colour (from the [`ThemeRegistry`](crate::ThemeRegistry)) **plus** metric
+/// (from [`ThemeMetrics`]) — the single combined view the app renders from.
+///
+/// Cheap to `clone` (`colors` is a plain `Theme`, ~a few hundred bytes; kept
+/// by value rather than `Arc` so `ActiveTheme` stays `Send + 'static` with no
+/// atomic traffic). Rebuilt only on a real colour or metric change — never per
+/// frame (see the T20-007 `## Warnungen`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveTheme {
+    colors: Theme,
+    metrics: ThemeMetrics,
+    /// `colors.radius` after `metrics.corner_radius_scale` — cached.
+    radius: RadiusScale,
+    /// `colors.animation`, durations zeroed when `metrics.reduce_motion` — cached.
+    animation: Animation,
+}
+
+impl ActiveTheme {
+    /// Combine resolved colours with resolved metrics.
+    pub fn new(colors: Theme, metrics: ThemeMetrics) -> Self {
+        // Reduced motion keeps fades, so only the hard "off" case zeroes timings.
+        let mute_motion = metrics.reduce_motion && metrics.animations != AnimationLevel::Reduced;
+        let animation = if mute_motion {
+            Animation {
+                dur_fast: Duration::ZERO,
+                dur_base: Duration::ZERO,
+                dur_slow: Duration::ZERO,
+                ..colors.animation
+            }
+        } else {
+            colors.animation
+        };
+        Self {
+            radius: metrics.scaled_radius(colors.radius),
+            colors,
+            metrics,
+            animation,
+        }
+    }
+
+    /// The resolved colour tokens.
+    pub fn theme(&self) -> &Theme {
+        &self.colors
+    }
+
+    /// The resolved metrics.
+    pub fn metrics(&self) -> &ThemeMetrics {
+        &self.metrics
+    }
+
+    /// The density-and-corner-radius-scaled [`RadiusScale`] (use this, not
+    /// `theme().radius`, for any rounded corner).
+    pub fn radius(&self) -> RadiusScale {
+        self.radius
+    }
+
+    /// Animation timings — zero durations when reduce-motion is on.
+    pub fn animation(&self) -> &Animation {
+        &self.animation
+    }
+
+    /// The active density's spacing multiplier.
+    pub fn density_scale(&self) -> f32 {
+        self.metrics.density.spacing_scale()
+    }
+
+    /// A spacing value (px) scaled by the active density.
+    pub fn space(&self, px: f32) -> f32 {
+        self.metrics.space(px)
+    }
+
+    pub fn ui_font_size(&self) -> f32 {
+        self.metrics.ui_font_size
+    }
+
+    pub fn reduce_motion(&self) -> bool {
+        self.metrics.reduce_motion
+    }
+}
+
+/// App-wide handle to the current [`ActiveTheme`]. Kept in sync with the
+/// [`ThemeStore`](crate::ThemeStore)'s cached value by an observer installed in
+/// [`crate::init_theme`].
+pub struct GlobalActiveTheme(pub ActiveTheme);
+
+impl gpui::Global for GlobalActiveTheme {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn density_factors_are_conservative_and_ordered() {
+        assert!(UiDensity::Compact.spacing_scale() < 1.0);
+        assert_eq!(UiDensity::Default.spacing_scale(), 1.0);
+        assert!(UiDensity::Comfortable.spacing_scale() > 1.0);
+        // "Conservative" — within ±15% of the base.
+        for d in UiDensity::ALL {
+            assert!((d.spacing_scale() - 1.0).abs() <= 0.15 + 1e-6);
+        }
+        assert_eq!(
+            UiDensity::from_str_or_default("compact"),
+            UiDensity::Compact
+        );
+        assert_eq!(UiDensity::from_str_or_default("bogus"), UiDensity::Default);
+    }
+
+    #[test]
+    fn density_scales_spacing() {
+        let compact = ThemeMetrics {
+            density: UiDensity::Compact,
+            ..ThemeMetrics::default()
+        };
+        assert!((compact.space(40.0) - 34.0).abs() < 1e-4);
+        let comfy = ThemeMetrics {
+            density: UiDensity::Comfortable,
+            ..ThemeMetrics::default()
+        };
+        assert!((comfy.space(40.0) - 46.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn corner_radius_scale_multiplies_the_radius_scale() {
+        let m = ThemeMetrics {
+            corner_radius_scale: 2.0,
+            ..ThemeMetrics::default()
+        };
+        let base = Theme::dark().radius;
+        let scaled = m.scaled_radius(base);
+        assert!((scaled.md - base.md * 2.0).abs() < 1e-4);
+        // `window` stays fixed.
+        assert_eq!(scaled.window, base.window);
+    }
+
+    #[test]
+    fn reduce_motion_zeroes_animation_durations() {
+        let colors = Theme::dark();
+        let normal = ActiveTheme::new(colors.clone(), ThemeMetrics::default());
+        assert!(normal.animation().dur_base > Duration::ZERO);
+
+        let reduced = ActiveTheme::new(
+            colors,
+            ThemeMetrics {
+                reduce_motion: true,
+                ..ThemeMetrics::default()
+            },
+        );
+        assert_eq!(reduced.animation().dur_fast, Duration::ZERO);
+        assert_eq!(reduced.animation().dur_base, Duration::ZERO);
+        assert_eq!(reduced.animation().dur_slow, Duration::ZERO);
+    }
+
+    #[test]
+    fn reduced_level_keeps_fade_durations() {
+        let active = ActiveTheme::new(
+            Theme::dark(),
+            ThemeMetrics {
+                reduce_motion: true,
+                animations: AnimationLevel::Reduced,
+                ..ThemeMetrics::default()
+            },
+        );
+        assert!(active.reduce_motion());
+        assert!(active.animation().dur_base > Duration::ZERO);
+    }
+
+    #[test]
+    fn pane_gap_follows_layout_and_density() {
+        let comfortable = ThemeMetrics::default();
+        assert_eq!(comfortable.pane_gap(), PANE_GAP_COMFORTABLE);
+        let compact = ThemeMetrics {
+            pane_layout: PaneLayout::Compact,
+            ..ThemeMetrics::default()
+        };
+        assert_eq!(compact.pane_gap(), 0.0);
+    }
+
+    #[test]
+    fn default_metrics_match_the_historical_typography_defaults() {
+        let m = ThemeMetrics::default();
+        let ty = Typography::default();
+        assert_eq!(m.ui_font_size, ty.app_font_size);
+        assert_eq!(m.corner_radius_scale, 1.0);
+        assert_eq!(m.density, UiDensity::Default);
+        assert!(!m.reduce_motion);
+    }
+}

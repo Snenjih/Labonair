@@ -1,0 +1,13 @@
+[package]
+name = "labonair-git"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_git"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }

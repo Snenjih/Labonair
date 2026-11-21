@@ -1,0 +1,320 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! [`AppShell`] — the app's root coordinator, reduced to pure composition in
+//! T17-006.
+//!
+//! `render` composes a small fixed set of children, top to bottom:
+//!
+//! * the [`Titlebar`] entity (tab strip + `＋` new-tab menu + one right-hand
+//!   icon button; redesigned in T18-001);
+//! * the [`Workspace`] entity — which now composes the three edge docks and the
+//!   split-pane [`PaneGroup`](labonair_workspace::pane_group) itself;
+//! * the [`StatusBar`] entity — renders purely from the workspace's
+//!   [`StatusItemRegistry`](labonair_panel::StatusItemRegistry) (T17-003);
+//! * the modal layer; notifications are rendered by the statusbar dropdown.
+//!
+//! No feature logic lives in `render` anymore: there are no `drain_pending_*`
+//! calls, no per-frame `sync_live_bridge`, no `build_palette_data`. The wiring
+//! that used to sit in `AppShell::new` moved to [`crate::bootstrap`]; the menu /
+//! command-palette action handlers moved to [`crate::actions`]. The concrete
+//! panel + feature entities stay here (grouped in [`ShellPanels`]) because the
+//! `labonair-panel-* → labonair-workspace` dependency edges make relocating
+//! them into `Workspace` a crate cycle — see `docs/architecture.md` §2.
+//!
+//! Window geometry is still persisted every render via
+//! [`Self::maybe_persist_geometry`] (throttled) — that is legitimate, not a
+//! `drain_*`.
+
+use std::time::{Duration, Instant};
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, px, App, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement,
+    ParentElement, Pixels, Render, Styled, Task, Window, WindowBounds,
+};
+use labonair_notifications::{notification_center, Notification, NotificationCenter};
+use labonair_settings::Settings as _;
+use tokio::runtime::Handle as TokioHandle;
+
+use labonair_panel_scm::GitPanelView;
+use labonair_panel_snippets::SnippetsView;
+use labonair_workspace::live_bridge::WorkspaceLiveBridge;
+use labonair_workspace::modal_layer::ModalLayer;
+use labonair_workspace::status_bar::StatusBar;
+
+use crate::background::{BackgroundEvent, BackgroundStore, LayerScope};
+use crate::commands::CommandDispatcher;
+use crate::composition::AppComposition;
+use crate::modals::ShellPalette;
+use crate::theme::ThemeStore;
+use crate::titlebar::Titlebar;
+use crate::updater::UpdaterView;
+use crate::window_state;
+use crate::workspace::Workspace;
+
+/// Minimum interval between window-geometry writes.
+const SAVE_THROTTLE: Duration = Duration::from_millis(1000);
+
+/// The concrete panel / feature entities the shell keeps direct handles to.
+///
+/// They live in `labonair-shell`, not `Workspace`, because
+/// `labonair-panel-{explorer,scm,snippets}` already depend on
+/// `labonair-workspace` — storing their concrete `Entity<…>` on `Workspace`
+/// would be a dependency cycle (`docs/architecture.md` §2). Grouped so
+/// `AppShell` stays a thin composition root and the action handlers in
+/// [`crate::actions`] have one field to reach through.
+pub(crate) struct ShellPanels {
+    pub(crate) git_panel: Entity<GitPanelView>,
+    pub(crate) snippets: Entity<SnippetsView>,
+    pub(crate) updater: Entity<UpdaterView>,
+    pub(crate) command_palette: Entity<ShellPalette>,
+}
+
+/// The root view: window chrome around the [`Workspace`].
+pub struct AppShell {
+    pub(crate) theme: Entity<ThemeStore>,
+    pub(crate) background: Entity<BackgroundStore>,
+    pub(crate) workspace: Entity<Workspace>,
+    pub(crate) titlebar: Entity<Titlebar>,
+    pub(crate) panels: ShellPanels,
+    pub(crate) status_bar: Entity<StatusBar>,
+    /// Every menu / keybind / palette command and its owner contributions.
+    /// Metadata comes from providers; executable owner handlers are assembled
+    /// during bootstrap (T17-007 / R07).
+    pub(crate) command_registry: CommandDispatcher,
+    /// The app's single modal-overlay slot (T17-005).
+    pub(crate) modal_layer: Entity<ModalLayer>,
+    /// First-run onboarding: its step registry and progress file.
+    pub(crate) onboarding: crate::onboarding::Onboarding,
+    /// Real `LiveBridge` for the AI agent — snapshot refreshed event-driven
+    /// (T17-006), command queue drained by [`Self`]'s background task.
+    pub(crate) live_bridge: WorkspaceLiveBridge,
+    _live_drain: Task<()>,
+    /// Sessions of the background host as of the last palette open (refreshed
+    /// off the UI thread), for `See / Manage Terminals`.
+    pub(crate) background_sessions: Vec<labonair_terminal::BackgroundSession>,
+    focus_handle: FocusHandle,
+    last_saved: Option<(Bounds<Pixels>, Instant)>,
+}
+
+impl AppShell {
+    pub fn new(
+        theme: Entity<ThemeStore>,
+        background: Entity<BackgroundStore>,
+        notifications: Entity<NotificationCenter>,
+        composition: AppComposition,
+        tokio: TokioHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        // Re-render on theme changes; every other reactive edge is set up in
+        // `bootstrap` (or self-managed by the child entities).
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        bridge_background_to_theme(&theme, &background, cx);
+
+        // When the focused node vanishes (a context menu / popover item that
+        // was clicked and then unmounted), park focus on the active pane so
+        // keybindings keep working without a re-click. A live modal manages
+        // its own focus.
+        cx.on_focus_lost(window, |this, window, cx| {
+            if this.modal_layer.read(cx).has_active_modal() {
+                return;
+            }
+            this.workspace.update(cx, |ws, cx| ws.focus(window, cx));
+        })
+        .detach();
+
+        crate::bootstrap::bootstrap(
+            theme,
+            background,
+            notifications,
+            composition,
+            tokio,
+            window,
+            cx,
+        )
+    }
+
+    /// The workspace view (for menu / command-palette wiring).
+    pub fn workspace(&self) -> &Entity<Workspace> {
+        &self.workspace
+    }
+
+    /// Assemble the shell from its already-built parts (called by
+    /// [`crate::bootstrap`]).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_parts(
+        theme: Entity<ThemeStore>,
+        background: Entity<BackgroundStore>,
+        workspace: Entity<Workspace>,
+        titlebar: Entity<Titlebar>,
+        panels: ShellPanels,
+        status_bar: Entity<StatusBar>,
+        command_registry: CommandDispatcher,
+        modal_layer: Entity<ModalLayer>,
+        live_bridge: WorkspaceLiveBridge,
+        live_drain: Task<()>,
+        onboarding: crate::onboarding::Onboarding,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self {
+            theme,
+            background,
+            workspace,
+            titlebar,
+            panels,
+            status_bar,
+            command_registry,
+            modal_layer,
+            onboarding,
+            live_bridge,
+            _live_drain: live_drain,
+            background_sessions: Vec::new(),
+            focus_handle: cx.focus_handle(),
+            last_saved: None,
+        }
+    }
+
+    /// Save the window geometry at most once per [`SAVE_THROTTLE`].
+    fn maybe_persist_geometry(&mut self, window: &Window, cx: &App) {
+        let WindowBounds::Windowed(bounds) = window.window_bounds() else {
+            return;
+        };
+        let now = Instant::now();
+        let stale = match self.last_saved {
+            None => true,
+            Some((last, at)) => {
+                now.duration_since(at) >= SAVE_THROTTLE && bounds_differ(last, bounds)
+            }
+        };
+        if stale {
+            cx.background_executor()
+                .spawn(async move { window_state::save(bounds) })
+                .detach();
+            self.last_saved = Some((bounds, now));
+        }
+    }
+}
+
+impl Focusable for AppShell {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for AppShell {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "shell").entered();
+        self.maybe_persist_geometry(window, cx);
+        // Mirror the async-driven updater dialog into the modal layer (it flips
+        // its flag outside a user action, so `render` is the one place with a
+        // `&mut Window`).
+        self.sync_updater_modal(window, cx);
+
+        let (ui_font, ui_font_size) = {
+            let t = self.theme.read(cx);
+            (t.ui_font(), t.ui_font_size())
+        };
+        let background_layer = self.background.read(cx).layer(LayerScope::App);
+        // The floating layer: in the comfortable pane layout the window has a
+        // gradient canvas that the titlebar, the cards and the statusbar sit
+        // on. Compact keeps the flat, opaque chrome.
+        let canvas = {
+            let theme = self.theme.read(cx);
+            (theme.metrics().pane_layout == labonair_theme::PaneLayout::Comfortable).then(|| {
+                labonair_ui_kit::canvas_backdrop(labonair_ui_kit::Palette::from_theme(theme))
+            })
+        };
+        let show_statusbar = labonair_settings::ThemeSettings::try_get(cx)
+            .map(|s| s.zen_mode_show_statusbar())
+            .unwrap_or(true);
+        let can_split = self.workspace.read(cx).active_can_split(cx);
+        let has_split = self.workspace.read(cx).active_has_split(cx);
+
+        // The shell root carries only the three genuine window actions; every
+        // other menu / keybind action is bridged to a `CommandId` and run
+        // through `self.command_registry` (T17-007).
+        let root = div()
+            .track_focus(&self.focus_handle)
+            .key_context("AppShell")
+            .relative()
+            .flex()
+            .flex_col()
+            .size_full()
+            .font(ui_font)
+            .text_size(px(ui_font_size))
+            .on_action(cx.listener(Self::act_toggle_fullscreen))
+            .on_action(cx.listener(Self::act_minimize))
+            .on_action(cx.listener(Self::act_zoom_window));
+        let root = crate::commands::attach_action_handlers(root, can_split, has_split, cx);
+
+        root.children(canvas)
+            .children(background_layer)
+            .child(self.titlebar.clone())
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .child(self.workspace.clone()),
+            )
+            .when(show_statusbar, |d| d.child(self.status_bar.clone()))
+            // Notifications use the statusbar dropdown and must not create a
+            // separate notification overlay.
+            .child(self.modal_layer.clone())
+    }
+}
+
+/// Connect the Background owner to the theme and the notification center.
+///
+/// * While an image covers the window the theme is told so
+///   (`ThemeStore::set_background_active`), which turns the window surfaces
+///   translucent; the store learns the UI text colour so it can clamp the tint.
+/// * Load/decode/save failures become notifications (the owner never shows UI).
+///
+/// Every setter is a no-op when nothing changed, so the two observers settle
+/// after one round trip.
+fn bridge_background_to_theme(
+    theme: &Entity<ThemeStore>,
+    background: &Entity<BackgroundStore>,
+    cx: &mut Context<AppShell>,
+) {
+    fn sync(theme: &Entity<ThemeStore>, background: &Entity<BackgroundStore>, cx: &mut App) {
+        let active = background.read(cx).covers_window();
+        let text = theme.read(cx).foreground();
+        theme.update(cx, |t, cx| t.set_background_active(active, cx));
+        background.update(cx, |b, cx| b.set_text_color(text, cx));
+    }
+
+    sync(theme, background, cx);
+    let (t, b) = (theme.clone(), background.clone());
+    cx.observe(background, move |_, _, cx| sync(&t, &b, cx))
+        .detach();
+    let (t, b) = (theme.clone(), background.clone());
+    cx.observe(theme, move |_, _, cx| sync(&t, &b, cx)).detach();
+    cx.subscribe(
+        background,
+        |_, _, event: &BackgroundEvent, cx| match event {
+            BackgroundEvent::Error(message) => {
+                notification_center(cx).update(cx, |center, cx| {
+                    center.push(
+                        Notification::error("Background", "Background image problem")
+                            .details(message.clone()),
+                        cx,
+                    );
+                });
+            }
+        },
+    )
+    .detach();
+}
+
+fn bounds_differ(a: Bounds<Pixels>, b: Bounds<Pixels>) -> bool {
+    let d = |x: Pixels, y: Pixels| (f32::from(x) - f32::from(y)).abs() > 2.0;
+    d(a.origin.x, b.origin.x)
+        || d(a.origin.y, b.origin.y)
+        || d(a.size.width, b.size.width)
+        || d(a.size.height, b.size.height)
+}

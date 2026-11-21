@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! The token-accessor contract the `labonair-ui-kit` primitives build against.
+//!
+//! Moved out of `labonair-ui-kit::theme` in R08-008. `ui-kit` only ever sees
+//! [`UiTheme`]; `labonair-theme` implements it for its runtime `ThemeStore`
+//! (that `impl` lives in `labonair-theme` because of the orphan rule).
+
+use gpui::{App, Hsla};
+
+use crate::metrics::PaneLayout;
+use crate::metrics::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
+use crate::tokens::{RadiusScale, SurfaceMaterial, Theme, VibrancyLayer};
+
+/// Token accessor the ui-kit primitives build against.
+///
+/// Only `theme()` must be provided; the rest are 1:1 derivations kept as
+/// defaulted methods so implementors (and call sites) stay unchanged.
+pub trait UiTheme {
+    /// The currently active theme tokens.
+    fn theme(&self) -> &Theme;
+
+    /// The active radius scale (`--radius` family), **after** the T20-007
+    /// `corner_radius_scale` metric. The runtime `ThemeStore` overrides this to
+    /// return the scaled value; a bare `Theme` (tests) has no metric layer, so
+    /// the default is the theme's own unscaled scale.
+    fn radius(&self) -> RadiusScale {
+        self.theme().radius
+    }
+
+    /// The active metric layer (T20-007: font scales, UI density, corner-radius
+    /// scale, reduce-motion). Defaults to [`ThemeMetrics::default`] for a bare
+    /// `Theme`; the runtime `ThemeStore` overrides it with the live metrics.
+    fn metrics(&self) -> ThemeMetrics {
+        ThemeMetrics::default()
+    }
+
+    /// Whether surfaces are painted translucent over the native window blur
+    /// (`appearance.translucentSurfaces`). Off by default: opaque Ciel fills.
+    fn translucent_surfaces(&self) -> bool {
+        self.metrics().translucent_surfaces
+    }
+
+    /// The surface material (Classic/Glassy x background image) every
+    /// [`VibrancyLayer::resolve`](crate::VibrancyLayer::resolve) call should
+    /// use, so surfaces turn translucent while a background image is showing.
+    fn surface_material(&self) -> SurfaceMaterial {
+        let m = self.metrics();
+        SurfaceMaterial::new(
+            m.translucent_surfaces,
+            m.background_active,
+            m.glass_transparency,
+        )
+    }
+
+    /// Fill for a surface that sits *inside* a Comfortable card (editor,
+    /// terminal, SFTP, panel bodies). The window canvas and the card already
+    /// carry the glass; a third fill would stack to near-opaque, so on a
+    /// translucent material in the Comfortable layout it is transparent.
+    fn content_fill(&self, layer: VibrancyLayer, color: Hsla) -> Hsla {
+        let material = self.surface_material();
+        if material != SurfaceMaterial::Opaque
+            && self.metrics().pane_layout == PaneLayout::Comfortable
+        {
+            return Hsla { a: 0.0, ..color };
+        }
+        layer.resolve(color, material)
+    }
+
+    /// `--muted-foreground`.
+    fn muted_foreground(&self) -> Hsla {
+        self.theme().core.muted_foreground
+    }
+
+    /// `--border`.
+    fn border(&self) -> Hsla {
+        self.theme().core.border
+    }
+
+    /// `--foreground`.
+    fn foreground(&self) -> Hsla {
+        self.theme().core.foreground
+    }
+
+    /// `--card`.
+    fn card(&self) -> Hsla {
+        self.theme().core.card
+    }
+
+    /// `--muted`.
+    fn muted(&self) -> Hsla {
+        self.theme().core.muted
+    }
+
+    /// `--primary`.
+    fn primary(&self) -> Hsla {
+        self.theme().core.primary
+    }
+
+    /// `--primary-foreground`.
+    fn primary_foreground(&self) -> Hsla {
+        self.theme().core.primary_foreground
+    }
+
+    /// `--background`.
+    fn background(&self) -> Hsla {
+        self.theme().core.background
+    }
+
+    /// `--accent`.
+    fn accent(&self) -> Hsla {
+        self.theme().core.accent
+    }
+
+    /// `--accent-foreground`.
+    fn accent_foreground(&self) -> Hsla {
+        self.theme().core.accent_foreground
+    }
+
+    /// `--destructive`.
+    fn destructive(&self) -> Hsla {
+        self.theme().core.destructive
+    }
+
+    /// `--success` status color (severity: success).
+    fn status_success(&self) -> Hsla {
+        self.theme().status.success
+    }
+
+    /// `--destructive` / status `error` color (severity: error).
+    fn status_error(&self) -> Hsla {
+        self.theme().status.error
+    }
+
+    /// `--warning` status color (severity: warning).
+    fn status_warning(&self) -> Hsla {
+        self.theme().status.warning
+    }
+
+    /// `--info` status color (severity: info).
+    fn status_info(&self) -> Hsla {
+        self.theme().status.info
+    }
+
+    /// Canonical selected/active fill for list selection (Explorer rows,
+    /// command-palette results, active tab, active nav item): Ciel's
+    /// `--surface-sunken` (§8) — no accent tint; hover stays neutral.
+    fn selected_fill(&self) -> Hsla {
+        self.theme().surface.sunken
+    }
+
+    /// The accent (`--accent` blue) marker for genuinely "active/changed"
+    /// state — toggled icons, search-match highlights. Never a row selection.
+    fn selected_accent(&self) -> Hsla {
+        self.primary()
+    }
+}
+
+/// `cx.active_theme()` — the colour+metric [`ActiveTheme`] from the
+/// [`GlobalActiveTheme`] global (installed by `labonair_theme::init_theme`).
+/// This is the T20-007 read path for `App`-level code that isn't holding the
+/// `ThemeStore` entity. Panics if the global was never installed (same
+/// contract as `labonair_theme::active_theme`).
+pub trait ActiveThemeExt {
+    fn active_theme(&self) -> &ActiveTheme;
+}
+
+impl ActiveThemeExt for App {
+    fn active_theme(&self) -> &ActiveTheme {
+        &self.global::<GlobalActiveTheme>().0
+    }
+}

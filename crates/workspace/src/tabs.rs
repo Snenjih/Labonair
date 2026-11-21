@@ -1,0 +1,1004 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Tab data model and tab store (T04-001).
+//!
+//! Labonair's tab system is the central navigation element. A *tab* is a light
+//! descriptor with a [`TabKind`] discriminant (`workspace`, `editor`,
+//! `preview`, `sftp`, `git-graph`, `git-diff`, `commit-diff`, `ai-diff`,
+//! `keymap`) plus kind-specific data in [`TabData`]. The reference keeps this in the
+//! `useTabs` Zustand store; here it is the GPUI [`TabStore`] entity. Host
+//! management is not a tab: it is the Hosts page in Settings, while
+//! connecting is the command palette's `Page::Hosts`.
+//!
+//! "Tab" and "session" are deliberately **not** the same thing (mirrors the
+//! React version): the visible workspace tab is backed by a local PTY session
+//! that lives independently in the [`TerminalRegistry`](labonair_terminal::TerminalRegistry)
+//! and keeps running regardless of which tab is on screen. The tab only holds
+//! that session's [`SessionId`].
+//!
+//! Splitting a workspace tab into multiple panes is T04-002; for now a
+//! workspace tab owns exactly one session.
+
+use gpui::{Context, EventEmitter};
+
+use labonair_terminal::SessionId;
+use labonair_ui_kit::IconName;
+
+use crate::spaces::{SpaceId, DEFAULT_SPACE_ID};
+
+/// Git state projected from an editor's current gutter snapshot for tab chrome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabGitStatus {
+    Added,
+    Modified,
+    Deleted,
+}
+
+/// Highest visible diagnostic severity for an editor tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabDiagnosticStatus {
+    Error,
+    Warning,
+}
+
+/// The category of a tab. Content views for most kinds arrive in later phases;
+/// the model already covers them so the tab bar and store are stable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TabKind {
+    /// A local (or, later, SSH) terminal workspace.
+    Workspace,
+    /// A code editor tab (Phase 05).
+    Editor,
+    /// A markdown / web preview tab (Phase — native markdown replacement).
+    Preview,
+    /// An AI-proposed diff awaiting approval (Phase 10).
+    AiDiff,
+    /// An SFTP file browser (Phase 07).
+    Sftp,
+    /// A commit-graph view (Phase 09).
+    GitGraph,
+    /// The one workspace diff surface — working-tree changes or a read-only
+    /// committed change, per the request's `DiffSource` (Phase 08 / Phase-1
+    /// diff-surface consolidation).
+    Diff,
+    /// Reserved: a dedicated committed-change tab. Currently folded into `Diff`.
+    CommitDiff,
+    /// The keymap management surface (browse + rebind every command).
+    Keymap,
+    /// The first-run onboarding page, hosted from a view the shell supplies.
+    Onboarding,
+}
+
+impl TabKind {
+    /// The icon shown in the tab bar before the title (mirrors the reference
+    /// `tabUtils.tsx` per-kind Hugeicons).
+    pub fn indicator(&self) -> IconName {
+        match self {
+            TabKind::Workspace => IconName::Terminal,
+            TabKind::Editor => IconName::SquarePen,
+            TabKind::Preview => IconName::Globe,
+            TabKind::AiDiff => IconName::Sparkles,
+            TabKind::Sftp => IconName::FolderOpen,
+            TabKind::GitGraph => IconName::GitCompare,
+            TabKind::Diff => IconName::GitBranch,
+            TabKind::CommitDiff => IconName::GitBranch,
+            TabKind::Keymap => IconName::Command,
+            TabKind::Onboarding => IconName::Home,
+        }
+    }
+
+    /// Plural label for "Close All {kind}" menu entries (port of
+    /// `tabUtils.tsx` `pluralLabelFor`).
+    pub fn plural_label(&self) -> &'static str {
+        match self {
+            TabKind::Workspace => "Terminals",
+            TabKind::Editor => "Editors",
+            TabKind::Preview => "Previews",
+            TabKind::AiDiff => "AI Diffs",
+            TabKind::Sftp => "SFTP Tabs",
+            TabKind::GitGraph => "Git Graphs",
+            TabKind::Diff => "Diffs",
+            TabKind::CommitDiff => "Commit Diffs",
+            TabKind::Keymap => "Keymaps",
+            TabKind::Onboarding => "Onboarding",
+        }
+    }
+
+    /// The default title used before anything more specific is known.
+    pub fn default_title(&self) -> &'static str {
+        match self {
+            TabKind::Workspace => "Terminal",
+            TabKind::Editor => "Untitled",
+            TabKind::Preview => "Preview",
+            TabKind::AiDiff => "AI Diff",
+            TabKind::Sftp => "SFTP",
+            TabKind::GitGraph => "Git Graph",
+            TabKind::Diff => "Diff",
+            TabKind::CommitDiff => "Commit",
+            TabKind::Keymap => "Keymap",
+            TabKind::Onboarding => "Onboarding",
+        }
+    }
+}
+
+/// Kind-specific tab payload. A flat optional bag rather than a per-kind enum so
+/// later phases can add fields without a churny match everywhere; each field
+/// documents which kinds populate it.
+#[derive(Debug, Clone, Default)]
+pub struct TabData {
+    /// Registry session id backing a `Workspace` tab.
+    pub session_id: Option<SessionId>,
+    /// Live cwd from OSC 7 shell integration (`Workspace`).
+    pub cwd: Option<String>,
+    /// Live process title from OSC 0/1/2 (`Workspace`).
+    pub process_title: Option<String>,
+    /// File path (`Editor`, `Diff`).
+    pub path: Option<String>,
+    /// Remote host id (`Sftp`, remote `Editor`).
+    pub host_id: Option<String>,
+    /// Repository path (`GitGraph`, `Diff`, `CommitDiff`).
+    pub repo_path: Option<String>,
+    /// Target URL (`Preview`).
+    pub url: Option<String>,
+}
+
+/// A single tab.
+#[derive(Debug, Clone)]
+pub struct Tab {
+    /// Process-unique id, never reused.
+    pub id: u64,
+    /// Stable Workspace-owned identity persisted across application processes.
+    pub shared_id: labonair_workspace_storage::TabId,
+    pub kind: TabKind,
+    /// Fallback title. Real label comes from [`Tab::label`].
+    pub title: String,
+    /// User-set title (via rename) — frozen, wins over everything.
+    pub custom_title: Option<String>,
+    /// Unsaved-changes indicator (`Editor`).
+    pub dirty: bool,
+    /// "Peek" preview tab, rendered italic (`Editor`).
+    pub peek: bool,
+    /// Kept in the pinned group and protected from tab-strip close gestures.
+    pub pinned: bool,
+    /// Current editor file Git status, when its gutter snapshot is current.
+    pub git_status: Option<TabGitStatus>,
+    /// Highest error/warning severity reported for this editor file.
+    pub diagnostic_status: Option<TabDiagnosticStatus>,
+    pub data: TabData,
+    /// The Space this tab belongs to (T20-008 Spaces). Set once, from
+    /// [`TabStore::current_space`], at creation time — there is no such thing
+    /// as a tab outside every space.
+    pub space_id: SpaceId,
+}
+
+impl Tab {
+    /// The label to render, mirroring the reference `labelFor`: custom title →
+    /// process title → cwd basename (workspace) → fallback title.
+    pub fn label(&self) -> String {
+        if let Some(custom) = &self.custom_title {
+            return custom.clone();
+        }
+        if self.kind == TabKind::Workspace {
+            if let Some(pt) = self.data.process_title.as_deref().filter(|s| !s.is_empty()) {
+                return pt.to_string();
+            }
+            if let Some(cwd) = &self.data.cwd {
+                return cwd
+                    .rsplit('/')
+                    .find(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| "/".to_string());
+            }
+        }
+        self.title.clone()
+    }
+
+    /// Whether this tab has an "are you sure?" close (unsaved editor).
+    pub fn needs_close_confirm(&self) -> bool {
+        self.kind == TabKind::Editor && self.dirty
+    }
+}
+
+/// Emitted whenever the active tab changes, so the workspace can move focus.
+pub struct ActiveTabChanged(pub u64);
+
+/// The single source of truth for the open tabs and which one is active.
+pub struct TabStore {
+    tabs: Vec<Tab>,
+    active_id: u64,
+    /// Which Space a newly-opened tab joins. Kept in sync by
+    /// [`crate::Workspace::switch_space`] — this is what lets every existing
+    /// `open`/`open_workspace` call site keep working unchanged while still
+    /// filing new tabs into the currently active space.
+    current_space: SpaceId,
+}
+
+impl EventEmitter<ActiveTabChanged> for TabStore {}
+
+impl Default for TabStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TabStore {
+    /// An empty store. The workspace immediately opens the first tab.
+    pub fn new() -> Self {
+        Self {
+            tabs: Vec::new(),
+            active_id: 0,
+            current_space: DEFAULT_SPACE_ID,
+        }
+    }
+
+    pub fn tabs(&self) -> &[Tab] {
+        &self.tabs
+    }
+
+    /// Which Space new tabs are filed into. Set by
+    /// [`crate::Workspace::switch_space`] whenever the active space changes.
+    pub fn current_space(&self) -> SpaceId {
+        self.current_space
+    }
+
+    pub fn set_current_space(&mut self, id: SpaceId) {
+        self.current_space = id;
+    }
+
+    /// All tabs belonging to `space_id`, in tab order.
+    pub fn tabs_in_space(&self, space_id: SpaceId) -> Vec<&Tab> {
+        self.tabs
+            .iter()
+            .filter(|t| t.space_id == space_id)
+            .collect()
+    }
+
+    /// The adjacent tab in `source_id`'s Space, with wraparound.
+    pub fn adjacent_in_space(&self, source_id: u64, forward: bool) -> Option<u64> {
+        let source = self.get(source_id)?;
+        let tabs = self.tabs_in_space(source.space_id);
+        let index = tabs.iter().position(|tab| tab.id == source_id)?;
+        if tabs.len() < 2 {
+            return None;
+        }
+        let next = if forward {
+            (index + 1) % tabs.len()
+        } else {
+            (index + tabs.len() - 1) % tabs.len()
+        };
+        Some(tabs[next].id)
+    }
+
+    pub fn active_id(&self) -> u64 {
+        self.active_id
+    }
+
+    pub fn active(&self) -> Option<&Tab> {
+        self.get(self.active_id)
+    }
+
+    pub fn get(&self, id: u64) -> Option<&Tab> {
+        self.tabs.iter().find(|t| t.id == id)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tabs.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.tabs.len()
+    }
+
+    /// All tabs of a given kind, in tab order.
+    pub fn tabs_by_kind(&self, kind: TabKind) -> Vec<&Tab> {
+        self.tabs.iter().filter(|t| t.kind == kind).collect()
+    }
+
+    /// Open a new tab and activate it. Returns its id.
+    pub fn open(&mut self, kind: TabKind, data: TabData, cx: &mut Context<Self>) -> u64 {
+        let id = crate::pane::next_id();
+        self.tabs.push(Tab {
+            id,
+            shared_id: labonair_workspace_storage::TabId::new(),
+            kind,
+            title: kind.default_title().to_string(),
+            custom_title: None,
+            dirty: false,
+            peek: false,
+            pinned: false,
+            git_status: None,
+            diagnostic_status: None,
+            data,
+            space_id: self.current_space,
+        });
+        self.set_active(id, cx);
+        cx.notify();
+        id
+    }
+
+    pub fn set_shared_id(&mut self, id: u64, shared_id: labonair_workspace_storage::TabId) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return false;
+        };
+        tab.shared_id = shared_id;
+        true
+    }
+
+    /// Open a workspace tab backed by `session_id`, inheriting `cwd`.
+    pub fn open_workspace(
+        &mut self,
+        session_id: SessionId,
+        cwd: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> u64 {
+        self.open(
+            TabKind::Workspace,
+            TabData {
+                session_id: Some(session_id),
+                cwd,
+                ..TabData::default()
+            },
+            cx,
+        )
+    }
+
+    /// Make `id` the active tab (no-op if unknown or already active).
+    pub fn set_active(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.active_id == id || !self.tabs.iter().any(|t| t.id == id) {
+            return;
+        }
+        self.active_id = id;
+        cx.emit(ActiveTabChanged(id));
+        cx.notify();
+    }
+
+    /// Clear the active tab when the current Space has no tabs of its own.
+    pub fn clear_active(&mut self, cx: &mut Context<Self>) {
+        if self.active_id == 0 {
+            return;
+        }
+        self.active_id = 0;
+        cx.emit(ActiveTabChanged(0));
+        cx.notify();
+    }
+
+    /// Activate the next / previous tab within the active tab's own Space,
+    /// wrapping around. Scoped to one space so cycling never silently jumps
+    /// you into a different project's Explorer/Git root (T20-008 Spaces).
+    pub fn cycle(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if let Some(next) = self.adjacent_in_space(self.active_id, forward) {
+            self.set_active(next, cx);
+        }
+    }
+
+    /// Close a tab. Any tab can be closed — closing the last one leaves the
+    /// store empty and the workspace shows its empty surface (T17-009). If the
+    /// active tab is closed, its left neighbour (or the new first tab) becomes
+    /// active; an emptied store reports no active tab. Returns the removed tab
+    /// so the caller can tear down its session.
+    pub fn close(&mut self, id: u64, cx: &mut Context<Self>) -> Option<Tab> {
+        let idx = self.tabs.iter().position(|t| t.id == id)?;
+        let removed = self.tabs.remove(idx);
+        if self.active_id == id {
+            let space_index = self.tabs[..idx]
+                .iter()
+                .filter(|tab| tab.space_id == removed.space_id)
+                .count();
+            let next = self
+                .tabs
+                .iter()
+                .filter(|tab| tab.space_id == removed.space_id)
+                .nth(space_index.saturating_sub(1))
+                .map(|tab| tab.id)
+                .unwrap_or(0);
+            self.active_id = next;
+            cx.emit(ActiveTabChanged(next));
+        }
+        cx.notify();
+        Some(removed)
+    }
+
+    /// Close every tab except `keep`. Returns removed tabs. If `keep` is not a
+    /// real tab the store ends up empty.
+    pub fn close_others(&mut self, keep: u64, cx: &mut Context<Self>) -> Vec<Tab> {
+        let (kept, removed): (Vec<Tab>, Vec<Tab>) = std::mem::take(&mut self.tabs)
+            .into_iter()
+            .partition(|t| t.id == keep);
+        self.tabs = kept;
+        if !self.tabs.iter().any(|t| t.id == self.active_id) {
+            self.activate_fallback(cx);
+        }
+        cx.notify();
+        removed
+    }
+
+    /// Close every tab of a given kind. Returns removed tabs. May empty the
+    /// store.
+    pub fn close_by_kind(&mut self, kind: TabKind, cx: &mut Context<Self>) -> Vec<Tab> {
+        let (removed, kept): (Vec<Tab>, Vec<Tab>) = std::mem::take(&mut self.tabs)
+            .into_iter()
+            .partition(|t| t.kind == kind);
+        self.tabs = kept;
+        if !self.tabs.iter().any(|t| t.id == self.active_id) {
+            self.activate_fallback(cx);
+        }
+        cx.notify();
+        removed
+    }
+
+    /// Close every tab belonging to `space_id`. Returns removed tabs. Used
+    /// when a Space is closed (T20-008); may leave the store with tabs in
+    /// other spaces still active, or empty it entirely.
+    pub fn close_by_space(&mut self, space_id: SpaceId, cx: &mut Context<Self>) -> Vec<Tab> {
+        let (removed, kept): (Vec<Tab>, Vec<Tab>) = std::mem::take(&mut self.tabs)
+            .into_iter()
+            .partition(|t| t.space_id == space_id);
+        self.tabs = kept;
+        if !self.tabs.iter().any(|t| t.id == self.active_id) {
+            self.activate_fallback(cx);
+        }
+        cx.notify();
+        removed
+    }
+
+    /// Close every tab, leaving the store empty. Returns all removed tabs so
+    /// the caller can tear down their sessions.
+    pub fn close_all(&mut self, cx: &mut Context<Self>) -> Vec<Tab> {
+        let removed = std::mem::take(&mut self.tabs);
+        if !removed.is_empty() {
+            self.active_id = 0;
+            cx.emit(ActiveTabChanged(0));
+            cx.notify();
+        }
+        removed
+    }
+
+    fn activate_fallback(&mut self, cx: &mut Context<Self>) {
+        let id = self.tabs.first().map(|t| t.id).unwrap_or(0);
+        self.active_id = id;
+        cx.emit(ActiveTabChanged(id));
+    }
+
+    /// Move the tab `dragged` to the position currently held by `target`.
+    pub fn reorder(&mut self, dragged: u64, target: u64, cx: &mut Context<Self>) {
+        let (Some(from), Some(to)) = (
+            self.tabs.iter().position(|t| t.id == dragged),
+            self.tabs.iter().position(|t| t.id == target),
+        ) else {
+            return;
+        };
+        if from == to {
+            return;
+        }
+        if self.tabs[from].space_id == self.tabs[to].space_id
+            && self.tabs[from].pinned != self.tabs[to].pinned
+        {
+            return;
+        }
+        let tab = self.tabs.remove(from);
+        self.tabs.insert(to, tab);
+        cx.notify();
+    }
+
+    /// Reorder only one Space's tabs to match the shared Workspace sequence,
+    /// leaving every other Space's local tab order untouched.
+    pub fn reorder_shared_space(
+        &mut self,
+        space_id: SpaceId,
+        ordered: &[labonair_workspace_storage::TabId],
+        cx: &mut Context<Self>,
+    ) {
+        let positions = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tab)| (tab.space_id == space_id).then_some(index))
+            .collect::<Vec<_>>();
+        if positions.len() < 2 {
+            return;
+        }
+        let current_ids = positions
+            .iter()
+            .map(|index| self.tabs[*index].shared_id)
+            .collect::<Vec<_>>();
+        let mut final_ids = ordered
+            .iter()
+            .copied()
+            .filter(|id| current_ids.contains(id))
+            .collect::<Vec<_>>();
+        let already_ordered = final_ids.clone();
+        final_ids.extend(
+            current_ids
+                .into_iter()
+                .filter(|id| !already_ordered.contains(id)),
+        );
+        let by_shared = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.space_id == space_id)
+            .cloned()
+            .map(|tab| (tab.shared_id, tab))
+            .collect::<std::collections::HashMap<_, _>>();
+        for (position, shared_id) in positions.into_iter().zip(final_ids) {
+            if let Some(tab) = by_shared.get(&shared_id) {
+                self.tabs[position] = tab.clone();
+            }
+        }
+        cx.notify();
+    }
+
+    // ── Field mutators (all notify on change) ────────────────────────────────
+
+    fn with_tab(&mut self, id: u64, cx: &mut Context<Self>, f: impl FnOnce(&mut Tab) -> bool) {
+        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
+            if f(tab) {
+                cx.notify();
+            }
+        }
+    }
+
+    pub fn set_title(&mut self, id: u64, title: impl Into<String>, cx: &mut Context<Self>) {
+        let title = title.into();
+        self.with_tab(id, cx, |t| {
+            let changed = t.title != title;
+            t.title = title;
+            changed
+        });
+    }
+
+    /// Set (or clear) the user rename. A set value freezes the label.
+    pub fn set_custom_title(&mut self, id: u64, title: Option<String>, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let changed = t.custom_title != title;
+            t.custom_title = title;
+            changed
+        });
+    }
+
+    pub fn set_url(&mut self, id: u64, url: Option<String>, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let changed = t.data.url != url;
+            t.data.url = url;
+            changed
+        });
+    }
+
+    /// Bind a restored terminal tab to its first session.
+    pub fn set_session(
+        &mut self,
+        id: u64,
+        session_id: SessionId,
+        cwd: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.with_tab(id, cx, |t| {
+            t.data.session_id = Some(session_id);
+            t.data.cwd = cwd;
+            true
+        });
+    }
+
+    /// Re-point a tab at the kind of its first pane (pane groups).
+    pub fn set_kind(&mut self, id: u64, kind: TabKind, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let changed = t.kind != kind;
+            t.kind = kind;
+            changed
+        });
+    }
+
+    pub fn set_dirty(&mut self, id: u64, dirty: bool, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let changed = t.dirty != dirty;
+            t.dirty = dirty;
+            changed
+        });
+    }
+
+    pub fn set_peek(&mut self, id: u64, peek: bool, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let peek = peek && !t.pinned;
+            let changed = t.peek != peek;
+            t.peek = peek;
+            changed
+        });
+    }
+
+    /// Update the Git status marker for a file-backed tab.
+    pub fn set_git_status(
+        &mut self,
+        id: u64,
+        status: Option<TabGitStatus>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        if tab.git_status == status {
+            return;
+        }
+        tab.git_status = status;
+        cx.notify();
+    }
+
+    /// Update the diagnostic marker for an editor tab.
+    pub fn set_diagnostic_status(
+        &mut self,
+        id: u64,
+        status: Option<TabDiagnosticStatus>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        if tab.diagnostic_status == status {
+            return;
+        }
+        tab.diagnostic_status = status;
+        cx.notify();
+    }
+
+    /// Pin a tab into the front group in its Space. Pinning promotes a peek
+    /// tab; unpinning keeps it permanent rather than restoring preview state.
+    pub fn set_pinned(&mut self, id: u64, pinned: bool, cx: &mut Context<Self>) {
+        let Some(space_id) = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == id)
+            .map(|tab| tab.space_id)
+        else {
+            return;
+        };
+        let changed = self
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id == id)
+            .is_some_and(|tab| {
+                let changed = tab.pinned != pinned || (pinned && tab.peek);
+                tab.pinned = pinned;
+                if pinned {
+                    tab.peek = false;
+                }
+                changed
+            });
+        if !changed {
+            return;
+        }
+
+        // Keep stored order consistent with the visible pin group so tab
+        // cycling, close-to-side, and drag operations use the same order.
+        let mut space_tabs: Vec<Tab> = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.space_id == space_id)
+            .cloned()
+            .collect();
+        space_tabs.sort_by_key(|tab| !tab.pinned);
+        let mut ordered = space_tabs.into_iter();
+        for tab in self.tabs.iter_mut().filter(|tab| tab.space_id == space_id) {
+            if let Some(next) = ordered.next() {
+                *tab = next;
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn set_path(&mut self, id: u64, path: Option<String>, cx: &mut Context<Self>) {
+        self.with_tab(id, cx, |t| {
+            let changed = t.data.path != path;
+            t.data.path = path;
+            changed
+        });
+    }
+
+    /// Update the live cwd/process-title of a workspace tab from its terminal.
+    pub fn sync_workspace_meta(
+        &mut self,
+        id: u64,
+        cwd: Option<String>,
+        process_title: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.with_tab(id, cx, |t| {
+            if t.kind != TabKind::Workspace {
+                return false;
+            }
+            let changed = t.data.cwd != cwd || t.data.process_title != process_title;
+            t.data.cwd = cwd;
+            t.data.process_title = process_title;
+            changed
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{AppContext, TestAppContext};
+
+    fn ws(sid: SessionId) -> TabData {
+        TabData {
+            session_id: Some(sid),
+            ..TabData::default()
+        }
+    }
+
+    #[test]
+    fn plural_labels_match_reference() {
+        assert_eq!(TabKind::Workspace.plural_label(), "Terminals");
+        assert_eq!(TabKind::Editor.plural_label(), "Editors");
+        assert_eq!(TabKind::Preview.plural_label(), "Previews");
+        assert_eq!(TabKind::Sftp.plural_label(), "SFTP Tabs");
+        assert_eq!(TabKind::GitGraph.plural_label(), "Git Graphs");
+    }
+
+    #[gpui::test]
+    fn add_switch_and_close(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let a = s.open(TabKind::Workspace, ws(1), cx);
+                let b = s.open(TabKind::Workspace, ws(2), cx);
+                let c = s.open(TabKind::Editor, TabData::default(), cx);
+                assert_eq!(s.len(), 3);
+                assert_eq!(s.active_id(), c);
+
+                s.set_active(a, cx);
+                assert_eq!(s.active_id(), a);
+
+                // Closing a non-active tab keeps the active one.
+                let removed = s.close(b, cx).unwrap();
+                assert_eq!(removed.data.session_id, Some(2));
+                assert_eq!(s.active_id(), a);
+                assert_eq!(s.len(), 2);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn closing_active_activates_left_neighbour(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let a = s.open(TabKind::Workspace, ws(1), cx);
+                let b = s.open(TabKind::Workspace, ws(2), cx);
+                let c = s.open(TabKind::Workspace, ws(3), cx);
+                s.set_active(b, cx);
+                s.close(b, cx);
+                assert_eq!(s.active_id(), a, "left neighbour becomes active");
+
+                s.set_active(c, cx);
+                s.close(c, cx);
+                assert_eq!(s.active_id(), a);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn closing_last_active_tab_does_not_activate_another_space(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let default_tab = s.open(TabKind::Workspace, ws(1), cx);
+                s.set_current_space(42);
+                let other_space_tab = s.open(TabKind::Editor, TabData::default(), cx);
+
+                s.close(other_space_tab, cx);
+
+                assert_eq!(s.active_id(), 0);
+                assert_eq!(s.get(default_tab).unwrap().space_id, DEFAULT_SPACE_ID);
+                assert!(s.active().is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn closing_the_last_tab_empties_the_store(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let a = s.open(TabKind::Workspace, ws(1), cx);
+                let b = s.open(TabKind::Sftp, TabData::default(), cx);
+                assert!(s.close(a, cx).is_some());
+                assert!(s.close(b, cx).is_some(), "the last tab closes too");
+                assert!(s.is_empty());
+                assert!(s.active().is_none(), "no active tab in an empty store");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn close_all_clears_every_tab(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                s.open(TabKind::Workspace, ws(1), cx);
+                s.open(TabKind::Editor, TabData::default(), cx);
+                let removed = s.close_all(cx);
+                assert_eq!(removed.len(), 2);
+                assert!(s.is_empty());
+                assert!(s.active().is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn empty_space_does_not_keep_the_previous_space_active(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let previous = s.open_workspace(1, Some("/previous".into()), cx);
+                s.set_current_space(42);
+                s.clear_active(cx);
+
+                assert_eq!(s.active_id(), 0);
+                assert!(s.active().is_none());
+
+                let first = s.open_workspace(2, None, cx);
+                let tab = s.get(first).expect("new terminal tab exists");
+                assert_eq!(tab.space_id, 42);
+                assert_ne!(tab.id, previous);
+                assert_eq!(s.active_id(), first);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn adjacent_tab_navigation_wraps_inside_the_source_space(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let first = s.open(TabKind::Workspace, ws(1), cx);
+                let second = s.open(TabKind::Editor, TabData::default(), cx);
+                let only = s.open(TabKind::Preview, TabData::default(), cx);
+
+                s.set_current_space(42);
+                let third = s.open(TabKind::Sftp, TabData::default(), cx);
+                let fourth = s.open(TabKind::GitGraph, TabData::default(), cx);
+
+                assert_eq!(s.adjacent_in_space(first, true), Some(second));
+                assert_eq!(s.adjacent_in_space(second, true), Some(only));
+                assert_eq!(s.adjacent_in_space(only, true), Some(first));
+                assert_eq!(s.adjacent_in_space(first, false), Some(only));
+                assert_eq!(s.adjacent_in_space(third, true), Some(fourth));
+                assert_eq!(s.adjacent_in_space(fourth, true), Some(third));
+                assert_eq!(s.adjacent_in_space(u64::MAX, true), None);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn pinning_promotes_peek_and_groups_tabs_first(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let first = s.open(TabKind::Editor, TabData::default(), cx);
+                let preview = s.open(TabKind::Editor, TabData::default(), cx);
+                let last = s.open(TabKind::Workspace, ws(1), cx);
+                s.set_peek(preview, true, cx);
+
+                s.set_pinned(preview, true, cx);
+
+                let pinned = s.get(preview).expect("pinned tab exists");
+                assert!(pinned.pinned);
+                assert!(!pinned.peek, "pinning promotes a preview tab");
+                let order: Vec<u64> = s
+                    .tabs_in_space(DEFAULT_SPACE_ID)
+                    .iter()
+                    .map(|tab| tab.id)
+                    .collect();
+                assert_eq!(order, vec![preview, first, last]);
+                assert_eq!(s.adjacent_in_space(preview, true), Some(first));
+
+                s.set_pinned(preview, false, cx);
+                assert!(!s.get(preview).expect("tab remains open").pinned);
+                assert!(!s.get(preview).expect("tab remains open").peek);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn tabs_cannot_be_dragged_across_the_pin_boundary(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let first = s.open(TabKind::Editor, TabData::default(), cx);
+                let second = s.open(TabKind::Editor, TabData::default(), cx);
+                let pinned = s.open(TabKind::Editor, TabData::default(), cx);
+                s.set_pinned(pinned, true, cx);
+
+                s.reorder(first, pinned, cx);
+                s.reorder(pinned, first, cx);
+                let order: Vec<u64> = s
+                    .tabs_in_space(DEFAULT_SPACE_ID)
+                    .iter()
+                    .map(|tab| tab.id)
+                    .collect();
+                assert_eq!(order, vec![pinned, first, second]);
+
+                s.reorder(second, first, cx);
+                let order: Vec<u64> = s
+                    .tabs_in_space(DEFAULT_SPACE_ID)
+                    .iter()
+                    .map(|tab| tab.id)
+                    .collect();
+                assert_eq!(order, vec![pinned, second, first]);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn title_and_label_resolution(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let a = s.open(TabKind::Workspace, ws(1), cx);
+                assert_eq!(s.get(a).unwrap().label(), "Terminal");
+
+                s.sync_workspace_meta(a, Some("/home/me/project".into()), None, cx);
+                assert_eq!(s.get(a).unwrap().label(), "project");
+
+                s.sync_workspace_meta(
+                    a,
+                    Some("/home/me/project".into()),
+                    Some("claude".into()),
+                    cx,
+                );
+                assert_eq!(s.get(a).unwrap().label(), "claude", "process title wins");
+
+                s.set_custom_title(a, Some("My Tab".into()), cx);
+                assert_eq!(s.get(a).unwrap().label(), "My Tab", "custom title freezes");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn reorder_moves_tab(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let a = s.open(TabKind::Workspace, ws(1), cx);
+                let b = s.open(TabKind::Workspace, ws(2), cx);
+                let c = s.open(TabKind::Workspace, ws(3), cx);
+                s.reorder(c, a, cx);
+                let order: Vec<u64> = s.tabs().iter().map(|t| t.id).collect();
+                assert_eq!(order, vec![c, a, b]);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn dirty_editor_needs_confirm(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                let _a = s.open(TabKind::Workspace, ws(1), cx);
+                let e = s.open(TabKind::Editor, TabData::default(), cx);
+                assert!(!s.get(e).unwrap().needs_close_confirm());
+                s.set_dirty(e, true, cx);
+                assert!(s.get(e).unwrap().needs_close_confirm());
+                s.set_dirty(e, false, cx);
+                assert!(!s.get(e).unwrap().needs_close_confirm());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn tabs_by_kind_and_close_by_kind(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                s.open(TabKind::Workspace, ws(1), cx);
+                s.open(TabKind::Workspace, ws(2), cx);
+                let keep = s.open(TabKind::Editor, TabData::default(), cx);
+                assert_eq!(s.tabs_by_kind(TabKind::Workspace).len(), 2);
+
+                let removed = s.close_by_kind(TabKind::Workspace, cx);
+                assert_eq!(removed.len(), 2);
+                assert_eq!(s.len(), 1);
+                assert_eq!(s.active_id(), keep);
+            });
+        });
+    }
+}

@@ -1,0 +1,1165 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! UI-free command identity, descriptors, and registry.
+//!
+//! The registry is the product-level extension point for commands. Feature
+//! modules publish descriptors here and keep their execution behaviour behind
+//! typed runtime contribution registries. This crate deliberately has no GPUI
+//! dependency: the palette view adapts descriptors to icons and visual
+//! sub-pages separately.
+
+use std::fmt;
+
+pub mod command_provider;
+
+/// The surface or modal editor mode active in the focused tab.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum CommandContext {
+    Terminal,
+    Editor,
+    EditorVim,
+    EditorHelix,
+    EditorSnippetNext,
+    EditorSnippetPrevious,
+    CallHierarchyPicker,
+    Preview,
+    /// The workspace DiffView (key context `Diff`).
+    Diff,
+    Sftp,
+    Home,
+    SshTerminal,
+    /// Any pane of a tab's pane group (every pane kind); the key context
+    /// `Pane` wraps each pane, so `pane::*` bindings work in any of them.
+    Pane,
+}
+
+/// Stable identity of a built-in command.
+///
+/// The enum keeps existing persisted action names and dispatch sites stable.
+/// New feature-owned commands should first use a dedicated variant here; a
+/// later registry revision can introduce an owned external identity without
+/// coupling it to the palette view.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum CommandId {
+    NewTerminalTab,
+    NewEditorTab,
+    DuplicateTab,
+    CloseOtherTabs,
+    SplitLeft,
+    SplitRight,
+    SplitUp,
+    SplitDown,
+    ResetPaneSizes,
+    ClosePane,
+    CloseTab,
+    NextTab,
+    PrevTab,
+    SwitchTab,
+    Find,
+    OpenFile,
+    ToggleSidebar,
+    ToggleFullScreen,
+    OpenSnippetsPanel,
+    OpenGitGraph,
+    FocusSourceControl,
+    OpenHosts,
+    ClearTerminal,
+    OpenShortcuts,
+    OpenSettings,
+    OpenProject,
+    ReturnToStandalone,
+    OpenProjectSettings,
+    OpenSettingsJson,
+    CheckForUpdates,
+    OpenOnboarding,
+    ToggleZenModeHeader,
+    ToggleZenModeStatusbar,
+    ToggleZenMode,
+    ChangeAppTheme,
+    ChangeIconTheme,
+    ChangeColorMode,
+    ChangeEditorTheme,
+    RunSnippet,
+    GitSwitchBranch,
+    GoToSymbol,
+    ShowStatusBarItem,
+    ToggleEditorWordWrap,
+    ToggleLineNumbers,
+    ToggleCursorBlink,
+    ToggleVimMode,
+    ToggleHelixMode,
+    OpenCommandPalette,
+    NewPreviewTab,
+    PreviewImageZoomIn,
+    PreviewImageZoomOut,
+    PreviewImageResetZoom,
+    PreviewImageZoomToActualSize,
+    PreviewImageZoomToFit,
+    GitViewUncommittedChanges,
+    GitViewUnstagedChanges,
+    GitViewStagedChanges,
+    GitOpenFileDiff,
+    GitDiffBranch,
+    GitDiff,
+    GitToggleDiffBase,
+    DiffClipboardWithSelection,
+    DiffSelectForCompare,
+    DiffCompareWithSelected,
+    DiffGoToHunk,
+    DiffGoToPreviousHunk,
+    DiffToggleStaged,
+    DiffStageAndNext,
+    DiffUnstageAndNext,
+    DiffStageAll,
+    DiffUnstageAll,
+    DiffToggleSplit,
+    DiffUndoRestore,
+    DiffCopySelection,
+    DiffRestoreAndNext,
+    Save,
+    NewSshTab,
+    NewSftpTab,
+    FocusNextPane,
+    FocusPrevPane,
+    FocusPaneLeft,
+    FocusPaneRight,
+    FocusPaneUp,
+    FocusPaneDown,
+    TogglePaneZoom,
+    MovePaneLeft,
+    MovePaneRight,
+    MovePaneUp,
+    MovePaneDown,
+    MovePaneToNewTab,
+    CloseOtherPanes,
+    SelectTab1,
+    SelectTab2,
+    SelectTab3,
+    SelectTab4,
+    SelectTab5,
+    SelectTab6,
+    SelectTab7,
+    SelectTab8,
+    SelectTab9,
+    DebugCyclePanelDock,
+    DebugToggleDockZoom,
+    OpenKeymapJson,
+    OpenComponentGallery,
+    EditorAddCursor,
+    EditorAddCursorAbove,
+    EditorSelectNextOccurrence,
+    EditorSelectPreviousOccurrence,
+    EditorSelectAllOccurrences,
+    EditorSelectLine,
+    EditorSelectAll,
+    EditorUndoSelection,
+    EditorRedoSelection,
+    EditorNextSnippetTabstop,
+    EditorPreviousSnippetTabstop,
+    EditorGoToLineColumn,
+    EditorGoToWorkspaceSymbol,
+    EditorGoBack,
+    EditorGoForward,
+    EditorToggleSearchSelection,
+    EditorToggleReadOnly,
+    EditorOpenMarkdownPreview,
+    EditorOpenPreviewToSide,
+    EditorOpenFollowingMarkdownPreview,
+    EditorOpenFollowingSvgPreview,
+    EditorOpenSvgPreview,
+    EditorOpenTabularPreview,
+    EditorToggleBreadcrumb,
+    EditorToggleInlayHints,
+    EditorExpandEmmetAbbreviation,
+    EditorDeleteLine,
+    EditorJoinLines,
+    EditorRewrap,
+    EditorDeleteToBeginningOfLine,
+    EditorDeleteToEndOfLine,
+    EditorDeleteToNextWordEnd,
+    EditorDeleteToPreviousWordStart,
+    EditorDeleteToNextSubwordEnd,
+    EditorDeleteToPreviousSubwordStart,
+    EditorKillRingCut,
+    EditorKillRingYank,
+    EditorShowCharacterPalette,
+    EditorFold,
+    EditorFoldAll,
+    EditorFoldAtLevel1,
+    EditorFoldAtLevel2,
+    EditorFoldAtLevel3,
+    EditorFoldAtLevel4,
+    EditorFoldAtLevel5,
+    EditorFoldAtLevel6,
+    EditorFoldAtLevel7,
+    EditorFoldAtLevel8,
+    EditorFoldAtLevel9,
+    EditorFoldRecursive,
+    EditorUnfoldAll,
+    EditorUnfoldLines,
+    EditorUnfoldRecursive,
+    EditorExpandSelection,
+    EditorShrinkSelection,
+    EditorDuplicateLines,
+    EditorDuplicateSelection,
+    EditorMoveLines,
+    EditorMoveLinesUp,
+    EditorIndent,
+    EditorOutdent,
+    EditorToggleComment,
+    EditorTranspose,
+    EditorTriggerCompletion,
+    EditorGoToDefinition,
+    EditorGoToDeclaration,
+    EditorGoToReferences,
+    EditorShowIncomingCalls,
+    EditorToggleCallHierarchyDirection,
+    EditorGoToImplementation,
+    EditorGoToTypeDefinition,
+    EditorPeekDefinition,
+    EditorRenameSymbol,
+    EditorCodeAction,
+    EditorFormatDocument,
+    EditorFormatSelection,
+    EditorOrganizeImports,
+    EditorRestartLanguageServer,
+    EditorStopLanguageServer,
+    EditorShowDiagnostics,
+    EditorNextDiagnostic,
+    EditorPreviousDiagnostic,
+    EditorNextGitChange,
+    EditorPreviousGitChange,
+    EditorOpenProjectDiff,
+    // Settings toggles (owned by `labonair-settings`, one row per setting).
+    ToggleDimInactivePanes,
+    TogglePaneHighlight,
+    ToggleReduceMotion,
+    ToggleTranslucentSurfaces,
+    ToggleRelativeLineNumbers,
+    ToggleIndentGuides,
+    ToggleStickyContext,
+    ToggleFormatOnSave,
+    ToggleAutoSave,
+    ToggleGitGutter,
+    ToggleErrorLens,
+    ToggleTrimTrailingWhitespace,
+    ToggleBracketMatching,
+    ToggleGitBlame,
+    ToggleDiagnostics,
+    ToggleSemanticTokens,
+    ToggleCopyOnSelect,
+    ToggleRightClickPastes,
+    ToggleTerminalBell,
+    ToggleConfirmCloseTerminalTab,
+    // Settings pickers (open a palette sub-page).
+    ChangeUiDensity,
+    ChangeTerminalCursorStyle,
+    // Editor language mode / syntax / language-server sub-page.
+    EditorChangeLanguage,
+    // Terminal pane actions.
+    TerminalCopySelection,
+    TerminalPaste,
+    TerminalScrollToTop,
+    TerminalScrollToBottom,
+    TerminalReset,
+    TerminalScrollPageUp,
+    TerminalScrollPageDown,
+    TerminalScrollLineUp,
+    TerminalScrollLineDown,
+    TerminalPasteText,
+    TerminalShowCharacterPalette,
+    TerminalRename,
+    // Detached session host (ADR 0009).
+    TerminalRecoverBackgroundSessions,
+    TerminalQuitAndStopAllSessions,
+    /// Stop the background host (ending its sessions) and start a fresh one.
+    TerminalRestartBackgroundHost,
+    /// Submenu listing every terminal in the background host.
+    TerminalManage,
+}
+
+/// A visual hint that the GPUI adapter maps to its icon set.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum CommandIcon {
+    Terminal,
+    File,
+    Copy,
+    Close,
+    ChevronRight,
+    ChevronDown,
+    Trash,
+    Server,
+    Folder,
+    Search,
+    PanelLeft,
+    Square,
+    Sparkles,
+    Plus,
+    Minus,
+    Refresh,
+    Command,
+    GitBranch,
+    Edit,
+    FileCode,
+    Eye,
+    Check,
+    PanelTop,
+    PanelBottom,
+    Download,
+    Palette,
+    SplitRight,
+    SplitDown,
+}
+
+/// A palette follow-up page requested by a command descriptor.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum CommandSubmenu {
+    Tabs,
+    RecentHosts,
+    SftpHosts,
+    ColorMode,
+    EditorTheme,
+    Themes,
+    IconThemes,
+    Hosts,
+    Snippets,
+    Outline,
+    Diagnostics,
+    GitBranches,
+    StatusBarHidden,
+    UiDensity,
+    TerminalCursorStyle,
+    EditorLanguage,
+    Terminals,
+}
+
+/// Stable identity and presentation metadata for a dynamic submenu.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubmenuDescriptor {
+    pub id: String,
+    pub title: String,
+    pub submenu: CommandSubmenu,
+}
+
+impl SubmenuDescriptor {
+    pub fn new(id: impl Into<String>, title: impl Into<String>, submenu: CommandSubmenu) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            submenu,
+        }
+    }
+}
+
+/// Typed actions emitted by dynamic submenu rows. The palette renders these
+/// values and forwards the selected value to the shell; it never interprets
+/// feature state or performs the action itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SubmenuAction {
+    RunCommand(CommandId),
+    SwitchToTab(u64),
+    ConnectHost {
+        host_id: String,
+        sftp: bool,
+    },
+    SetColorMode(String),
+    SetEditorTheme(String),
+    SetAppTheme(String),
+    SetIconTheme(String),
+    RunSnippet(String),
+    SwitchBranch(String),
+    /// Activate an editor tab and jump to a symbol line in that document.
+    GoToEditorLine {
+        tab_id: u64,
+        line: usize,
+    },
+    ShowStatusBarItem(String),
+    /// Write one enumerated setting (`setting` = JSON key, `value` = its wire
+    /// value). Handled by `labonair-settings`.
+    SetChoice {
+        setting: String,
+        value: String,
+    },
+    /// Switch the active editor's language mode (`Language::id`).
+    SetEditorLanguage(String),
+    /// Attach a background-host terminal as a new tab (detached or held by
+    /// another window).
+    OpenBackgroundTerminal(u64),
+    /// Close a background-host terminal: its pane when this window shows it,
+    /// else the session in the host.
+    KillBackgroundTerminal(u64),
+}
+
+/// A user action emitted by a dynamic palette surface.
+///
+/// The palette owns navigation and presentation only. The action is handed to
+/// the runtime contribution registry, where the capability that owns the
+/// action performs it. Preview actions are included here because they are
+/// transient surface actions, not persisted commands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PaletteAction {
+    Submenu(SubmenuAction),
+    PreviewAppTheme(Option<String>),
+    PreviewIconTheme(Option<String>),
+}
+
+/// A secondary action displayed as a `Shift+Enter` row affordance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubmenuSecondary {
+    pub label: String,
+    pub action: SubmenuAction,
+}
+
+/// One immutable row returned by a dynamic submenu provider. Feature values
+/// remain behind the typed [`SubmenuAction`] contract rather than becoming
+/// shell-owned strings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubmenuItem {
+    pub id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub active: bool,
+    pub action: SubmenuAction,
+    pub secondary: Option<SubmenuSecondary>,
+}
+
+/// A complete immutable submenu snapshot published by an owning module.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubmenuSnapshot {
+    pub descriptor: SubmenuDescriptor,
+    pub items: Vec<SubmenuItem>,
+}
+
+/// A default keybinding contributed by the command owner. User overrides and
+/// conflict resolution remain owned by `labonair-keymap`; this value only
+/// carries registration metadata across the UI-free command contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DefaultBinding {
+    pub keystrokes: String,
+    pub context: Option<CommandContext>,
+}
+
+/// Module-owned source for a dynamic submenu. The provider controls loading
+/// and snapshots; the palette only renders and navigates the returned rows.
+pub trait SubmenuProvider {
+    fn snapshot(&self) -> SubmenuSnapshot;
+}
+
+/// Registry of all runtime-backed submenu rows. It is deliberately separate
+/// from [`CommandRegistry`]: commands describe the root palette, while this
+/// registry owns the volatile rows shown after a command opens a submenu.
+#[derive(Clone, Debug, Default)]
+pub struct SubmenuRegistry {
+    snapshots: Vec<SubmenuSnapshot>,
+}
+
+impl SubmenuRegistry {
+    pub fn register(&mut self, snapshot: SubmenuSnapshot) -> Result<(), CommandRegistryError> {
+        if self
+            .snapshots
+            .iter()
+            .any(|prior| prior.descriptor.id == snapshot.descriptor.id)
+        {
+            return Err(CommandRegistryError::DuplicateSubmenu(
+                snapshot.descriptor.id,
+            ));
+        }
+        self.snapshots.push(snapshot);
+        Ok(())
+    }
+
+    pub fn register_provider<P: SubmenuProvider>(
+        &mut self,
+        provider: &P,
+    ) -> Result<(), CommandRegistryError> {
+        self.register(provider.snapshot())
+    }
+
+    pub fn snapshot(&self) -> Vec<SubmenuSnapshot> {
+        self.snapshots.clone()
+    }
+
+    pub fn get(&self, submenu: CommandSubmenu) -> Option<&SubmenuSnapshot> {
+        self.snapshots
+            .iter()
+            .find(|snapshot| snapshot.descriptor.submenu == submenu)
+    }
+}
+
+/// Metadata published by an owning module for one command.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommandDescriptor {
+    pub id: CommandId,
+    pub title: String,
+    pub section: String,
+    pub aliases: Vec<String>,
+    pub contexts: Vec<CommandContext>,
+    pub icon: CommandIcon,
+    pub submenu: Option<CommandSubmenu>,
+    pub default_bindings: Vec<DefaultBinding>,
+}
+
+impl CommandDescriptor {
+    pub fn new(id: CommandId, title: impl Into<String>, section: impl Into<String>) -> Self {
+        Self {
+            id,
+            title: title.into(),
+            section: section.into(),
+            aliases: Vec::new(),
+            contexts: Vec::new(),
+            icon: CommandIcon::Command,
+            submenu: None,
+            default_bindings: Vec::new(),
+        }
+    }
+
+    pub fn with_contexts(mut self, contexts: &[CommandContext]) -> Self {
+        self.contexts = contexts.to_vec();
+        self
+    }
+
+    pub fn with_aliases(mut self, aliases: &[&str]) -> Self {
+        self.aliases = aliases.iter().map(|alias| (*alias).to_string()).collect();
+        self
+    }
+
+    pub fn with_icon(mut self, icon: CommandIcon) -> Self {
+        self.icon = icon;
+        self
+    }
+
+    pub fn with_submenu(mut self, submenu: CommandSubmenu) -> Self {
+        self.submenu = Some(submenu);
+        self
+    }
+
+    pub fn with_default_binding(
+        mut self,
+        keystrokes: impl Into<String>,
+        context: Option<CommandContext>,
+    ) -> Self {
+        self.default_bindings.push(DefaultBinding {
+            keystrokes: keystrokes.into(),
+            context,
+        });
+        self
+    }
+
+    pub fn is_available_in(&self, context: Option<CommandContext>) -> bool {
+        match context {
+            None => self.contexts.is_empty(),
+            Some(active) => self.contexts.is_empty() || self.contexts.contains(&active),
+        }
+    }
+}
+
+/// A module can contribute one or more command descriptors without knowing
+/// anything about the palette view or shell dispatch implementation.
+pub trait CommandProvider {
+    fn commands(&self) -> Vec<CommandDescriptor>;
+}
+
+/// Duplicate registration is a programmer/configuration error and is reported
+/// explicitly so composition roots cannot silently shadow a command.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CommandRegistryError {
+    DuplicateId(CommandId),
+    DuplicateSubmenu(String),
+}
+
+impl fmt::Display for CommandRegistryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateId(id) => write!(f, "command {id:?} was registered more than once"),
+            Self::DuplicateSubmenu(id) => write!(f, "submenu {id:?} was registered more than once"),
+        }
+    }
+}
+
+impl std::error::Error for CommandRegistryError {}
+
+/// The one source of command metadata consumed by palette, keymap, and menus.
+#[derive(Clone, Debug, Default)]
+pub struct CommandRegistry {
+    commands: Vec<CommandDescriptor>,
+}
+
+impl CommandRegistry {
+    pub fn register(&mut self, descriptor: CommandDescriptor) -> Result<(), CommandRegistryError> {
+        if self
+            .commands
+            .iter()
+            .any(|command| command.id == descriptor.id)
+        {
+            return Err(CommandRegistryError::DuplicateId(descriptor.id));
+        }
+        self.commands.push(descriptor);
+        Ok(())
+    }
+
+    pub fn register_provider<P: CommandProvider>(
+        &mut self,
+        provider: &P,
+    ) -> Result<(), CommandRegistryError> {
+        let additions = provider.commands();
+        if let Some(duplicate) = additions.iter().find_map(|item| {
+            (self.commands.iter().any(|prior| prior.id == item.id)
+                || additions
+                    .iter()
+                    .filter(|candidate| candidate.id == item.id)
+                    .count()
+                    > 1)
+            .then_some(item.id)
+        }) {
+            return Err(CommandRegistryError::DuplicateId(duplicate));
+        }
+        self.commands.extend(additions);
+        Ok(())
+    }
+
+    pub fn snapshot(&self) -> Vec<CommandDescriptor> {
+        self.commands.clone()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &CommandDescriptor> {
+        self.commands.iter()
+    }
+
+    pub fn command(&self, id: CommandId) -> Option<&CommandDescriptor> {
+        self.commands.iter().find(|command| command.id == id)
+    }
+
+    pub fn available(&self, context: Option<CommandContext>) -> Vec<&CommandDescriptor> {
+        self.commands
+            .iter()
+            .filter(|command| command.is_available_in(context))
+            .collect()
+    }
+}
+
+#[rustfmt::skip]
+const ACTION_NAMES: &[(CommandId, &str)] = &[
+    (CommandId::NewTerminalTab, "tab::NewTerminal"),
+    (CommandId::NewEditorTab, "tab::NewEditor"),
+    (CommandId::NewPreviewTab, "tab::NewPreview"),
+    (CommandId::PreviewImageZoomIn, "image_viewer::ZoomIn"),
+    (CommandId::PreviewImageZoomOut, "image_viewer::ZoomOut"),
+    (CommandId::PreviewImageResetZoom, "image_viewer::ResetZoom"),
+    (CommandId::PreviewImageZoomToActualSize, "image_viewer::ZoomToActualSize"),
+    (CommandId::PreviewImageZoomToFit, "image_viewer::ZoomToFit"),
+    (CommandId::GitViewUncommittedChanges, "git::ViewUncommittedChanges"),
+    (CommandId::GitViewUnstagedChanges, "git::ViewUnstagedChanges"),
+    (CommandId::GitViewStagedChanges, "git::ViewStagedChanges"),
+    (CommandId::GitOpenFileDiff, "git::OpenFileDiff"),
+    (CommandId::GitDiffBranch, "git::DiffBranch"),
+    (CommandId::GitDiff, "git::Diff"),
+    (CommandId::GitToggleDiffBase, "git::ToggleDiffBase"),
+    (CommandId::DiffClipboardWithSelection, "editor::DiffClipboardWithSelection"),
+    (CommandId::DiffSelectForCompare, "editor::SelectForCompare"),
+    (CommandId::DiffCompareWithSelected, "editor::CompareWithSelected"),
+    (CommandId::DiffGoToHunk, "editor::GoToHunk"),
+    (CommandId::DiffGoToPreviousHunk, "editor::GoToPreviousHunk"),
+    (CommandId::DiffToggleStaged, "git::ToggleStaged"),
+    (CommandId::DiffStageAndNext, "git::StageAndNext"),
+    (CommandId::DiffUnstageAndNext, "git::UnstageAndNext"),
+    (CommandId::DiffStageAll, "git::StageAll"),
+    (CommandId::DiffUnstageAll, "git::UnstageAll"),
+    (CommandId::DiffToggleSplit, "editor::ToggleSplitDiff"),
+    (CommandId::DiffUndoRestore, "git::UndoRestore"),
+    (CommandId::DiffCopySelection, "diff::CopySelection"),
+    (CommandId::DiffRestoreAndNext, "git::RestoreAndNext"),
+    (CommandId::NewSshTab, "tab::NewSsh"),
+    (CommandId::NewSftpTab, "tab::NewSftp"),
+    (CommandId::DuplicateTab, "tab::Duplicate"),
+    (CommandId::CloseOtherTabs, "tab::CloseOthers"),
+    (CommandId::CloseTab, "tab::Close"),
+    (CommandId::NextTab, "tab::Next"),
+    (CommandId::PrevTab, "tab::Prev"),
+    (CommandId::SwitchTab, "tab::Switch"),
+    (CommandId::SelectTab1, "tab::Select1"),
+    (CommandId::SelectTab2, "tab::Select2"),
+    (CommandId::SelectTab3, "tab::Select3"),
+    (CommandId::SelectTab4, "tab::Select4"),
+    (CommandId::SelectTab5, "tab::Select5"),
+    (CommandId::SelectTab6, "tab::Select6"),
+    (CommandId::SelectTab7, "tab::Select7"),
+    (CommandId::SelectTab8, "tab::Select8"),
+    (CommandId::SelectTab9, "tab::Select9"),
+    (CommandId::Save, "tab::Save"),
+    (CommandId::SplitLeft, "pane::SplitLeft"),
+    (CommandId::SplitRight, "pane::SplitRight"),
+    (CommandId::SplitUp, "pane::SplitUp"),
+    (CommandId::SplitDown, "pane::SplitDown"),
+    (CommandId::ResetPaneSizes, "pane::ResetPaneSizes"),
+    (CommandId::ClosePane, "pane::Close"),
+    (CommandId::FocusNextPane, "pane::FocusNext"),
+    (CommandId::FocusPrevPane, "pane::FocusPrev"),
+    (CommandId::FocusPaneLeft, "pane::FocusLeft"),
+    (CommandId::FocusPaneRight, "pane::FocusRight"),
+    (CommandId::FocusPaneUp, "pane::FocusUp"),
+    (CommandId::FocusPaneDown, "pane::FocusDown"),
+    (CommandId::TogglePaneZoom, "pane::ToggleZoom"),
+    (CommandId::MovePaneLeft, "pane::MoveLeft"),
+    (CommandId::MovePaneRight, "pane::MoveRight"),
+    (CommandId::MovePaneUp, "pane::MoveUp"),
+    (CommandId::MovePaneDown, "pane::MoveDown"),
+    (CommandId::MovePaneToNewTab, "pane::MoveToNewTab"),
+    (CommandId::CloseOtherPanes, "pane::CloseOthers"),
+    (CommandId::ClearTerminal, "terminal::Clear"),
+    (CommandId::Find, "search::Toggle"),
+    (CommandId::OpenFile, "editor::OpenFile"),
+    (CommandId::ToggleSidebar, "sidebar::Toggle"),
+    (CommandId::ToggleFullScreen, "view::ToggleFullScreen"),
+    (CommandId::ChangeAppTheme, "view::ChangeAppTheme"),
+    (CommandId::ChangeIconTheme, "view::ChangeIconTheme"),
+    (CommandId::ChangeColorMode, "view::ChangeColorMode"),
+    (CommandId::ChangeEditorTheme, "view::ChangeEditorTheme"),
+    (CommandId::ToggleZenMode, "view::ToggleZenMode"),
+    (CommandId::ToggleZenModeHeader, "view::ToggleZenModeHeader"),
+    (CommandId::ToggleZenModeStatusbar, "view::ToggleZenModeStatusbar"),
+    (CommandId::ShowStatusBarItem, "view::ShowStatusBarItem"),
+    (CommandId::ToggleEditorWordWrap, "editor::ToggleWordWrap"),
+    (CommandId::ToggleLineNumbers, "editor::ToggleLineNumbers"),
+    (CommandId::GoToSymbol, "editor::GoToSymbol"),
+    (CommandId::ToggleVimMode, "editor::ToggleVimMode"),
+    (CommandId::ToggleHelixMode, "editor::ToggleHelixMode"),
+    (CommandId::ToggleCursorBlink, "terminal::ToggleCursorBlink"),
+    (CommandId::RunSnippet, "snippets::Run"),
+    (CommandId::OpenSnippetsPanel, "snippets::OpenPanel"),
+    (CommandId::OpenGitGraph, "git::OpenGraph"),
+    (CommandId::FocusSourceControl, "git::FocusSourceControl"),
+    (CommandId::GitSwitchBranch, "git::SwitchBranch"),
+    (CommandId::OpenHosts, "connections::OpenHosts"),
+    (CommandId::OpenCommandPalette, "command_palette::Toggle"),
+    (CommandId::OpenSettings, "settings::Open"),
+    (CommandId::OpenProject, "workspace::OpenProject"),
+    (CommandId::ReturnToStandalone, "workspace::ReturnToStandalone"),
+    (CommandId::OpenProjectSettings, "settings::OpenProjectJson"),
+    (CommandId::OpenSettingsJson, "settings::OpenUserJson"),
+    (CommandId::OpenKeymapJson, "zed::OpenKeymap"),
+    (CommandId::CheckForUpdates, "app::CheckForUpdates"),
+    (CommandId::OpenOnboarding, "app::OpenOnboarding"),
+    (CommandId::DebugCyclePanelDock, "debug::CyclePanelDock"),
+    (CommandId::DebugToggleDockZoom, "debug::ToggleDockZoom"),
+    (CommandId::OpenComponentGallery, "debug::OpenComponentGallery"),
+    (CommandId::EditorAddCursor, "editor.add-cursor"),
+    (CommandId::EditorAddCursorAbove, "editor.add-cursor-above"),
+    (CommandId::EditorSelectNextOccurrence, "editor.select-next-occurrence"),
+    (
+        CommandId::EditorSelectPreviousOccurrence,
+        "editor.select-previous-occurrence"
+    ),
+    (CommandId::EditorSelectAllOccurrences, "editor.select-all-occurrences"),
+    (CommandId::EditorSelectLine, "editor.select-line"),
+    (CommandId::EditorSelectAll, "editor.select-all"),
+    (CommandId::EditorUndoSelection, "editor.undo-selection"),
+    (CommandId::EditorRedoSelection, "editor.redo-selection"),
+    (
+        CommandId::EditorNextSnippetTabstop,
+        "editor.next-snippet-tabstop"
+    ),
+    (
+        CommandId::EditorPreviousSnippetTabstop,
+        "editor.previous-snippet-tabstop"
+    ),
+    (
+        CommandId::EditorGoToLineColumn,
+        "editor.go-to-line-column"
+    ),
+    (
+        CommandId::EditorGoToWorkspaceSymbol,
+        "editor.go-to-workspace-symbol"
+    ),
+    (CommandId::EditorGoBack, "editor.go-back"),
+    (CommandId::EditorGoForward, "editor.go-forward"),
+    (
+        CommandId::EditorToggleSearchSelection,
+        "search::ToggleSelection"
+    ),
+    (CommandId::EditorToggleReadOnly, "editor.toggle-read-only"),
+    (
+        CommandId::EditorOpenMarkdownPreview,
+        "markdown::OpenPreview"
+    ),
+    (
+        CommandId::EditorOpenFollowingMarkdownPreview,
+        "markdown::OpenFollowingPreview",
+    ),
+    (
+        CommandId::EditorOpenPreviewToSide,
+        "editor.open-preview-to-side",
+    ),
+    (
+        CommandId::EditorOpenFollowingSvgPreview,
+        "svg::OpenFollowingPreview",
+    ),
+    (CommandId::EditorOpenSvgPreview, "svg::OpenPreview"),
+    (CommandId::EditorOpenTabularPreview, "tabular::OpenPreview"),
+    (CommandId::EditorToggleBreadcrumb, "editor.toggle-breadcrumb"),
+    (CommandId::EditorToggleInlayHints, "editor.toggle-inlay-hints"),
+    (
+        CommandId::EditorExpandEmmetAbbreviation,
+        "editor.expand-emmet-abbreviation",
+    ),
+    (CommandId::EditorDeleteLine, "editor.delete-line"),
+    (CommandId::EditorJoinLines, "editor.join-lines"),
+    (CommandId::EditorRewrap, "editor.rewrap"),
+    (
+        CommandId::EditorDeleteToBeginningOfLine,
+        "editor.delete-to-beginning-of-line"
+    ),
+    (
+        CommandId::EditorDeleteToEndOfLine,
+        "editor.delete-to-end-of-line"
+    ),
+    (
+        CommandId::EditorDeleteToNextWordEnd,
+        "editor.delete-to-next-word-end"
+    ),
+    (
+        CommandId::EditorDeleteToPreviousWordStart,
+        "editor.delete-to-previous-word-start"
+    ),
+    (
+        CommandId::EditorDeleteToNextSubwordEnd,
+        "editor.delete-to-next-subword-end"
+    ),
+    (
+        CommandId::EditorDeleteToPreviousSubwordStart,
+        "editor.delete-to-previous-subword-start"
+    ),
+    (CommandId::EditorKillRingCut, "editor.kill-ring-cut"),
+    (CommandId::EditorKillRingYank, "editor.kill-ring-yank"),
+    (
+        CommandId::EditorShowCharacterPalette,
+        "editor.show-character-palette"
+    ),
+    (CommandId::EditorFold, "editor.fold"),
+    (CommandId::EditorFoldAll, "editor.fold-all"),
+    (CommandId::EditorFoldAtLevel1, "editor.fold-at-level-1"),
+    (CommandId::EditorFoldAtLevel2, "editor.fold-at-level-2"),
+    (CommandId::EditorFoldAtLevel3, "editor.fold-at-level-3"),
+    (CommandId::EditorFoldAtLevel4, "editor.fold-at-level-4"),
+    (CommandId::EditorFoldAtLevel5, "editor.fold-at-level-5"),
+    (CommandId::EditorFoldAtLevel6, "editor.fold-at-level-6"),
+    (CommandId::EditorFoldAtLevel7, "editor.fold-at-level-7"),
+    (CommandId::EditorFoldAtLevel8, "editor.fold-at-level-8"),
+    (CommandId::EditorFoldAtLevel9, "editor.fold-at-level-9"),
+    (CommandId::EditorFoldRecursive, "editor.fold-recursive"),
+    (CommandId::EditorUnfoldAll, "editor.unfold-all"),
+    (CommandId::EditorUnfoldLines, "editor.unfold-lines"),
+    (CommandId::EditorUnfoldRecursive, "editor.unfold-recursive"),
+    (CommandId::EditorExpandSelection, "editor.expand-selection"),
+    (CommandId::EditorShrinkSelection, "editor.shrink-selection"),
+    (CommandId::EditorDuplicateLines, "editor.duplicate-lines"),
+    (
+        CommandId::EditorDuplicateSelection,
+        "editor.duplicate-selection"
+    ),
+    (CommandId::EditorMoveLines, "editor.move-lines"),
+    (CommandId::EditorMoveLinesUp, "editor.move-lines-up"),
+    (CommandId::EditorIndent, "editor.indent"),
+    (CommandId::EditorOutdent, "editor.outdent"),
+    (CommandId::EditorToggleComment, "editor.toggle-comment"),
+    (CommandId::EditorTranspose, "editor.transpose"),
+    (CommandId::EditorTriggerCompletion, "editor.trigger-completion"),
+    (CommandId::EditorGoToDefinition, "editor.go-to-definition"),
+    (CommandId::EditorGoToDeclaration, "editor.go-to-declaration"),
+    (CommandId::EditorGoToReferences, "editor.go-to-references"),
+    (CommandId::EditorShowIncomingCalls, "editor.show-incoming-calls"),
+    (
+        CommandId::EditorToggleCallHierarchyDirection,
+        "editor.toggle-call-hierarchy-direction",
+    ),
+    (CommandId::EditorGoToImplementation, "editor.go-to-implementation"),
+    (CommandId::EditorGoToTypeDefinition, "editor.go-to-type-definition"),
+    (CommandId::EditorPeekDefinition, "editor.peek-definition"),
+    (CommandId::EditorRenameSymbol, "editor.rename-symbol"),
+    (CommandId::EditorCodeAction, "editor.code-action"),
+    (CommandId::EditorFormatDocument, "editor.format-document"),
+    (CommandId::EditorFormatSelection, "editor.format-selection"),
+    (CommandId::EditorOrganizeImports, "editor.organize-imports"),
+    (CommandId::EditorRestartLanguageServer, "editor.restart-language-server"),
+    (CommandId::EditorStopLanguageServer, "editor.stop-language-server"),
+    (CommandId::EditorShowDiagnostics, "editor.show-diagnostics"),
+    (CommandId::EditorNextDiagnostic, "editor.next-diagnostic"),
+    (CommandId::EditorPreviousDiagnostic, "editor.previous-diagnostic"),
+    (CommandId::EditorNextGitChange, "editor.next-git-change"),
+    (CommandId::EditorPreviousGitChange, "editor.previous-git-change"),
+    (CommandId::EditorOpenProjectDiff, "editor.open-project-diff"),
+    (CommandId::ToggleDimInactivePanes, "view::ToggleDimInactivePanes"),
+    (CommandId::TogglePaneHighlight, "view::TogglePaneHighlight"),
+    (CommandId::ToggleReduceMotion, "view::ToggleReduceMotion"),
+    (CommandId::ToggleTranslucentSurfaces, "view::ToggleTranslucentSurfaces"),
+    (CommandId::ToggleRelativeLineNumbers, "editor::ToggleRelativeLineNumbers"),
+    (CommandId::ToggleIndentGuides, "editor::ToggleIndentGuides"),
+    (CommandId::ToggleStickyContext, "editor::ToggleStickyContext"),
+    (CommandId::ToggleFormatOnSave, "editor::ToggleFormatOnSave"),
+    (CommandId::ToggleAutoSave, "editor::ToggleAutoSave"),
+    (CommandId::ToggleGitGutter, "editor::ToggleGitGutter"),
+    (CommandId::ToggleErrorLens, "editor::ToggleErrorLens"),
+    (CommandId::ToggleTrimTrailingWhitespace, "editor::ToggleTrimTrailingWhitespace"),
+    (CommandId::ToggleBracketMatching, "editor::ToggleBracketMatching"),
+    (CommandId::ToggleGitBlame, "editor::ToggleGitBlame"),
+    (CommandId::ToggleDiagnostics, "editor::ToggleDiagnostics"),
+    (CommandId::ToggleSemanticTokens, "editor::ToggleSemanticTokens"),
+    (CommandId::ToggleCopyOnSelect, "terminal::ToggleCopyOnSelect"),
+    (CommandId::ToggleRightClickPastes, "terminal::ToggleRightClickPastes"),
+    (CommandId::ToggleTerminalBell, "terminal::ToggleBell"),
+    (CommandId::ToggleConfirmCloseTerminalTab, "terminal::ToggleConfirmClose"),
+    (CommandId::ChangeUiDensity, "view::ChangeUiDensity"),
+    (CommandId::ChangeTerminalCursorStyle, "terminal::ChangeCursorStyle"),
+    (CommandId::EditorChangeLanguage, "editor::ChangeLanguage"),
+    (CommandId::TerminalCopySelection, "terminal::Copy"),
+    (CommandId::TerminalPaste, "terminal::Paste"),
+    (CommandId::TerminalScrollToTop, "terminal::ScrollToTop"),
+    (CommandId::TerminalScrollToBottom, "terminal::ScrollToBottom"),
+    (CommandId::TerminalReset, "terminal::Reset"),
+    (CommandId::TerminalScrollPageUp, "terminal::ScrollPageUp"),
+    (CommandId::TerminalScrollPageDown, "terminal::ScrollPageDown"),
+    (CommandId::TerminalScrollLineUp, "terminal::ScrollLineUp"),
+    (CommandId::TerminalScrollLineDown, "terminal::ScrollLineDown"),
+    (CommandId::TerminalPasteText, "terminal::PasteText"),
+    (CommandId::TerminalShowCharacterPalette, "terminal::ShowCharacterPalette"),
+    (CommandId::TerminalRename, "terminal::Rename"),
+    (
+        CommandId::TerminalRecoverBackgroundSessions,
+        "terminal::RecoverBackgroundSessions",
+    ),
+    (
+        CommandId::TerminalQuitAndStopAllSessions,
+        "terminal::QuitAndStopAllSessions",
+    ),
+    (
+        CommandId::TerminalRestartBackgroundHost,
+        "terminal::RestartBackgroundHost",
+    ),
+    (CommandId::TerminalManage, "terminal::Manage"),
+];
+
+impl CommandId {
+    pub fn action_name(self) -> &'static str {
+        if self == Self::OpenShortcuts {
+            return "settings::OpenShortcuts";
+        }
+        ACTION_NAMES
+            .iter()
+            .find(|(id, _)| *id == self)
+            .map(|(_, name)| *name)
+            .unwrap_or_else(|| panic!("CommandId::{self:?} has no action name"))
+    }
+
+    pub fn from_action_name(name: &str) -> Option<Self> {
+        ACTION_NAMES
+            .iter()
+            .find(|(_, action)| *action == name)
+            .map(|(id, _)| *id)
+            .or_else(|| (name == "settings::OpenShortcuts").then_some(Self::OpenKeymapJson))
+            .or_else(|| (name == "connections::OpenHostSettings").then_some(Self::OpenHosts))
+            .or(match name {
+                // Removed duplicates of New SSH Tab / New SFTP Tab.
+                "connections::NewSshConnection"
+                | "connections::NewQuickSsh"
+                | "connections::Connect" => Some(Self::NewSshTab),
+                "connections::OpenSftp" => Some(Self::NewSftpTab),
+                _ => None,
+            })
+    }
+}
+
+/// Return the canonical action name for a persisted action, including legacy
+/// aliases that must remain readable but must never become palette rows.
+pub fn canonical_action_name(name: &str) -> Option<&'static str> {
+    CommandId::from_action_name(name).map(CommandId::action_name)
+}
+
+/// Names accepted while validating existing user keymaps. Compatibility names
+/// are deliberately separate from [`known_action_names`] so they cannot be
+/// presented as discoverable commands.
+pub fn compatibility_action_names() -> std::collections::BTreeSet<&'static str> {
+    [
+        "settings::OpenShortcuts",
+        "connections::OpenHostSettings",
+        "connections::NewSshConnection",
+        "connections::NewQuickSsh",
+        "connections::Connect",
+        "connections::OpenSftp",
+    ]
+    .into_iter()
+    .collect()
+}
+
+pub fn known_action_names() -> std::collections::BTreeSet<&'static str> {
+    ACTION_NAMES.iter().map(|(_, name)| *name).collect()
+}
+
+pub fn toggle_pref_key(id: CommandId) -> Option<&'static str> {
+    Some(match id {
+        CommandId::ToggleZenModeHeader => "zenModeShowHeader",
+        CommandId::ToggleZenModeStatusbar => "zenModeShowStatusbar",
+        CommandId::ToggleEditorWordWrap => "editorWordWrap",
+        CommandId::ToggleLineNumbers => "editorLineNumbers",
+        CommandId::ToggleCursorBlink => "terminalCursorBlink",
+        CommandId::ToggleVimMode => "vimMode",
+        CommandId::ToggleHelixMode => "helixMode",
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn removed_ssh_duplicates_alias_to_the_remaining_commands() {
+        for old in [
+            "connections::NewSshConnection",
+            "connections::NewQuickSsh",
+            "connections::Connect",
+        ] {
+            assert_eq!(CommandId::from_action_name(old), Some(CommandId::NewSshTab));
+        }
+        assert_eq!(
+            CommandId::from_action_name("connections::OpenSftp"),
+            Some(CommandId::NewSftpTab)
+        );
+        assert!(!known_action_names().contains("connections::NewQuickSsh"));
+    }
+
+    use super::*;
+
+    #[test]
+    fn registry_rejects_duplicate_ids() {
+        let mut registry = CommandRegistry::default();
+        let descriptor = CommandDescriptor::new(CommandId::Find, "Find", "Search");
+        registry
+            .register(descriptor.clone())
+            .expect("first registration");
+        assert_eq!(
+            registry.register(descriptor),
+            Err(CommandRegistryError::DuplicateId(CommandId::Find))
+        );
+    }
+
+    #[test]
+    fn registry_filters_contexts_and_preserves_order() {
+        let mut registry = CommandRegistry::default();
+        registry
+            .register(CommandDescriptor::new(CommandId::Find, "Find", "Search"))
+            .expect("register find");
+        registry
+            .register(
+                CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol", "Editor")
+                    .with_contexts(&[CommandContext::Editor]),
+            )
+            .expect("register editor command");
+
+        let commands = registry.available(Some(CommandContext::Editor));
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].id, CommandId::Find);
+        assert_eq!(registry.available(None).len(), 1);
+    }
+
+    struct TestCommandProvider;
+
+    impl CommandProvider for TestCommandProvider {
+        fn commands(&self) -> Vec<CommandDescriptor> {
+            vec![CommandDescriptor::new(
+                CommandId::OpenGitGraph,
+                "Open Git Graph",
+                "Source Control",
+            )]
+        }
+    }
+
+    #[test]
+    fn feature_provider_contributes_without_palette_knowledge() {
+        let mut registry = CommandRegistry::default();
+        registry
+            .register_provider(&TestCommandProvider)
+            .expect("provider registration");
+        assert_eq!(registry.snapshot()[0].id, CommandId::OpenGitGraph);
+    }
+
+    #[test]
+    fn action_names_round_trip() {
+        for (id, action) in ACTION_NAMES {
+            assert_eq!(CommandId::from_action_name(action), Some(*id));
+            assert!(!action.is_empty());
+        }
+    }
+
+    #[test]
+    fn legacy_keymap_alias_resolves_to_the_canonical_action() {
+        assert_eq!(
+            CommandId::from_action_name("settings::OpenShortcuts"),
+            Some(CommandId::OpenKeymapJson)
+        );
+        assert_eq!(
+            canonical_action_name("settings::OpenShortcuts"),
+            Some("zed::OpenKeymap")
+        );
+        assert!(!known_action_names().contains("settings::OpenShortcuts"));
+        assert!(compatibility_action_names().contains("settings::OpenShortcuts"));
+    }
+
+    #[test]
+    fn legacy_host_settings_alias_resolves_to_open_hosts() {
+        assert_eq!(
+            CommandId::from_action_name("connections::OpenHostSettings"),
+            Some(CommandId::OpenHosts)
+        );
+        assert_eq!(
+            canonical_action_name("connections::OpenHostSettings"),
+            Some("connections::OpenHosts")
+        );
+        assert!(!known_action_names().contains("connections::OpenHostSettings"));
+        assert!(compatibility_action_names().contains("connections::OpenHostSettings"));
+    }
+
+    #[derive(Clone)]
+    struct TestSubmenu;
+
+    impl SubmenuProvider for TestSubmenu {
+        fn snapshot(&self) -> SubmenuSnapshot {
+            SubmenuSnapshot {
+                descriptor: SubmenuDescriptor::new(
+                    "test.items",
+                    "Test Items",
+                    CommandSubmenu::Tabs,
+                ),
+                items: vec![SubmenuItem {
+                    id: "one".to_string(),
+                    title: "One".to_string(),
+                    subtitle: None,
+                    active: false,
+                    action: SubmenuAction::SwitchToTab(1),
+                    secondary: None,
+                }],
+            }
+        }
+    }
+
+    #[test]
+    fn submenu_provider_returns_typed_immutable_rows() {
+        let provider = TestSubmenu;
+        assert_eq!(provider.snapshot().descriptor.id, "test.items");
+        assert_eq!(
+            provider.snapshot().items[0].action,
+            SubmenuAction::SwitchToTab(1)
+        );
+    }
+
+    #[test]
+    fn submenu_registry_rejects_duplicate_ids() {
+        let mut registry = SubmenuRegistry::default();
+        registry
+            .register_provider(&TestSubmenu)
+            .expect("first submenu registration");
+        assert_eq!(
+            registry.register_provider(&TestSubmenu),
+            Err(CommandRegistryError::DuplicateSubmenu(
+                "test.items".to_string()
+            ))
+        );
+    }
+}

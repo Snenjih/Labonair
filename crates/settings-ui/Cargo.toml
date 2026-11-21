@@ -1,0 +1,35 @@
+[package]
+name = "labonair-settings-ui"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_settings_ui"
+path = "src/settings_ui.rs"
+
+[dependencies]
+gpui = { workspace = true }
+gpui-component = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-theme-ui = { path = "../theme-ui" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-gpui-ext = { path = "../gpui-ext" }
+labonair-notifications = { path = "../notifications" }
+labonair-command-palette = { path = "../command-palette" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+labonair-filesystem = { path = "../filesystem" }
+# T19-004: the UI is generated from the typed `SettingsContent` tree via the
+# layered `SettingsStore` global (T19-002/003) instead of the old
+# hand-maintained `FIELDS` table.
+labonair-settings = { path = "../settings" }
+labonair-settings-content = { path = "../settings-content" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

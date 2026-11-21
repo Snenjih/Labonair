@@ -1,0 +1,21 @@
+[package]
+name = "labonair-keymap-ui"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_keymap_ui"
+path = "src/keymap_ui.rs"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-keymap = { path = "../keymap" }
+labonair-notifications = { path = "../notifications" }
+labonair-settings = { path = "../settings" }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

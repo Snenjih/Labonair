@@ -1,0 +1,831 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use labonair_editor::{
+    CancellationToken, DocumentVersion, EditorBuffer, Language, LanguageId, LanguageServerId,
+    LanguageServerTimeoutPolicy, LanguageServiceEditCapability, LanguageServiceEditRequest,
+    LanguageServiceEditResponse, LanguageServiceEvent, LanguageServiceRequest,
+    LanguageServiceResponse, LocalLanguageServerConfig, LocalLanguageServiceEditRequest,
+    LocalLanguageServiceProcess, LocalLanguageServiceRequest, LspPosition, LspRange,
+    ProjectRootPolicy,
+};
+
+fn config() -> LocalLanguageServerConfig {
+    config_with(Vec::new())
+}
+
+fn config_with(args: Vec<String>) -> LocalLanguageServerConfig {
+    LocalLanguageServerConfig {
+        command: env!("CARGO_BIN_EXE_labonair-editor-lsp-fixture").into(),
+        args,
+        env: Vec::new(),
+        cwd: PathBuf::from("/tmp"),
+        project_root_policy: ProjectRootPolicy::Trusted,
+        language: LanguageId::new(Language::Rust),
+        server: LanguageServerId::new("fixture"),
+        timeouts: LanguageServerTimeoutPolicy {
+            initialize: Duration::from_secs(2),
+            request: Duration::from_secs(1),
+            shutdown: Duration::from_secs(1),
+        },
+        max_frame_bytes: 1024 * 1024,
+    }
+}
+
+#[tokio::test]
+async fn process_handshake_sync_and_response_correlation_work() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    let mut events = process.subscribe();
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "fn f() {}".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let diagnostics = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if let LanguageServiceEvent::Diagnostics { version, .. } =
+                events.recv().await.expect("event")
+            {
+                break version;
+            }
+        }
+    })
+    .await
+    .expect("diagnostic event");
+    assert_eq!(diagnostics, DocumentVersion::new(1));
+    let pushed_diagnostics = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: EditorBuffer::from_text("fn f() {}").snapshot(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::Diagnostics,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        pushed_diagnostics.response,
+        Ok(LanguageServiceResponse::Diagnostics(ref diagnostics))
+            if diagnostics.len() == 1 && diagnostics[0].message == "fixture diagnostic"
+    ));
+    process
+        .did_change(
+            "file:///fixture",
+            "fn changed() {}".into(),
+            DocumentVersion::new(2),
+            2,
+        )
+        .await
+        .expect("change");
+    let changed_diagnostics = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if let LanguageServiceEvent::Diagnostics { version, .. } =
+                events.recv().await.expect("event")
+            {
+                if version == DocumentVersion::new(2) {
+                    break version;
+                }
+            }
+        }
+    })
+    .await
+    .expect("changed diagnostic event");
+    assert_eq!(changed_diagnostics, DocumentVersion::new(2));
+    let result = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: labonair_editor::EditorBuffer::from_text("fn changed() {}").snapshot(),
+            version: DocumentVersion::new(2),
+            generation: 2,
+            request: LanguageServiceRequest::Completion {
+                position: labonair_editor::LspPosition {
+                    line: 0,
+                    character: 1,
+                },
+                trigger: None,
+            },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(
+        matches!(result.response, Ok(LanguageServiceResponse::Completion(list)) if list.items[0].label == "fixture")
+    );
+    process.did_close("file:///fixture").await.expect("close");
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn pull_diagnostics_use_full_and_unchanged_reports() {
+    let process = LocalLanguageServiceProcess::spawn(config_with(vec!["pull-diagnostics".into()]))
+        .await
+        .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "fn f() {}".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+
+    let make_request = || LocalLanguageServiceRequest {
+        uri: "file:///fixture".into(),
+        snapshot: EditorBuffer::from_text("fn f() {}").snapshot(),
+        version: DocumentVersion::new(1),
+        generation: 1,
+        request: LanguageServiceRequest::Diagnostics,
+        cancellation: CancellationToken::default(),
+    };
+    let first = process.request(make_request()).await;
+    assert!(matches!(
+        first.response,
+        Ok(LanguageServiceResponse::Diagnostics(ref diagnostics))
+            if diagnostics.len() == 1
+                && diagnostics[0].message == "pull fixture diagnostic"
+                && diagnostics[0].source.as_str() == "fixture"
+                && diagnostics[0].range.start.character == 1
+    ));
+
+    let unchanged = process.request(make_request()).await;
+    assert!(matches!(
+        unchanged.response,
+        Ok(LanguageServiceResponse::Diagnostics(ref diagnostics))
+            if diagnostics.len() == 1
+                && diagnostics[0].message == "pull fixture diagnostic"
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn declaration_and_implementation_keep_cross_file_locations() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    let capabilities = process.capabilities().await;
+    assert!(capabilities.declaration);
+    assert!(capabilities.implementation);
+    process
+        .did_open(
+            "file:///fixture.rs".into(),
+            LanguageId::new(Language::Rust),
+            "struct Widget;".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+
+    for request in [
+        LanguageServiceRequest::Declaration {
+            position: LspPosition {
+                line: 0,
+                character: 7,
+            },
+        },
+        LanguageServiceRequest::Implementation {
+            position: LspPosition {
+                line: 0,
+                character: 7,
+            },
+        },
+    ] {
+        let result = process
+            .request(LocalLanguageServiceRequest {
+                uri: "file:///fixture.rs".into(),
+                snapshot: EditorBuffer::from_text("struct Widget;").snapshot(),
+                version: DocumentVersion::new(1),
+                generation: 1,
+                request,
+                cancellation: CancellationToken::default(),
+            })
+            .await;
+        assert!(matches!(
+            result.response,
+            Ok(LanguageServiceResponse::Definition(targets))
+                if targets.len() == 1
+                    && targets[0].uri.as_deref() == Some("file:///fixture-target.rs")
+                    && targets[0].selection_range.start == LspPosition { line: 2, character: 3 }
+        ));
+    }
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn call_hierarchy_prepares_and_loads_incoming_and_outgoing_calls() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    assert!(process.capabilities().await.call_hierarchy);
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "fn root() {}".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("fn root() {}").snapshot();
+    let prepared = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: snapshot.clone(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::PrepareCallHierarchy {
+                position: LspPosition {
+                    line: 0,
+                    character: 3,
+                },
+            },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    let item = match prepared.response {
+        Ok(LanguageServiceResponse::CallHierarchyItems(items)) => {
+            assert_eq!(items[0].name, "root");
+            assert_eq!(items[0].data, Some(serde_json::json!({ "symbol": "root" })));
+            items[0].clone()
+        }
+        other => panic!("unexpected prepare result: {other:?}"),
+    };
+
+    let incoming = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: snapshot.clone(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::IncomingCalls { item: item.clone() },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        incoming.response,
+        Ok(LanguageServiceResponse::CallHierarchyCalls(calls))
+            if calls[0].item.name == "caller"
+                && calls[0].item.uri == "file:///caller.rs"
+                && calls[0].ranges[0].start.line == 2
+    ));
+
+    let outgoing = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot,
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::OutgoingCalls { item },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        outgoing.response,
+        Ok(LanguageServiceResponse::CallHierarchyCalls(calls))
+            if calls[0].item.name == "callee"
+                && calls[0].item.uri == "file:///callee.rs"
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn code_lenses_resolve_and_execute_server_commands() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    let capabilities = process.capabilities().await;
+    assert!(capabilities.code_lens);
+    assert!(capabilities.execute_command);
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "fn main() {}".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("fn main() {}").snapshot();
+    let make_request = |request| LocalLanguageServiceRequest {
+        uri: "file:///fixture".into(),
+        snapshot: snapshot.clone(),
+        version: DocumentVersion::new(1),
+        generation: 1,
+        request,
+        cancellation: CancellationToken::default(),
+    };
+    let response = process
+        .request(make_request(LanguageServiceRequest::CodeLenses))
+        .await;
+    let lens = match response.response {
+        Ok(LanguageServiceResponse::CodeLenses(mut lenses)) => {
+            assert_eq!(lenses.len(), 1);
+            assert_eq!(lenses[0].data, Some(serde_json::json!({ "lens": "run" })));
+            lenses.remove(0)
+        }
+        other => panic!("unexpected code lens response: {other:?}"),
+    };
+    let resolved = process
+        .request(make_request(LanguageServiceRequest::ResolveCodeLens {
+            lens,
+        }))
+        .await;
+    let command = match resolved.response {
+        Ok(LanguageServiceResponse::CodeLens(Some(lens))) => {
+            lens.command.expect("resolved command")
+        }
+        other => panic!("unexpected resolve response: {other:?}"),
+    };
+    assert_eq!(command.title, "Run tests");
+    assert_eq!(command.command, "fixture.run");
+    assert_eq!(
+        command.arguments,
+        vec![serde_json::json!({ "target": "main" })]
+    );
+
+    let executed = process
+        .request(make_request(LanguageServiceRequest::ExecuteCommand {
+            command: command.command,
+            arguments: command.arguments,
+        }))
+        .await;
+    assert!(matches!(
+        executed.response,
+        Ok(LanguageServiceResponse::CommandResult(Some(result)))
+            if result["completed"] == true
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn document_links_resolve_targets_and_preserve_server_data() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    let capabilities = process.capabilities().await;
+    assert!(capabilities.document_links);
+    assert!(capabilities.document_link_resolve);
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "link".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("link").snapshot();
+    let response = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot,
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::DocumentLinks,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        response.response,
+        Ok(LanguageServiceResponse::DocumentLinks(ref links))
+            if links.len() == 1
+                && links[0].target.as_deref() == Some("file:///fixture-target.rs")
+                && links[0].tooltip.as_deref() == Some("Open fixture target")
+                && links[0].data == Some(serde_json::json!({ "link": "fixture" }))
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn stale_versions_and_unadvertised_capabilities_are_typed() {
+    let process = LocalLanguageServiceProcess::spawn(config_with(vec!["minimal".into()]))
+        .await
+        .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "f".into(),
+            DocumentVersion::new(2),
+            4,
+        )
+        .await
+        .expect("open");
+    let result = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: labonair_editor::EditorBuffer::from_text("f").snapshot(),
+            version: DocumentVersion::new(1),
+            generation: 3,
+            request: LanguageServiceRequest::Formatting,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        result.response,
+        Err(labonair_editor::LanguageServiceError::StaleDocument { .. })
+    ));
+    let result = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: labonair_editor::EditorBuffer::from_text("f").snapshot(),
+            version: DocumentVersion::new(2),
+            generation: 4,
+            request: LanguageServiceRequest::Formatting,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        result.response,
+        Err(
+            labonair_editor::LanguageServiceError::UnsupportedCapability(
+                labonair_editor::LanguageServiceCapability::Formatting
+            )
+        )
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn process_edit_requests_map_range_formatting_and_organize_imports() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "use z::Z;\nuse a::A;\n".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("use z::Z;\nuse a::A;\n").snapshot();
+    let range = LspRange {
+        start: LspPosition {
+            line: 0,
+            character: 0,
+        },
+        end: LspPosition {
+            line: 1,
+            character: 8,
+        },
+    };
+    let formatted = process
+        .request_edit(LocalLanguageServiceEditRequest {
+            uri: "file:///fixture".into(),
+            snapshot: snapshot.clone(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceEditRequest::FormatSelection { range },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        formatted.response,
+        Ok(LanguageServiceEditResponse::Formatting(ref edits))
+            if edits.len() == 1 && edits[0].replacement == "range"
+    ));
+
+    let organized = process
+        .request_edit(LocalLanguageServiceEditRequest {
+            uri: "file:///fixture".into(),
+            snapshot,
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceEditRequest::OrganizeImports,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        organized.response,
+        Ok(LanguageServiceEditResponse::OrganizeImports(ref edits))
+            if edits.len() == 1 && edits[0].replacement == "organized"
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn process_edit_capability_gating_is_typed() {
+    let process = LocalLanguageServiceProcess::spawn(config_with(vec![
+        "no-range-formatting".into(),
+        "no-organize-imports".into(),
+    ]))
+    .await
+    .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "use z::Z;\n".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("use z::Z;\n").snapshot();
+    let result = process
+        .request_edit(LocalLanguageServiceEditRequest {
+            uri: "file:///fixture".into(),
+            snapshot: snapshot.clone(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceEditRequest::FormatSelection {
+                range: LspRange {
+                    start: LspPosition {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: LspPosition {
+                        line: 0,
+                        character: 1,
+                    },
+                },
+            },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        result.response,
+        Err(
+            labonair_editor::LanguageServiceError::UnsupportedEditCapability(
+                LanguageServiceEditCapability::FormatSelection
+            )
+        )
+    ));
+    let result = process
+        .request_edit(LocalLanguageServiceEditRequest {
+            uri: "file:///fixture".into(),
+            snapshot,
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceEditRequest::OrganizeImports,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        result.response,
+        Err(
+            labonair_editor::LanguageServiceError::UnsupportedEditCapability(
+                LanguageServiceEditCapability::OrganizeImports
+            )
+        )
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn process_edit_requests_preserve_stale_and_cancelled_safety() {
+    let process = LocalLanguageServiceProcess::spawn(config())
+        .await
+        .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "fn f() {}".into(),
+            DocumentVersion::new(2),
+            4,
+        )
+        .await
+        .expect("open");
+    let snapshot = EditorBuffer::from_text("fn f() {}").snapshot();
+    let stale = process
+        .request_edit(LocalLanguageServiceEditRequest {
+            uri: "file:///fixture".into(),
+            snapshot: snapshot.clone(),
+            version: DocumentVersion::new(1),
+            generation: 3,
+            request: LanguageServiceEditRequest::OrganizeImports,
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        stale.response,
+        Err(labonair_editor::LanguageServiceError::StaleDocument { .. })
+    ));
+
+    let cancellation = CancellationToken::default();
+    cancellation.cancel();
+    let cancelled = process
+        .request_edit(LocalLanguageServiceEditRequest {
+            uri: "file:///fixture".into(),
+            snapshot,
+            version: DocumentVersion::new(2),
+            generation: 4,
+            request: LanguageServiceEditRequest::OrganizeImports,
+            cancellation,
+        })
+        .await;
+    assert!(matches!(
+        cancelled.response,
+        Err(labonair_editor::LanguageServiceError::Cancelled)
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn cancellation_and_timeout_remove_pending_requests() {
+    let process = LocalLanguageServiceProcess::spawn(config_with(vec!["slow".into()]))
+        .await
+        .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "f".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let token = CancellationToken::default();
+    token.cancel();
+    let cancelled = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: labonair_editor::EditorBuffer::from_text("f").snapshot(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::Hover {
+                position: labonair_editor::LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            cancellation: token,
+        })
+        .await;
+    assert!(matches!(
+        cancelled.response,
+        Err(labonair_editor::LanguageServiceError::Cancelled)
+    ));
+
+    let mut timeout_config = config_with(vec!["slow".into()]);
+    timeout_config.timeouts.request = Duration::from_millis(20);
+    let process = LocalLanguageServiceProcess::spawn(timeout_config)
+        .await
+        .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "f".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let timed_out = process
+        .request(LocalLanguageServiceRequest {
+            uri: "file:///fixture".into(),
+            snapshot: labonair_editor::EditorBuffer::from_text("f").snapshot(),
+            version: DocumentVersion::new(1),
+            generation: 1,
+            request: LanguageServiceRequest::Hover {
+                position: labonair_editor::LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            cancellation: CancellationToken::default(),
+        })
+        .await;
+    assert!(matches!(
+        timed_out.response,
+        Err(labonair_editor::LanguageServiceError::RequestTimeout)
+    ));
+    process.shutdown().await.expect("shutdown");
+
+    let process = LocalLanguageServiceProcess::spawn(config_with(vec!["slow".into()]))
+        .await
+        .expect("fixture starts");
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "f".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let request_process = process.clone();
+    let request = tokio::spawn(async move {
+        request_process
+            .request(LocalLanguageServiceRequest {
+                uri: "file:///fixture".into(),
+                snapshot: labonair_editor::EditorBuffer::from_text("f").snapshot(),
+                version: DocumentVersion::new(1),
+                generation: 1,
+                request: LanguageServiceRequest::Hover {
+                    position: labonair_editor::LspPosition {
+                        line: 0,
+                        character: 0,
+                    },
+                },
+                cancellation: CancellationToken::default(),
+            })
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    process
+        .did_change(
+            "file:///fixture",
+            "changed".into(),
+            DocumentVersion::new(2),
+            2,
+        )
+        .await
+        .expect("change");
+    let stale = request.await.expect("request task");
+    assert!(matches!(
+        stale.response,
+        Err(labonair_editor::LanguageServiceError::StaleDocument { .. })
+    ));
+    process.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn malformed_messages_recover_and_crashes_can_restart() {
+    let process = LocalLanguageServiceProcess::spawn(config_with(vec!["malformed".into()]))
+        .await
+        .expect("fixture starts");
+    let mut events = process.subscribe();
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "f".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let mut malformed = false;
+    let mut diagnostics = false;
+    for _ in 0..4 {
+        match tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("event")
+            .expect("event")
+        {
+            LanguageServiceEvent::MalformedFrame { .. } => malformed = true,
+            LanguageServiceEvent::Diagnostics { .. } => diagnostics = true,
+            _ => {}
+        }
+        if malformed && diagnostics {
+            break;
+        }
+    }
+    assert!(malformed && diagnostics);
+    process.shutdown().await.expect("shutdown");
+
+    let process = LocalLanguageServiceProcess::spawn(config_with(vec!["crash-after-open".into()]))
+        .await
+        .expect("fixture starts");
+    let mut events = process.subscribe();
+    process
+        .did_open(
+            "file:///fixture".into(),
+            LanguageId::new(Language::Rust),
+            "f".into(),
+            DocumentVersion::new(1),
+            1,
+        )
+        .await
+        .expect("open");
+    let crashed = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if matches!(
+                events.recv().await.expect("event"),
+                LanguageServiceEvent::Crashed { .. }
+            ) {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(crashed.is_ok());
+    process.restart().await.expect("restart");
+    assert_eq!(
+        process.lifecycle().await,
+        labonair_editor::ProcessLifecycleState::Running
+    );
+    process.shutdown().await.expect("shutdown");
+}

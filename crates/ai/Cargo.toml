@@ -1,0 +1,23 @@
+[package]
+name = "labonair-ai"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+labonair-filesystem = { path = "../filesystem" }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+keyring = { workspace = true }
+tracing = { workspace = true }
+dirs = { workspace = true }
+uuid = { workspace = true }
+futures-util = "0.3"
+bytes = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

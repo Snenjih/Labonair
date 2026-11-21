@@ -1,0 +1,1750 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! [`SettingsStore`] — layered [`SettingsContent`] merge (T19-002).
+//!
+//! The store provides fixed-order layer merging, a per-type computed-value
+//! cache (`register_setting::<T>()` / `get::<T>()`), and a surgical persist path
+//! ([`SettingsStore::update_user_settings`], T19-005) built on
+//! `labonair-settings-json`.
+
+use std::any::{Any, TypeId};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
+
+use gpui::{App, Global};
+use serde_json::Value;
+
+use labonair_settings_content::{FieldError, MergeFrom, SettingsContent};
+
+use crate::project;
+use crate::schema::{self, SettingsValidationError};
+use crate::settings_trait::Settings;
+
+/// Placeholder identity for a worktree/project root. `T19-003` (project/
+/// folder settings) is the first real producer of `SettingsLayer::Project`
+/// entries; until then the variant exists so the enum's shape (and merge
+/// order) is fixed now, per the task's normative "merge order is defined in
+/// `docs/settings.md` §2, do not reorder" warning.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WorktreeId(pub u64);
+
+/// One settings layer. **Declaration order is the merge order** (lowest
+/// precedence first) — `#[derive(Ord)]` on an enum compares by variant
+/// declaration index first, so sorting a `BTreeMap<SettingsLayer, _>`'s keys
+/// yields exactly the fixed order the task requires: `Default < User < Os <
+/// Profile < Project(*) < Language(*)`. Do not reorder these variants.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum SettingsLayer {
+    /// `SettingsContent::defaults()` (`assets/settings/default.json`).
+    Default,
+    /// `~/.config/labonair/config.json` (the shared settings
+    /// file's top-level `SettingsContent` keys — see `docs/settings.md`
+    /// / `legacy_migrations` for historical `editor`/`mcp` input. Those
+    /// keys are converted before the runtime store reads the file.
+    User,
+    /// No `SettingsContent` field carries this data yet — always empty until
+    /// a follow-up task adds the wrapper type; the variant/ordering exists
+    /// now so it never needs to be inserted out of order later.
+    Os,
+    /// Named settings profile overrides. Same status as `Os` — structurally
+    /// present, no loader yet.
+    Profile,
+    /// Per-worktree `.labonair/settings.json` (T19-003). Empty until then.
+    Project(WorktreeId),
+    /// Per-language editor overrides.
+    Language(String),
+}
+
+/// One computed-value builder, monomorphized per registered `Settings` type.
+type Builder = Box<dyn Fn(&SettingsContent, &mut HashMap<TypeId, Box<dyn Any>>)>;
+
+/// A user-layer update whose in-memory commit has already happened and whose
+/// text-preserving file write can run off the GPUI thread.
+#[derive(Debug)]
+pub struct UserSettingsWrite {
+    path: PathBuf,
+    old_content: SettingsContent,
+    new_content: SettingsContent,
+    backup: bool,
+}
+
+impl UserSettingsWrite {
+    fn persist(self) -> Result<(), String> {
+        persist_settings_surgical_to_path(
+            &self.path,
+            &self.old_content,
+            &self.new_content,
+            self.backup,
+        )
+    }
+}
+
+struct PendingUserWrite {
+    request: UserSettingsWrite,
+    waiters: Vec<SyncSender<Result<(), String>>>,
+}
+
+struct UserWriteQueueState {
+    pending: VecDeque<PendingUserWrite>,
+    active: bool,
+    flush_waiters: Vec<SyncSender<()>>,
+}
+
+struct UserWriteQueue {
+    state: Mutex<UserWriteQueueState>,
+    wake: Condvar,
+    available: AtomicBool,
+}
+
+impl UserWriteQueue {
+    fn new() -> Arc<Self> {
+        let queue = Arc::new(Self {
+            state: Mutex::new(UserWriteQueueState {
+                pending: VecDeque::new(),
+                active: false,
+                flush_waiters: Vec::new(),
+            }),
+            wake: Condvar::new(),
+            available: AtomicBool::new(false),
+        });
+        let worker_queue = Arc::clone(&queue);
+        match std::thread::Builder::new()
+            .name("labonair-settings-writer".to_string())
+            .spawn(move || worker_queue.run())
+        {
+            Ok(_) => queue.available.store(true, Ordering::Release),
+            Err(error) => tracing::error!(%error, "failed to start settings writer"),
+        }
+        queue
+    }
+
+    fn run(self: Arc<Self>) {
+        loop {
+            let Some(pending) = self.take_pending() else {
+                return;
+            };
+            let result = pending.request.persist();
+            for waiter in pending.waiters {
+                let _ = waiter.send(result.clone());
+            }
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(_) => return,
+            };
+            state.active = false;
+            if state.pending.is_empty() {
+                for waiter in state.flush_waiters.drain(..) {
+                    let _ = waiter.send(());
+                }
+            }
+            self.wake.notify_all();
+        }
+    }
+
+    fn take_pending(&self) -> Option<PendingUserWrite> {
+        let mut state = self.state.lock().ok()?;
+        while state.pending.is_empty() {
+            if !state.flush_waiters.is_empty() {
+                for waiter in state.flush_waiters.drain(..) {
+                    let _ = waiter.send(());
+                }
+            }
+            state = self.wake.wait(state).ok()?;
+        }
+        state.active = true;
+        state.pending.pop_front()
+    }
+
+    fn enqueue(&self, request: UserSettingsWrite) -> Result<Receiver<Result<(), String>>, String> {
+        if !self.available.load(Ordering::Acquire) {
+            return Err("settings writer is unavailable".to_string());
+        }
+        let (waiter, result) = sync_channel(1);
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "settings writer state is poisoned".to_string())?;
+        if let Some(last) = state.pending.back_mut() {
+            if last.request.path == request.path {
+                last.request.new_content = request.new_content;
+                last.request.backup |= request.backup;
+                last.waiters.push(waiter);
+            } else {
+                state.pending.push_back(PendingUserWrite {
+                    request,
+                    waiters: vec![waiter],
+                });
+            }
+        } else {
+            state.pending.push_back(PendingUserWrite {
+                request,
+                waiters: vec![waiter],
+            });
+        }
+        self.wake.notify_one();
+        Ok(result)
+    }
+
+    fn flush(&self) {
+        let (waiter, result) = sync_channel(1);
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if !state.active && state.pending.is_empty() {
+            return;
+        }
+        state.flush_waiters.push(waiter);
+        self.wake.notify_one();
+        drop(state);
+        let _ = result.recv();
+    }
+}
+
+static USER_WRITE_QUEUE: OnceLock<Arc<UserWriteQueue>> = OnceLock::new();
+
+fn user_write_queue() -> &'static Arc<UserWriteQueue> {
+    USER_WRITE_QUEUE.get_or_init(UserWriteQueue::new)
+}
+
+/// Queue one user-settings file update for the dedicated writer thread. The
+/// returned receiver is useful to UI callers that want to surface a write
+/// error without blocking the foreground thread.
+pub fn enqueue_user_settings_write(
+    request: UserSettingsWrite,
+) -> Result<Receiver<Result<(), String>>, String> {
+    user_write_queue().enqueue(request)
+}
+
+/// Wait until all queued settings writes have reached the filesystem.
+/// Shutdown code uses this once, after the normal UI work has stopped.
+pub fn flush_user_settings_writes() {
+    user_write_queue().flush();
+}
+
+pub(crate) struct UserLayerLoad {
+    content: Option<SettingsContent>,
+    parse_errors: Vec<FieldError>,
+    json_error: Option<String>,
+    schema_errors: Vec<SettingsValidationError>,
+    schema_warnings: Vec<SettingsValidationError>,
+}
+
+pub(crate) fn load_user_layer(path: &Path) -> UserLayerLoad {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return UserLayerLoad {
+            content: Some(SettingsContent::default()),
+            parse_errors: Vec::new(),
+            json_error: None,
+            schema_errors: Vec::new(),
+            schema_warnings: Vec::new(),
+        };
+    };
+
+    let parsed_value = match jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
+        Ok(value) => value,
+        Err(error) => {
+            let line = raw[..error.range.start.min(raw.len())]
+                .matches('\n')
+                .count()
+                + 1;
+            let message = format!("Line {line}: {}", error.message);
+            tracing::warn!(
+                path = %path.display(),
+                message = %message,
+                "config.json is not valid JSON/JSONC — keeping the last good settings",
+            );
+            return UserLayerLoad {
+                content: None,
+                parse_errors: Vec::new(),
+                json_error: Some(message),
+                schema_errors: Vec::new(),
+                schema_warnings: Vec::new(),
+            };
+        }
+    };
+
+    let (content, parse_errors) = labonair_settings_content::parse(&raw);
+    for error in &parse_errors {
+        tracing::warn!(
+            area = error.area,
+            message = %error.message,
+            "settings area failed to parse, using its default"
+        );
+    }
+    let instance = parsed_value.unwrap_or_else(|| Value::Object(Default::default()));
+    let (schema_errors, schema_warnings) = schema::validate(&instance, Some(&raw));
+    for error in &schema_errors {
+        tracing::warn!(
+            json_path = %error.json_path,
+            message = %error.message,
+            "settings value failed schema validation, field uses its default"
+        );
+    }
+    for warning in &schema_warnings {
+        tracing::warn!(
+            json_path = %warning.json_path,
+            "unknown settings key (ignored)"
+        );
+    }
+    UserLayerLoad {
+        content: Some(content),
+        parse_errors,
+        json_error: None,
+        schema_errors,
+        schema_warnings,
+    }
+}
+
+pub(crate) struct ProjectLayerLoad {
+    content: Option<SettingsContent>,
+    rejected: Vec<String>,
+    schema_errors: Vec<SettingsValidationError>,
+    schema_warnings: Vec<SettingsValidationError>,
+    json_error: Option<String>,
+}
+
+pub(crate) fn load_project_layer(path: &Path) -> ProjectLayerLoad {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return ProjectLayerLoad {
+            content: Some(SettingsContent::default()),
+            rejected: Vec::new(),
+            schema_errors: Vec::new(),
+            schema_warnings: Vec::new(),
+            json_error: None,
+        };
+    };
+    let parsed_value = match jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
+        Ok(value) => value,
+        Err(error) => {
+            let line = raw[..error.range.start.min(raw.len())]
+                .matches('\n')
+                .count()
+                + 1;
+            let message = format!("Line {line}: {}", error.message);
+            tracing::warn!(
+                path = %path.display(),
+                message = %message,
+                "project .labonair/settings.json is not valid JSON/JSONC — keeping the last good settings",
+            );
+            return ProjectLayerLoad {
+                content: None,
+                rejected: Vec::new(),
+                schema_errors: Vec::new(),
+                schema_warnings: Vec::new(),
+                json_error: Some(message),
+            };
+        }
+    };
+
+    let instance = parsed_value.unwrap_or_else(|| Value::Object(Default::default()));
+    let (content, rejected) = project::filter_value_and_parse(instance.clone());
+    for key in &rejected {
+        tracing::debug!(key = %key, path = %path.display(), "project settings key was filtered");
+    }
+    let (schema_errors, schema_warnings) = schema::validate(&instance, Some(&raw));
+    for error in &schema_errors {
+        tracing::warn!(
+            json_path = %error.json_path,
+            message = %error.message,
+            "project settings value failed schema validation, field uses its default"
+        );
+    }
+    ProjectLayerLoad {
+        content: Some(content),
+        rejected,
+        schema_errors,
+        schema_warnings,
+        json_error: None,
+    }
+}
+
+/// The layered settings store. Lives as a GPUI [`Global`]
+/// (`cx.global::<SettingsStore>()`); mutation goes through `cx.global_mut`,
+/// which GPUI's `Effect::NotifyGlobalObservers` turns into an automatic
+/// `cx.observe_global::<SettingsStore>` notification — no bespoke observer
+/// list needed here.
+pub struct SettingsStore {
+    /// Every layer's raw (sparse — every leaf still `Option`) content, keyed
+    /// by [`SettingsLayer`]. Iterated in key order (see the `Ord` note above)
+    /// by [`Self::recompute`].
+    raw: BTreeMap<SettingsLayer, SettingsContent>,
+    /// The merged, effective tree — `Default` folded through every other
+    /// layer present in `raw`, in order.
+    merged: SettingsContent,
+    /// Each `raw` layer serialized to a `serde_json::Value`, rebuilt by
+    /// [`Self::recompute`]. [`Self::source_of`] is called once per visible
+    /// settings field per frame; deriving it from this cache instead of
+    /// re-serializing the whole `SettingsContent` tree on every call is what
+    /// keeps the settings window's scroll smooth.
+    layer_values: BTreeMap<SettingsLayer, Value>,
+    /// Where the `User` layer is read from / persisted to.
+    user_path: PathBuf,
+    /// Non-fatal per-area parse errors from the last `User` layer (re)load
+    /// (`labonair_settings_content::fallible::parse`'s granularity — one
+    /// broken area falls back to its default, the rest of the tree is
+    /// unaffected).
+    parse_errors: Vec<FieldError>,
+    /// `Some(message)` when the `User` file's last (re)load found text that
+    /// isn't valid JSON/JSONC at all (T19-005 Akzeptanzkriterium: a banner +
+    /// blocked GUI writes, not a silent last-good fallback that also lets
+    /// the GUI clobber the broken file). `None` once a subsequent (re)load
+    /// parses cleanly again. Distinct from `parse_errors` above, which is
+    /// about a single *area* having the wrong shape inside an otherwise
+    /// valid document — that case still allows GUI writes to every other
+    /// area.
+    user_json_error: Option<String>,
+    /// Schema-validation findings from the last `User` layer (re)load
+    /// (T19-006): `schema_errors` are type/enum mismatches at leaf
+    /// granularity (the offending field already fell back to its default —
+    /// same guarantee `parse_errors` gives at area granularity, this is the
+    /// finer-grained, `json_schema()`-driven sibling); `schema_warnings` are
+    /// unknown object keys, always non-fatal. Both are empty while
+    /// `user_json_error` is set (validation needs a parsed value, which an
+    /// unparsable file doesn't have).
+    schema_errors: Vec<SettingsValidationError>,
+    schema_warnings: Vec<SettingsValidationError>,
+    /// Same as `schema_errors`/`schema_warnings` above, but for the active
+    /// `Project` layer's `.labonair/settings.json` (T19-006 Anweisung #2's
+    /// "jeder Layer wird validiert" — the project layer already has its own
+    /// whitelist-rejection reporting (`project_rejected`); this is the
+    /// schema-shaped sibling of that, same "field falls back / non-fatal
+    /// warning" split as the `User` layer's).
+    project_schema_errors: Vec<SettingsValidationError>,
+    project_schema_warnings: Vec<SettingsValidationError>,
+    /// `Some(message)` while the active project settings file is invalid
+    /// JSON/JSONC and therefore must not be overwritten by the UI.
+    project_json_error: Option<String>,
+    /// Whether [`Self::persist_user_settings_surgical`] has already written a
+    /// `.json.bak` safety copy this process run — only the *first* surgical
+    /// write per session backs up the pre-session file (Anweisung #2), not
+    /// every single field edit.
+    bak_written_this_session: bool,
+    /// The active project root (`SettingsLayer::Project`'s source directory)
+    /// and the `WorktreeId` currently keying its layer in `raw`, if any
+    /// (T19-003). `None` = no project root is active — the `Project` layer
+    /// is absent from `raw` entirely, `merged` falls back to `User`.
+    current_project: Option<(PathBuf, WorktreeId)>,
+    /// Monotonic counter for the next `WorktreeId` a project root gets
+    /// (v1 = one active root at a time, per the task's Notizen — a fresh id
+    /// per root change is enough, no reuse needed).
+    next_worktree_id: u64,
+    /// Bumped every time `set_active_project_root` actually changes the
+    /// root (including to `None`). The project fs-watch's background poll
+    /// task captures the generation it was started with and stops itself
+    /// once this no longer matches — this is how "old watch abmelden, neuen
+    /// anmelden" (Anweisung #3) is implemented without needing a cancel
+    /// handle across the GPUI task boundary.
+    project_watch_generation: u64,
+    /// Dotted keys (`"mcp"`, `"general.autostart"`, …) the last
+    /// project-layer (re)load dropped for not being on
+    /// `project::PROJECT_SETTINGS_WHITELIST`. `SettingsStore::get`ers use
+    /// this to report rejections to the user (T19-004+); a freshly (re)set
+    /// root that hits no violations clears it back to empty.
+    project_rejected: Vec<String>,
+    /// Per-`Settings`-type computed value, rebuilt by `builders` on every
+    /// `recompute`.
+    values: HashMap<TypeId, Box<dyn Any>>,
+    registered: HashSet<TypeId>,
+    builders: Vec<Builder>,
+}
+
+impl Global for SettingsStore {}
+
+impl SettingsStore {
+    /// Build a store rooted at `user_path`, with only the `Default` +
+    /// (empty) `User` layers — no file I/O yet (call
+    /// [`Self::reload_user_layer`] to actually read `user_path`). `pub`
+    /// (T19-010) so other crates' own tests can construct a store against a
+    /// temp path without touching the real `~/.config/labonair` directory,
+    /// the same way this crate's own tests already do — `labonair_settings::
+    /// init`/`init_at` remain the only ways to *publish* one as the live
+    /// global in the running app.
+    pub fn new(user_path: PathBuf) -> Self {
+        let mut raw = BTreeMap::new();
+        raw.insert(SettingsLayer::Default, SettingsContent::defaults());
+        raw.insert(SettingsLayer::User, SettingsContent::default());
+        let mut store = Self {
+            raw,
+            merged: SettingsContent::default(),
+            layer_values: BTreeMap::new(),
+            user_path,
+            parse_errors: Vec::new(),
+            user_json_error: None,
+            schema_errors: Vec::new(),
+            schema_warnings: Vec::new(),
+            project_schema_errors: Vec::new(),
+            project_schema_warnings: Vec::new(),
+            project_json_error: None,
+            bak_written_this_session: false,
+            current_project: None,
+            next_worktree_id: 0,
+            project_watch_generation: 0,
+            project_rejected: Vec::new(),
+            values: HashMap::new(),
+            registered: HashSet::new(),
+            builders: Vec::new(),
+        };
+        store.recompute();
+        store
+    }
+
+    /// `merged = defaults(); for layer in order { merged.merge_from(&layer) }`
+    /// (Anweisung #3), then every registered `Settings` type's computed value
+    /// is rebuilt from the new `merged`. GPUI observer notification is the
+    /// caller's responsibility implicitly — every mutator here is only ever
+    /// reached through `cx.global_mut::<SettingsStore>()`, which already
+    /// queues the `NotifyGlobalObservers` effect on access.
+    fn recompute(&mut self) {
+        let _span = tracing::trace_span!(target: "labonair::perf", "settings_recompute").entered();
+        let mut merged = SettingsContent::default();
+        for content in self.raw.values() {
+            merged.merge_from(content);
+        }
+        let explicit_editor_mode = self.raw.iter().any(|(layer, content)| {
+            !matches!(layer, SettingsLayer::Default) && content.editor.editor_modal_mode.is_some()
+        });
+        if !explicit_editor_mode && merged.editor.editor_vim_mode == Some(true) {
+            merged.editor.editor_modal_mode =
+                Some(labonair_settings_content::editor::EditorModalMode::Vim);
+        }
+        self.merged = merged;
+        self.layer_values = self
+            .raw
+            .iter()
+            .filter_map(|(layer, content)| {
+                serde_json::to_value(content)
+                    .ok()
+                    .map(|value| (layer.clone(), value))
+            })
+            .collect();
+        for builder in &self.builders {
+            builder(&self.merged, &mut self.values);
+        }
+    }
+
+    pub fn merged(&self) -> &SettingsContent {
+        &self.merged
+    }
+
+    pub fn user_path(&self) -> &Path {
+        &self.user_path
+    }
+
+    pub fn parse_errors(&self) -> &[FieldError] {
+        &self.parse_errors
+    }
+
+    /// `Some(message)` while the `User` settings file's text is not valid
+    /// JSON/JSONC at all — the UI's error banner (T19-005 Akzeptanzkriterium)
+    /// reads this, and [`Self::update_user_settings`] refuses to write while
+    /// it is set (never blindly overwrite a file the user is mid-edit on).
+    pub fn user_json_error(&self) -> Option<&str> {
+        self.user_json_error.as_deref()
+    }
+
+    /// Leaf-granularity type/enum mismatches from the last `User` layer
+    /// (re)load's schema validation (T19-006) — each offending field fell
+    /// back to its default; the rest of the tree loaded normally.
+    pub fn schema_errors(&self) -> &[SettingsValidationError] {
+        &self.schema_errors
+    }
+
+    /// Unknown object keys found in the last `User` layer (re)load
+    /// (T19-006) — always non-fatal, purely informational (forward
+    /// compatibility: an older binary opening a newer settings file must
+    /// keep every setting it does understand).
+    pub fn schema_warnings(&self) -> &[SettingsValidationError] {
+        &self.schema_warnings
+    }
+
+    /// The `Project` layer's equivalents of [`Self::schema_errors`] /
+    /// [`Self::schema_warnings`] (T19-006) — empty while no project root is
+    /// active.
+    pub fn project_schema_errors(&self) -> &[SettingsValidationError] {
+        &self.project_schema_errors
+    }
+
+    pub fn project_schema_warnings(&self) -> &[SettingsValidationError] {
+        &self.project_schema_warnings
+    }
+
+    /// `Some(message)` while the active project settings file cannot be parsed.
+    /// Writes remain blocked until the file is fixed externally.
+    pub fn project_json_error(&self) -> Option<&str> {
+        self.project_json_error.as_deref()
+    }
+
+    /// Replace one layer's content and recompute. `Default` may not be
+    /// replaced this way (use is a logic error — the default tree is fixed
+    /// at construction from `SettingsContent::defaults()`).
+    pub fn set_layer(&mut self, layer: SettingsLayer, content: SettingsContent) {
+        debug_assert!(
+            !matches!(layer, SettingsLayer::Default),
+            "SettingsLayer::Default is fixed, not a settable layer"
+        );
+        self.raw.insert(layer, content);
+        self.recompute();
+    }
+
+    pub fn layer(&self, layer: &SettingsLayer) -> Option<&SettingsContent> {
+        self.raw.get(layer)
+    }
+
+    /// (Re)read the `User` layer from [`Self::user_path`]. A file that isn't
+    /// valid JSON/JSONC at all keeps the last-good `User` layer (never
+    /// crashes, never silently reverts to all-defaults); a file that parses
+    /// but has one broken area falls back to that area's default while every
+    /// other area still applies (`labonair_settings_content::parse`'s
+    /// existing per-area granularity).
+    pub fn reload_user_layer(&mut self) {
+        let loaded = load_user_layer(&self.user_path);
+        self.apply_user_layer_load(loaded);
+    }
+
+    pub(crate) fn apply_user_layer_load(&mut self, loaded: UserLayerLoad) {
+        self.user_json_error = loaded.json_error;
+        self.schema_errors = loaded.schema_errors;
+        self.schema_warnings = loaded.schema_warnings;
+        let Some(content) = loaded.content else {
+            return;
+        };
+        self.parse_errors = loaded.parse_errors;
+        self.raw.insert(SettingsLayer::User, content);
+        self.recompute();
+    }
+
+    /// Replace the `User` layer and persist it surgically (T19-005): only
+    /// the leaves that actually differ from the current in-memory `User`
+    /// content get their byte span rewritten in the on-disk text, so every
+    /// comment/formatting choice elsewhere in the file survives. Other
+    /// top-level keys already in the file (`preferences`, `dockLayout`, the
+    /// legacy `editor`/`mcp` blobs, …) are untouched by construction — they
+    /// have no counterpart in [`SettingsContent`], so the leaf-by-leaf diff
+    /// this walks never visits them.
+    ///
+    /// Refuses to write (returns `Err`, no partial write, `raw`/`merged`
+    /// unchanged) while [`Self::user_json_error`] is set — writing into a
+    /// file whose text the store can't even parse would either silently
+    /// clobber the user's in-progress edit or throw a confusing tree-sitter
+    /// panic; the Akzeptanzkriterium is "fix the JSON first."
+    pub fn set_user_content(&mut self, content: SettingsContent) -> Result<(), String> {
+        self.update_user_settings(move |c| *c = content)
+    }
+
+    /// Mutate a clone of the current `User` layer, then diff + surgically
+    /// persist it in one step (T19-005's `SettingsStore::
+    /// update_user_settings`; `update_user` is kept as an alias for the
+    /// call sites that predate this task).
+    pub fn update_user_settings(
+        &mut self,
+        f: impl FnOnce(&mut SettingsContent),
+    ) -> Result<(), String> {
+        if let Some(err) = &self.user_json_error {
+            return Err(format!(
+                "config.json has a syntax error and can't be edited from the GUI \
+                 until it's fixed: {err}"
+            ));
+        }
+
+        let old_content = self
+            .raw
+            .get(&SettingsLayer::User)
+            .cloned()
+            .unwrap_or_default();
+        let mut new_content = old_content.clone();
+        f(&mut new_content);
+        if new_content == old_content {
+            return Ok(()); // nothing actually changed — no write, no notify.
+        }
+
+        self.persist_user_settings_surgical(&old_content, &new_content)?;
+        self.raw.insert(SettingsLayer::User, new_content);
+        self.recompute();
+        Ok(())
+    }
+
+    /// Apply a user-layer update immediately in memory and return the
+    /// text-preserving write as a background-safe request. This is the UI
+    /// variant of [`Self::update_user_settings`]: typed settings are updated
+    /// immediately while file I/O and JSON text editing leave the GPUI thread.
+    pub fn update_user_settings_deferred(
+        &mut self,
+        f: impl FnOnce(&mut SettingsContent),
+    ) -> Result<Option<UserSettingsWrite>, String> {
+        if let Some(err) = &self.user_json_error {
+            return Err(format!(
+                "config.json has a syntax error and can't be edited from the GUI \
+                 until it's fixed: {err}"
+            ));
+        }
+
+        let old_content = self
+            .raw
+            .get(&SettingsLayer::User)
+            .cloned()
+            .unwrap_or_default();
+        let mut new_content = old_content.clone();
+        f(&mut new_content);
+        if new_content == old_content {
+            return Ok(None);
+        }
+
+        let backup = !self.bak_written_this_session;
+        self.bak_written_this_session = true;
+        self.raw.insert(SettingsLayer::User, new_content.clone());
+        self.recompute();
+        Ok(Some(UserSettingsWrite {
+            path: self.user_path.clone(),
+            old_content,
+            new_content,
+            backup,
+        }))
+    }
+
+    /// Apply a sparse project-layer update in memory and return the same
+    /// background-safe write request used by the user layer. The project
+    /// whitelist is enforced here, inside the Settings owner, so a UI caller
+    /// cannot accidentally persist a capability-owned value in a project file.
+    pub fn update_project_settings_deferred(
+        &mut self,
+        f: impl FnOnce(&mut SettingsContent),
+    ) -> Result<Option<UserSettingsWrite>, String> {
+        let Some((root, worktree_id)) = self.current_project.as_ref() else {
+            return Err("open a project before editing project settings".to_string());
+        };
+        if let Some(error) = &self.project_json_error {
+            return Err(format!(
+                "project settings.json has a syntax error and can't be edited from the GUI until it's fixed: {error}"
+            ));
+        }
+
+        let old_content = self
+            .raw
+            .get(&SettingsLayer::Project(*worktree_id))
+            .cloned()
+            .unwrap_or_default();
+        let mut new_content = old_content.clone();
+        f(&mut new_content);
+
+        let mut serialized = serde_json::to_value(new_content).map_err(|e| e.to_string())?;
+        sparsify_json(&mut serialized);
+        let (new_content, rejected) = project::filter_value_and_parse(serialized);
+        if !rejected.is_empty() {
+            return Err(format!(
+                "project settings update contains unsupported keys: {}",
+                rejected.join(", ")
+            ));
+        }
+        if new_content == old_content {
+            return Ok(None);
+        }
+
+        let path = root.join(project::PROJECT_SETTINGS_RELATIVE_PATH);
+        self.raw
+            .insert(SettingsLayer::Project(*worktree_id), new_content.clone());
+        self.recompute();
+
+        Ok(Some(UserSettingsWrite {
+            backup: path.exists(),
+            path,
+            old_content,
+            new_content,
+        }))
+    }
+
+    /// Convenience wrapper: mutate a clone of the current `User` layer, then
+    /// commit + persist it in one step. Alias for
+    /// [`Self::update_user_settings`] (kept so `crates/settings-ui`'s
+    /// pre-T19-005 call sites keep resolving unchanged).
+    pub fn update_user(&mut self, f: impl FnOnce(&mut SettingsContent)) -> Result<(), String> {
+        self.update_user_settings(f)
+    }
+
+    /// Diff `old_content`/`new_content` and apply the resulting minimal
+    /// text edits to the on-disk `User` file (Warnung: never re-serialize
+    /// the whole file — only the changed leaves' byte spans). Atomic write
+    /// (`.tmp` + `rename`); a `.json.bak` snapshot of the pre-write file is
+    /// taken once per process (Anweisung #2's "bei erstem Schreiben pro
+    /// Session").
+    fn persist_user_settings_surgical(
+        &mut self,
+        old_content: &SettingsContent,
+        new_content: &SettingsContent,
+    ) -> Result<(), String> {
+        let backup = !self.bak_written_this_session && self.user_path.exists();
+        let result =
+            persist_settings_surgical_to_path(&self.user_path, old_content, new_content, backup);
+        if result.is_ok() && backup {
+            self.bak_written_this_session = true;
+        }
+        result
+    }
+}
+
+fn persist_settings_surgical_to_path(
+    user_path: &Path,
+    old_content: &SettingsContent,
+    new_content: &SettingsContent,
+    backup: bool,
+) -> Result<(), String> {
+    let mut text = std::fs::read_to_string(user_path).unwrap_or_default();
+    if text.trim().is_empty() {
+        text = "{}\n".to_string();
+    }
+
+    let mut old_value = serde_json::to_value(old_content).map_err(|e| e.to_string())?;
+    let mut new_value = serde_json::to_value(new_content).map_err(|e| e.to_string())?;
+    sparsify_json(&mut old_value);
+    sparsify_json(&mut new_value);
+    let indent = labonair_settings_json::infer_json_indent_size(&text);
+    let mut edits = Vec::new();
+    labonair_settings_json::update_value_in_json_text(
+        &mut text,
+        &mut Vec::new(),
+        indent,
+        &old_value,
+        &new_value,
+        &mut edits,
+    );
+
+    let dir = user_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    if backup && user_path.exists() {
+        let _ = std::fs::copy(user_path, user_path.with_extension("json.bak"));
+    }
+
+    let tmp = user_path.with_extension("json.tmp");
+    std::fs::write(&tmp, &text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, user_path).map_err(|e| e.to_string())
+}
+
+/// Remove `null` leaves produced by serializing sparse `SettingsContent`.
+/// `None` means "not overridden" and should therefore disappear from the
+/// persisted JSON rather than becoming a visible null-valued setting.
+fn sparsify_json(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            for child in object.values_mut() {
+                sparsify_json(child);
+            }
+            object.retain(|_, child| {
+                !child.is_null() && !child.as_object().is_some_and(serde_json::Map::is_empty)
+            });
+        }
+        Value::Array(array) => {
+            for child in array {
+                sparsify_json(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+impl SettingsStore {
+    /// Currently active project root, if any (T19-003).
+    pub fn project_root(&self) -> Option<&Path> {
+        self.current_project
+            .as_ref()
+            .map(|(root, _)| root.as_path())
+    }
+
+    /// Path of the active project's settings file, if a project is active.
+    pub fn project_settings_path(&self) -> Option<PathBuf> {
+        self.project_root()
+            .map(|root| root.join(project::PROJECT_SETTINGS_RELATIVE_PATH))
+    }
+
+    /// The current fs-watch generation (T19-003) — the project watch's
+    /// background poll task stops itself once this no longer matches the
+    /// generation it captured at spawn time.
+    pub fn project_watch_generation(&self) -> u64 {
+        self.project_watch_generation
+    }
+
+    /// Dotted whitelist-rejected keys from the last project-layer (re)load
+    /// (`"mcp"`, `"general.autostart"`, …) — empty if the current
+    /// project file (or no project root / no file) has no rejections.
+    pub fn project_rejected_keys(&self) -> &[String] {
+        &self.project_rejected
+    }
+
+    /// Set (or clear, with `None`) the active project root. A no-op —
+    /// returns `false`, nothing reloaded, the fs-watch generation
+    /// unchanged — if `root` (after best-effort canonicalization) is
+    /// already the active one. Otherwise: drops the old `Project` layer (if
+    /// any), bumps [`Self::project_watch_generation`] so any in-flight watch
+    /// for the previous root stops itself, and — for `Some(root)` — assigns
+    /// a fresh [`WorktreeId`] and loads `<root>/.labonair/settings.json`
+    /// (Anweisung #1/#2). Starting/stopping the actual fs-watch task is the
+    /// crate-root `set_active_project_root` wrapper's job (it needs `&mut
+    /// App` to spawn; this method only touches store state).
+    pub fn set_active_project_root(&mut self, root: Option<PathBuf>) -> bool {
+        let root = root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
+        if self.current_project.as_ref().map(|(r, _)| r) == root.as_ref() {
+            return false;
+        }
+
+        if let Some((_, old_id)) = self.current_project.take() {
+            self.raw.remove(&SettingsLayer::Project(old_id));
+        }
+        self.project_watch_generation = self.project_watch_generation.wrapping_add(1);
+        self.project_rejected.clear();
+        self.project_json_error = None;
+
+        match root {
+            None => self.recompute(),
+            Some(root) => {
+                let id = WorktreeId(self.next_worktree_id);
+                self.next_worktree_id += 1;
+                self.current_project = Some((root, id));
+                self.reload_project_layer();
+            }
+        }
+        true
+    }
+
+    /// Bump the project fs-watch generation (invalidating any watch task
+    /// already running for the current root) and reload the project layer.
+    /// Used after the "open/create project settings" command creates
+    /// `.labonair/` for a root that had none yet — a plain
+    /// `set_active_project_root` call with the *same* root is a no-op
+    /// (Anweisung's dedup), so it wouldn't otherwise pick up the now-
+    /// watchable directory. Returns the new generation to (re)start the
+    /// watch with, or `None` if no project root is active.
+    pub fn rewatch_project(&mut self) -> Option<u64> {
+        self.current_project.as_ref()?;
+        self.project_watch_generation = self.project_watch_generation.wrapping_add(1);
+        self.reload_project_layer();
+        Some(self.project_watch_generation)
+    }
+
+    /// (Re)read the active project's `.labonair/settings.json` (Anweisung
+    /// #2), whitelist-filter + parse it (`project::filter_and_parse`), and
+    /// set/replace the `SettingsLayer::Project` layer. A no-op if no project
+    /// root is active. A missing file is not an error — it just means an
+    /// empty `Project` layer (e.g. a root with no `.labonair/settings.json`
+    /// yet). A file that fails even JSON/JSONC parsing keeps the last-good
+    /// `Project` layer, same guarantee `reload_user_layer` gives the `User`
+    /// layer — never crashes, never silently reverts to no overrides.
+    pub fn reload_project_layer(&mut self) {
+        let Some(root) = self.current_project.as_ref().map(|(root, _)| root.clone()) else {
+            return;
+        };
+        let path = root.join(project::PROJECT_SETTINGS_RELATIVE_PATH);
+        self.apply_project_layer_load(load_project_layer(&path));
+    }
+
+    pub(crate) fn apply_project_layer_load(&mut self, loaded: ProjectLayerLoad) {
+        let Some((_, id)) = self.current_project.as_ref() else {
+            return;
+        };
+        let id = *id;
+        self.project_json_error = loaded.json_error.clone();
+        let Some(content) = loaded.content else {
+            return;
+        };
+        for key in &loaded.rejected {
+            if !self.project_rejected.contains(key) {
+                tracing::warn!(
+                    key = %key,
+                    "project settings: key is not on the project whitelist, ignored",
+                );
+            }
+        }
+        self.project_rejected = loaded.rejected;
+        self.project_schema_errors = loaded.schema_errors;
+        self.project_schema_warnings = loaded.schema_warnings;
+        self.raw.insert(SettingsLayer::Project(id), content);
+        self.recompute();
+    }
+
+    /// Which layer currently supplies the effective value at `json_path` —
+    /// a dot-separated path of JSON (camelCase, `#[serde(rename_all =
+    /// "camelCase")]`) key names, e.g. `"terminal.terminalFontSize"`
+    /// (Anweisung #5). Walks every layer from highest to lowest precedence
+    /// and returns the first whose value at that path is present and
+    /// non-null. Falls back to `SettingsLayer::Default` if no layer has a
+    /// non-null value there (shouldn't happen — `SettingsContent::
+    /// defaults()` is fully populated — but a path that doesn't resolve to
+    /// any real field also lands here rather than panicking).
+    pub fn source_of(&self, json_path: &str) -> SettingsLayer {
+        for (layer, value) in self.layer_values.iter().rev() {
+            if json_leaf(value, json_path).is_some_and(|v| !v.is_null()) {
+                return layer.clone();
+            }
+        }
+        SettingsLayer::Default
+    }
+
+    /// Register a `Settings` type: compute its initial value from the
+    /// current `merged` tree and remember how to recompute it on every
+    /// future `recompute()`. Idempotent — re-registering the same type is a no-op.
+    pub fn register_setting<T: Settings>(&mut self) {
+        let id = TypeId::of::<T>();
+        if !self.registered.insert(id) {
+            return;
+        }
+        self.values
+            .insert(id, Box::new(T::from_settings(&self.merged)));
+        self.builders.push(Box::new(|merged, values| {
+            values.insert(TypeId::of::<T>(), Box::new(T::from_settings(merged)));
+        }));
+    }
+
+    pub fn is_registered<T: Settings>(&self) -> bool {
+        self.registered.contains(&TypeId::of::<T>())
+    }
+
+    /// The current computed value for `T`. Panics if `T` was never
+    /// registered (`Settings::register` / `#[derive(RegisterSetting)]` +
+    /// `labonair_settings::init` not having run for it).
+    #[track_caller]
+    pub fn get<T: Settings>(&self) -> &T {
+        self.values
+            .get(&TypeId::of::<T>())
+            .and_then(|v| v.downcast_ref::<T>())
+            .unwrap_or_else(|| {
+                panic!(
+                    "labonair-settings: {} was never registered — call its `register(cx)` (or add \
+                     `#[derive(RegisterSetting)]` and run `labonair_settings::register_all(cx)`) \
+                     before reading it",
+                    std::any::type_name::<T>()
+                )
+            })
+    }
+}
+
+/// Navigate `value` (expected to be a JSON object at every level except
+/// possibly the last) by a dot-separated path, e.g. `json_leaf(v,
+/// "terminal.terminalFontSize")` == `v["terminal"]["terminalFontSize"]`.
+/// `None` if any segment is missing or the value stops being an object
+/// before the path is exhausted.
+fn json_leaf<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut cur = value;
+    for part in path.split('.') {
+        cur = cur.as_object()?.get(part)?;
+    }
+    Some(cur)
+}
+
+fn default_user_path() -> PathBuf {
+    #[cfg(not(target_os = "windows"))]
+    let base = dirs::home_dir()
+        .expect("cannot resolve home dir")
+        .join(".config");
+    #[cfg(target_os = "windows")]
+    let base = dirs::config_dir().expect("cannot resolve config dir");
+
+    let dir = base.join("labonair");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("config.json")
+}
+
+/// The commented scaffold [`ensure_user_settings_file`] writes for a user
+/// who has no `config.json` yet (T19-005's "Open Settings (JSON)"
+/// command). Every existing key in this file also has a Settings UI row —
+/// the two paths edit the same file.
+const INITIAL_USER_SETTINGS: &str = include_str!("../assets/settings/initial_user_settings.json");
+
+/// Where the `User` settings layer lives on disk (`~/.config/labonair/
+/// config.json`, or the platform equivalent) — the single source
+/// of truth for this path; callers outside this crate (the "Open Settings
+/// (JSON)" command) should use this rather than re-deriving it.
+pub fn user_settings_path() -> PathBuf {
+    default_user_path()
+}
+
+/// Create the user settings file with a commented scaffold if it doesn't
+/// exist yet (never overwrites an existing file), and return its path.
+/// Used by the "Open Settings (JSON)" command (T19-005 Anweisung #4).
+pub fn ensure_user_settings_file() -> Result<PathBuf, String> {
+    let path = default_user_path();
+    if !path.exists() {
+        std::fs::write(&path, INITIAL_USER_SETTINGS).map_err(|e| e.to_string())?;
+    }
+    Ok(path)
+}
+
+/// Where [`write_schema_file`] (re)writes the generated JSON Schema
+/// (T19-006 Anweisung #4) — `~/.config/labonair/settings.schema.json`, next
+/// to `config.json`. Exposed so external editors/tooling that
+/// want to point their own JSON-schema-aware editing at this file know
+/// where to look.
+pub fn settings_schema_path() -> PathBuf {
+    default_user_path()
+        .parent()
+        .expect("default_user_path always has a parent dir")
+        .join("settings.schema.json")
+}
+
+/// (Re)write the schema file at [`settings_schema_path`]. Called once at
+/// startup ([`crate::init`]); best-effort — a write failure (e.g. a
+/// read-only config dir) is logged, not fatal, since the schema file is
+/// purely a convenience for external editors and this task's own in-app
+/// validation ([`crate::schema::validate`]) never reads it back off disk.
+pub(crate) fn write_schema_file() {
+    let path = settings_schema_path();
+    let schema = crate::schema::json_schema();
+    let text = match serde_json::to_string_pretty(&schema) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to serialize settings.schema.json");
+            return;
+        }
+    };
+    if let Err(e) = std::fs::write(&path, text) {
+        tracing::warn!(path = %path.display(), error = %e, "failed to write settings.schema.json");
+    }
+}
+
+/// Build the store, load the `User` layer once, and publish it as the
+/// [`SettingsStore`] global. Registration of concrete `Settings` types and
+/// the fs-watch task are the caller's job (`labonair_settings::init`) —
+/// split out so tests can construct a store against an explicit path without
+/// touching the real `~/.config/labonair` directory.
+pub(crate) fn init(cx: &mut App) {
+    let mut store = SettingsStore::new(default_user_path());
+    store.reload_user_layer();
+    cx.set_global(store);
+}
+
+#[cfg(test)]
+pub(crate) fn init_at(cx: &mut App, user_path: PathBuf) {
+    let mut store = SettingsStore::new(user_path);
+    store.reload_user_layer();
+    cx.set_global(store);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_path() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("labonair-settings-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("config.json")
+    }
+
+    #[test]
+    fn layer_ord_matches_the_normative_merge_order() {
+        let mut layers = vec![
+            SettingsLayer::Language("rust".into()),
+            SettingsLayer::Project(WorktreeId(1)),
+            SettingsLayer::Profile,
+            SettingsLayer::Os,
+            SettingsLayer::User,
+            SettingsLayer::Default,
+        ];
+        layers.sort();
+        assert_eq!(
+            layers,
+            vec![
+                SettingsLayer::Default,
+                SettingsLayer::User,
+                SettingsLayer::Os,
+                SettingsLayer::Profile,
+                SettingsLayer::Project(WorktreeId(1)),
+                SettingsLayer::Language("rust".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn recompute_merges_default_user_project_in_order() {
+        let mut store = SettingsStore::new(tmp_path());
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(14));
+
+        let mut user = SettingsContent::default();
+        user.terminal.terminal_font_size = Some(18);
+        store.set_layer(SettingsLayer::User, user);
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(18));
+
+        let mut project = SettingsContent::default();
+        project.terminal.terminal_font_size = Some(22);
+        store.set_layer(SettingsLayer::Project(WorktreeId(1)), project);
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(22));
+
+        // User still wins over an unrelated leaf the project layer never set.
+        assert_eq!(store.merged().terminal.terminal_scrollback, Some(5_000));
+    }
+
+    #[test]
+    fn reload_user_layer_round_trips_from_disk() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"terminal":{"terminalFontSize":20}}"#).unwrap();
+        let mut store = SettingsStore::new(path);
+        store.reload_user_layer();
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+        assert!(store.parse_errors().is_empty());
+    }
+
+    #[test]
+    fn reload_user_layer_keeps_last_good_value_on_corrupt_file() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"terminal":{"terminalFontSize":20}}"#).unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+
+        std::fs::write(&path, "not json at all {{{").unwrap();
+        store.reload_user_layer();
+        // Corrupt file → last-good User layer is kept, not wiped.
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+    }
+
+    #[test]
+    fn reload_user_layer_defaults_only_the_broken_area() {
+        let path = tmp_path();
+        std::fs::write(
+            &path,
+            r#"{"terminal":{"terminalFontSize":"nope"},"general":{"restoreWindowState":false}}"#,
+        )
+        .unwrap();
+        let mut store = SettingsStore::new(path);
+        store.reload_user_layer();
+        assert_eq!(store.parse_errors().len(), 1);
+        assert_eq!(store.parse_errors()[0].area, "terminal");
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(14)); // default
+        assert!(!store.merged().general.restore_window_state.unwrap());
+    }
+
+    #[test]
+    fn set_user_content_persists_and_preserves_unrelated_keys() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"preferences":{"theme":"dark"}}"#).unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        let mut user = SettingsContent::default();
+        user.terminal.terminal_font_size = Some(30);
+        store.set_user_content(user).unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let value: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["preferences"]["theme"], "dark");
+        assert_eq!(value["terminal"]["terminalFontSize"], 30);
+        assert!(path.with_extension("json.bak").exists());
+    }
+
+    /// T19-005 Akzeptanzkriterium: a surgical write only touches the changed
+    /// leaf's byte span — comments and every unrelated field's formatting
+    /// survive.
+    #[test]
+    fn update_user_settings_preserves_comments_and_only_touches_the_changed_leaf() {
+        let path = tmp_path();
+        std::fs::write(
+            &path,
+            r#"{
+  // I like a big terminal font.
+  "terminal": {
+    "terminalFontSize": 14
+  },
+  "preferences": {
+    "theme": "dark"
+  }
+}
+"#,
+        )
+        .unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(22))
+            .unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("// I like a big terminal font."),
+            "comment must survive a surgical write:\n{raw}"
+        );
+        assert!(raw.contains("\"terminalFontSize\": 22"));
+        assert!(raw.contains("\"theme\": \"dark\""));
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(22));
+    }
+
+    /// A field write inserts a brand-new key path when the area doesn't
+    /// exist in the file yet, without disturbing existing content.
+    #[test]
+    fn update_user_settings_inserts_a_missing_key_path() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"preferences": {"theme": "dark"}}"#).unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(18))
+            .unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let value: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["terminal"]["terminalFontSize"], 18);
+        assert_eq!(value["preferences"]["theme"], "dark");
+    }
+
+    /// Round-trip: a GUI change lands on disk, and a fresh `reload_user_layer`
+    /// (what the fs-watch poll task calls) picks the same value back up.
+    #[test]
+    fn update_user_settings_round_trips_through_reload() {
+        let path = tmp_path();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        store
+            .update_user_settings(|c| c.general.restore_window_state = Some(false))
+            .unwrap();
+
+        let mut reloaded = SettingsStore::new(path);
+        reloaded.reload_user_layer();
+        assert!(!reloaded.merged().general.restore_window_state.unwrap());
+    }
+
+    #[test]
+    fn deferred_user_settings_write_commits_in_memory_and_persists_off_thread() {
+        let path = tmp_path();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        let request = store
+            .update_user_settings_deferred(|c| c.general.restore_window_state = Some(false))
+            .unwrap()
+            .expect("changed settings should produce a write request");
+        assert!(!store.merged().general.restore_window_state.unwrap());
+
+        let result = enqueue_user_settings_write(request)
+            .unwrap()
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("settings writer should finish");
+        result.unwrap();
+        flush_user_settings_writes();
+
+        let mut reloaded = SettingsStore::new(path);
+        reloaded.reload_user_layer();
+        assert!(!reloaded.merged().general.restore_window_state.unwrap());
+    }
+
+    /// T19-005 Akzeptanzkriterium: invalid JSON in the file blocks GUI
+    /// writes (never blindly overwrite a file the user is mid-editing) and
+    /// keeps the last-good `merged` value + surfaces an error the UI banner
+    /// can show.
+    #[test]
+    fn update_user_settings_is_blocked_while_the_file_has_invalid_json() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"terminal":{"terminalFontSize":20}}"#).unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+        assert!(store.user_json_error().is_none());
+
+        std::fs::write(&path, "{ this is not json").unwrap();
+        store.reload_user_layer();
+        assert!(store.user_json_error().is_some());
+        // Last-good merged value is kept, not wiped.
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+
+        let err = store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(99))
+            .unwrap_err();
+        assert!(err.contains("syntax error"));
+        // The blocked write must not have touched the file or the merged value.
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(raw, "{ this is not json");
+
+        // Fixing the file clears the error and unblocks writes again.
+        std::fs::write(&path, r#"{"terminal":{"terminalFontSize":20}}"#).unwrap();
+        store.reload_user_layer();
+        assert!(store.user_json_error().is_none());
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(99))
+            .unwrap();
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(99));
+    }
+
+    /// A no-op mutation (closure changes nothing) must not touch the file at
+    /// all — important so opening a settings panel and closing it again
+    /// without changing anything never disturbs formatting.
+    #[test]
+    fn update_user_settings_is_a_noop_when_nothing_changed() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"terminal":{"terminalFontSize":20}}"#).unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(20))
+            .unwrap();
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn clearing_a_user_override_removes_the_json_leaf_instead_of_writing_null() {
+        let path = tmp_path();
+        std::fs::write(
+            &path,
+            r#"{"terminal":{"terminalFontSize":20},"preferences":{"theme":"dark"}}"#,
+        )
+        .unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        let old = store
+            .layer(&SettingsLayer::User)
+            .cloned()
+            .expect("loaded user layer");
+        let mut new = old.clone();
+        new.terminal.terminal_font_size = None;
+        persist_settings_surgical_to_path(&path, &old, &new, false).unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("terminalFontSize"));
+        assert!(raw.contains("\"theme\":\"dark\""));
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct FakeFontSize(u32);
+
+    impl Settings for FakeFontSize {
+        fn from_settings(content: &SettingsContent) -> Self {
+            Self(content.terminal.terminal_font_size.unwrap_or(0))
+        }
+    }
+
+    #[test]
+    fn register_setting_computes_and_recomputes_on_change() {
+        let mut store = SettingsStore::new(tmp_path());
+        store.register_setting::<FakeFontSize>();
+        assert_eq!(store.get::<FakeFontSize>(), &FakeFontSize(14));
+
+        let mut user = SettingsContent::default();
+        user.terminal.terminal_font_size = Some(21);
+        store.set_layer(SettingsLayer::User, user);
+        assert_eq!(store.get::<FakeFontSize>(), &FakeFontSize(21));
+    }
+
+    #[test]
+    fn legacy_vim_mode_setting_is_resolved_when_editor_mode_is_unspecified() {
+        let mut store = SettingsStore::new(tmp_path());
+        store.register_setting::<crate::EditorSettings>();
+        let mut user = SettingsContent::default();
+        user.editor.editor_vim_mode = Some(true);
+        store.set_layer(SettingsLayer::User, user);
+        assert!(store.get::<crate::EditorSettings>().vim_mode());
+
+        let mut user = SettingsContent::default();
+        user.editor.editor_modal_mode =
+            Some(labonair_settings_content::editor::EditorModalMode::Helix);
+        user.editor.editor_vim_mode = Some(true);
+        store.set_layer(SettingsLayer::User, user);
+        let editor = store.get::<crate::EditorSettings>();
+        assert!(!editor.vim_mode());
+        assert!(editor.helix_mode());
+    }
+
+    #[test]
+    fn register_setting_is_idempotent() {
+        let mut store = SettingsStore::new(tmp_path());
+        store.register_setting::<FakeFontSize>();
+        store.register_setting::<FakeFontSize>();
+        assert_eq!(store.builders.len(), 1);
+    }
+
+    #[gpui::test]
+    fn recompute_notifies_global_observers(cx: &mut gpui::TestAppContext) {
+        let notified = std::rc::Rc::new(std::cell::Cell::new(false));
+        cx.update(|cx| {
+            init_at(cx, tmp_path());
+            let flag = notified.clone();
+            cx.observe_global::<SettingsStore>(move |_| flag.set(true))
+                .detach();
+        });
+        // `observe_global` activates its subscription via `cx.defer`, so let
+        // that first effect cycle flush before triggering the real mutation.
+        cx.background_executor.run_until_parked();
+        assert!(!notified.get());
+
+        cx.update(|cx| {
+            cx.global_mut::<SettingsStore>().reload_user_layer();
+        });
+        cx.background_executor.run_until_parked();
+        assert!(
+            notified.get(),
+            "reload_user_layer must notify SettingsStore's global observers"
+        );
+    }
+
+    fn tmp_project_root() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("labonair-project-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn project_layer_wins_over_user_for_a_whitelisted_key() {
+        let mut store = SettingsStore::new(tmp_path());
+        store
+            .update_user(|c| c.general.restore_window_state = Some(false))
+            .unwrap();
+        assert!(!store.merged().general.restore_window_state.unwrap());
+
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        std::fs::write(
+            root.join(".labonair/settings.json"),
+            r#"{"general":{"restoreWindowState":false}}"#,
+        )
+        .unwrap();
+
+        assert!(store.set_active_project_root(Some(root)));
+        assert!(!store.merged().general.restore_window_state.unwrap());
+        assert!(store.project_rejected_keys().is_empty());
+    }
+
+    #[test]
+    fn project_layer_forbidden_key_is_ignored_and_reported() {
+        let mut store = SettingsStore::new(tmp_path());
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        std::fs::write(
+            root.join(".labonair/settings.json"),
+            r#"{"mcp":{"bridgePort":9999}}"#,
+        )
+        .unwrap();
+
+        store.set_active_project_root(Some(root));
+        let serialized = serde_json::to_value(store.merged()).unwrap();
+        assert!(serialized.get("mcp").is_none()); // removed capability area stays absent
+        assert_eq!(store.project_rejected_keys(), &["mcp".to_string()]);
+    }
+
+    #[test]
+    fn project_layer_schema_error_is_reported() {
+        let mut store = SettingsStore::new(tmp_path());
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        std::fs::write(
+            root.join(".labonair/settings.json"),
+            r#"{"general":{"restoreWindowState":"no"}}"#,
+        )
+        .unwrap();
+
+        store.set_active_project_root(Some(root));
+        assert_eq!(store.project_schema_errors().len(), 1);
+        assert_eq!(
+            store.project_schema_errors()[0].json_path,
+            "general.restoreWindowState"
+        );
+    }
+
+    #[test]
+    fn deferred_project_write_is_whitelisted_and_persisted() {
+        let mut store = SettingsStore::new(tmp_path());
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        let path = root.join(".labonair/settings.json");
+        std::fs::write(&path, r#"{"general":{"restoreWindowState":true}}"#).unwrap();
+        store.set_active_project_root(Some(root));
+
+        let request = store
+            .update_project_settings_deferred(|content| {
+                content.general.restore_window_state = Some(false)
+            })
+            .unwrap()
+            .expect("changed project settings should produce a write request");
+        request.persist().unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let value: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["general"]["restoreWindowState"], false);
+
+        let error = store
+            .update_project_settings_deferred(|content| {
+                content.terminal.terminal_font_size = Some(99)
+            })
+            .unwrap_err();
+        assert!(error.contains("unsupported keys"));
+    }
+
+    #[test]
+    fn clearing_a_project_override_falls_back_to_the_user_layer() {
+        let mut store = SettingsStore::new(tmp_path());
+        store
+            .update_user(|content| content.general.restore_window_state = Some(false))
+            .unwrap();
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        let path = root.join(".labonair/settings.json");
+        std::fs::write(&path, r#"{"general":{"restoreWindowState":true}}"#).unwrap();
+        store.set_active_project_root(Some(root));
+        assert!(store.merged().general.restore_window_state.unwrap());
+
+        let request = store
+            .update_project_settings_deferred(|content| content.general.restore_window_state = None)
+            .unwrap()
+            .expect("clearing an existing project override should write");
+        request.persist().unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("restoreWindowState"));
+        store.reload_project_layer();
+        assert!(!store.merged().general.restore_window_state.unwrap());
+        assert_eq!(
+            store.source_of("general.restoreWindowState"),
+            SettingsLayer::User
+        );
+    }
+
+    #[test]
+    fn invalid_project_json_is_reported_and_project_writes_are_blocked() {
+        let mut store = SettingsStore::new(tmp_path());
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        let path = root.join(".labonair/settings.json");
+        std::fs::write(&path, "{ broken project json").unwrap();
+        store.set_active_project_root(Some(root));
+
+        let error = store
+            .project_json_error()
+            .expect("invalid project JSON should be visible to the UI");
+        assert!(error.contains("Line 1"));
+        let error = store
+            .update_project_settings_deferred(|content| {
+                content.general.restore_window_state = Some(false)
+            })
+            .unwrap_err();
+        assert!(error.contains("syntax error"));
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            "{ broken project json"
+        );
+    }
+
+    #[test]
+    fn set_active_project_root_unloads_on_root_switch_and_clear() {
+        let mut store = SettingsStore::new(tmp_path());
+        let root_a = tmp_project_root();
+        std::fs::create_dir_all(root_a.join(".labonair")).unwrap();
+        std::fs::write(
+            root_a.join(".labonair/settings.json"),
+            r#"{"general":{"restoreWindowState":false}}"#,
+        )
+        .unwrap();
+        let root_b = tmp_project_root();
+
+        store.set_active_project_root(Some(root_a));
+        assert!(!store.merged().general.restore_window_state.unwrap());
+        let gen_after_a = store.project_watch_generation();
+
+        store.set_active_project_root(Some(root_b));
+        assert_eq!(
+            store.merged().general.restore_window_state,
+            SettingsContent::defaults().general.restore_window_state,
+            "switching roots must drop the previous root's layer"
+        );
+        assert!(store.project_watch_generation() > gen_after_a);
+        // Only one Project(*) layer should ever be present at a time.
+        assert_eq!(
+            store
+                .raw
+                .keys()
+                .filter(|l| matches!(l, SettingsLayer::Project(_)))
+                .count(),
+            1
+        );
+
+        store.set_active_project_root(None);
+        assert_eq!(
+            store.merged().general.restore_window_state,
+            SettingsContent::defaults().general.restore_window_state
+        );
+        assert!(store
+            .raw
+            .keys()
+            .all(|l| !matches!(l, SettingsLayer::Project(_))));
+    }
+
+    #[test]
+    fn no_project_file_means_exactly_user_behavior() {
+        let mut store = SettingsStore::new(tmp_path());
+        store
+            .update_user(|c| c.general.restore_window_state = Some(false))
+            .unwrap();
+
+        let root = tmp_project_root(); // no .labonair dir at all
+        store.set_active_project_root(Some(root));
+        assert!(!store.merged().general.restore_window_state.unwrap());
+        assert!(store.project_rejected_keys().is_empty());
+    }
+
+    #[test]
+    fn source_of_reports_the_highest_precedence_layer_that_set_a_leaf() {
+        let mut store = SettingsStore::new(tmp_path());
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::Default
+        );
+
+        store
+            .update_user(|c| c.terminal.terminal_font_size = Some(18))
+            .unwrap();
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::User
+        );
+
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        std::fs::write(
+            root.join(".labonair/settings.json"),
+            r#"{"editor":{"editorTabSize":4}}"#,
+        )
+        .unwrap();
+        store.set_active_project_root(Some(root));
+        let id = store.current_project.as_ref().unwrap().1;
+        assert_eq!(
+            store.source_of("editor.editorTabSize"),
+            SettingsLayer::Project(id)
+        );
+        // Unrelated leaf the project layer never set still resolves to User.
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::User
+        );
+    }
+
+    #[test]
+    fn source_of_tracks_the_layer_value_cache_across_set_layer() {
+        let mut store = SettingsStore::new(tmp_path());
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::Default
+        );
+
+        let mut user = SettingsContent::default();
+        user.terminal.terminal_font_size = Some(21);
+        store.set_layer(SettingsLayer::User, user);
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::User
+        );
+
+        // Replacing the layer with one that no longer sets the leaf must fall
+        // back to Default — i.e. the cache is rebuilt on every `set_layer`.
+        store.set_layer(SettingsLayer::User, SettingsContent::default());
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::Default
+        );
+    }
+}

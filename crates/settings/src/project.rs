@@ -1,0 +1,298 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Project-layer settings (`.labonair/settings.json`, T19-003).
+//!
+//! `.labonair/settings.json` under the active project root
+//! (`SettingsStore::set_active_project_root` / the crate-root
+//! `set_active_project_root` wrapper) is merged as `SettingsLayer::Project`,
+//! **above** `User`. Unlike the user file, a project file travels with a
+//! cloned repo and is not trusted (Warnung in the task file) — every key
+//! read from it goes through [`PROJECT_SETTINGS_WHITELIST`] first via
+//! [`filter_and_parse`], which this module owns end to end so
+//! `crate::store::SettingsStore` only ever has to call one function.
+
+use std::path::{Path, PathBuf};
+
+use labonair_settings_content::SettingsContent;
+
+/// Relative path (from a project root) to its optional settings file.
+pub const PROJECT_SETTINGS_RELATIVE_PATH: &str = ".labonair/settings.json";
+
+/// The commented scaffold [`ensure_project_settings_file`] writes for a
+/// project that doesn't have one yet. Every key it mentions is on
+/// [`PROJECT_SETTINGS_WHITELIST`].
+const INITIAL_PROJECT_SETTINGS: &str =
+    include_str!("../assets/settings/initial_project_settings.json");
+
+/// Key whitelist for the `SettingsLayer::Project` layer (Anweisung #4 /
+/// Warnung: project settings files are **not trusted** — never let one
+/// reach anything security-, network-, or credential-relevant).
+///
+/// `(area JSON key, allowed leaf JSON keys within that area)`. An area not
+/// listed here is dropped **entirely** from a project file. Notably absent:
+/// `hosts` and `ai` (no "reference an already-saved host" / "reference an
+/// AI-directives file" *scalar* field exists yet in `SettingsContent` — the
+/// Kontext's "Default-SSH-Host" / "AI-Directives-Datei-Verweis" use cases
+/// need such a field added first, which is a future, narrower whitelist
+/// addition, not a reason to open either area's existing fields, which are
+/// all either credentials-adjacent or network endpoints); `mcp`
+/// (bridge port/enable — explicitly forbidden by the task); `keymap`
+/// (explicitly forbidden);
+/// `appearance`, `file_manager`, `personalization` (cosmetic, but not asked
+/// for — narrower is cheaper to widen later than a leak is to undo, per the
+/// task's own `## Notizen`).
+pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
+    (
+        "general",
+        &["defaultStartupTab", "sessionRestore", "restoreWindowState"],
+    ),
+    (
+        "workspace",
+        &[
+            "commandPaletteSearchMode",
+            "commandPaletteShowRecent",
+            "commandPalettePosition",
+            "commandPaletteHistorySize",
+            "commandPaletteCloseOnOverlayClick",
+        ],
+    ),
+    (
+        "editor",
+        &[
+            "editorLineHeight",
+            "editorTabSize",
+            "editorWordWrap",
+            "editorIndentWithTabs",
+            "editorAutoCloseBrackets",
+            "editorAutoSurround",
+            "editorDragAndDropSelection",
+            "editorMouseWheelZoom",
+            "editorScrollSensitivity",
+            "editorFastScrollSensitivity",
+            "editorVerticalScrollMargin",
+            "editorIndentationGuides",
+            "editorWhitespace",
+            "editorBracketMatching",
+            "editorScrollBeyondLastLine",
+            "editorStickyContext",
+            "editorDiagnostics",
+            "editorDiagnosticsMaxSeverity",
+            "editorLspDocumentColors",
+            "editorErrorLens",
+            "editorErrorLensDelayMs",
+            "editorErrorLensSpacing",
+            "editorErrorLensMinimumColumn",
+            "editorSemanticTokens",
+            "editorInlayHints",
+            "editorInlayTypeHints",
+            "editorInlayParameterHints",
+            "editorInlayOtherHints",
+            "editorInlayShowBackground",
+            "editorInlayEditDebounceMs",
+            "editorInlayScrollDebounceMs",
+            "editorGitWordDiff",
+            "editorCompletion",
+            "editorHover",
+            "editorTrimTrailingWhitespace",
+            "editorInsertFinalNewline",
+            "editorFormatOnSave",
+            "editorAutoSave",
+            "editorAutoSaveDelay",
+            "editorLineNumbers",
+            "editorRelativeLineNumbers",
+            "vimCursorShapeNormal",
+            "vimCursorShapeInsert",
+            "vimCursorShapeReplace",
+            "vimCursorShapeVisual",
+        ],
+    ),
+];
+
+fn allowed_leaves(area: &str) -> Option<&'static [&'static str]> {
+    PROJECT_SETTINGS_WHITELIST
+        .iter()
+        .find(|(key, _)| *key == area)
+        .map(|(_, leaves)| *leaves)
+}
+
+/// Returns whether a dotted Settings path may be written to a project file.
+///
+/// The whitelist is intentionally checked at the capability boundary rather
+/// than inferred by the Settings UI. This keeps project-file safety intact for
+/// every caller, including future non-UI writers.
+pub fn is_project_setting_allowed(json_path: &str) -> bool {
+    let Some((area, leaf)) = json_path.split_once('.') else {
+        return false;
+    };
+    allowed_leaves(area).is_some_and(|leaves| leaves.contains(&leaf))
+}
+
+/// Drop every top-level area not on [`PROJECT_SETTINGS_WHITELIST`], and
+/// every leaf key within a whitelisted area that isn't itself whitelisted,
+/// from `value` (expected to be a JSON object — anything else yields an
+/// empty object). Returns the filtered value plus the dotted `"area"` /
+/// `"area.leaf"` paths that got dropped, in encounter order.
+fn filter_json(value: serde_json::Value) -> (serde_json::Value, Vec<String>) {
+    use serde_json::{Map, Value};
+
+    let mut rejected = Vec::new();
+    let Value::Object(obj) = value else {
+        return (Value::Object(Map::new()), rejected);
+    };
+
+    let mut out = Map::new();
+    for (area, area_value) in obj {
+        let Some(leaves) = allowed_leaves(&area) else {
+            rejected.push(area);
+            continue;
+        };
+        let Value::Object(area_obj) = area_value else {
+            // Not an object at all — nothing under it can be whitelisted.
+            rejected.push(area);
+            continue;
+        };
+        let mut kept = Map::new();
+        for (leaf, leaf_value) in area_obj {
+            if leaves.contains(&leaf.as_str()) {
+                kept.insert(leaf, leaf_value);
+            } else {
+                rejected.push(format!("{area}.{leaf}"));
+            }
+        }
+        out.insert(area, Value::Object(kept));
+    }
+    (Value::Object(out), rejected)
+}
+
+/// Parse a project settings file's raw JSON/JSONC text into a
+/// [`SettingsContent`], first dropping everything not on
+/// [`PROJECT_SETTINGS_WHITELIST`]. Reuses
+/// `labonair_settings_content::parse`'s own per-area fault tolerance for
+/// whatever's left, so a broken *allowed* leaf still only defaults its own
+/// area rather than the whole file. Never fails — invalid JSON/JSONC yields
+/// an all-default `SettingsContent` with no rejections reported (there is
+/// nothing to whitelist-reject if nothing parsed).
+///
+/// Returns the content plus every dropped key: whitelist rejections
+/// (`"mcp"`, `"general.autostart"`, …) and per-area parse
+/// failures on what *was* allowed through (`"editor (parse error)"`).
+pub fn filter_and_parse(raw: &str) -> (SettingsContent, Vec<String>) {
+    let value = match jsonc_parser::parse_to_serde_value(raw, &Default::default()) {
+        Ok(Some(v)) => v,
+        _ => serde_json::Value::Object(Default::default()),
+    };
+    filter_value_and_parse(value)
+}
+
+/// Apply the project whitelist to an already parsed JSON value. Keeping this
+/// separate lets the settings watcher parse a changed file exactly once on
+/// its background worker before schema validation and layer application.
+pub fn filter_value_and_parse(value: serde_json::Value) -> (SettingsContent, Vec<String>) {
+    let (filtered, mut rejected) = filter_json(value);
+    let filtered_json = filtered.to_string();
+    let (content, parse_errors) = labonair_settings_content::parse(&filtered_json);
+    for e in parse_errors {
+        rejected.push(format!("{} (parse error)", e.area));
+    }
+    (content, rejected)
+}
+
+/// Create `<root>/.labonair/settings.json` with a commented scaffold if it
+/// doesn't already exist (never overwrites an existing file), and return its
+/// path. Does not touch git — the Warnung is explicit that the command must
+/// not `git add` anything.
+pub fn ensure_project_settings_file(root: &Path) -> Result<PathBuf, String> {
+    let dir = root.join(".labonair");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("settings.json");
+    if !path.exists() {
+        std::fs::write(&path, INITIAL_PROJECT_SETTINGS).map_err(|e| e.to_string())?;
+    }
+    Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_and_parse_drops_a_forbidden_area_entirely() {
+        let (content, rejected) = filter_and_parse(r#"{"mcp":{"bridgePort":9999}}"#);
+        let serialized = serde_json::to_value(content).unwrap();
+        assert!(serialized.get("mcp").is_none());
+        assert_eq!(rejected, vec!["mcp".to_string()]);
+    }
+
+    #[test]
+    fn filter_and_parse_drops_a_forbidden_leaf_but_keeps_allowed_siblings() {
+        let (content, rejected) =
+            filter_and_parse(r#"{"general":{"defaultStartupTab":"terminal","autostart":true}}"#);
+        assert_eq!(
+            content.general.default_startup_tab,
+            Some(labonair_settings_content::general::StartupTab::Terminal)
+        );
+        assert_eq!(content.general.restore_window_state, None);
+        assert_eq!(rejected, vec!["general.autostart".to_string()]);
+    }
+
+    #[test]
+    fn filter_and_parse_keeps_every_whitelisted_leaf() {
+        let (content, rejected) = filter_and_parse(
+            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false,"editorLspDocumentColors":"inline","editorAutoCloseBrackets":false,"editorAutoSurround":false,"editorDragAndDropSelection":false,"editorMouseWheelZoom":true,"editorScrollSensitivity":1.5,"editorFastScrollSensitivity":6.0,"editorVerticalScrollMargin":5}}"#,
+        );
+        assert!(rejected.is_empty());
+        assert_eq!(content.editor.editor_tab_size, Some(4));
+        assert_eq!(content.editor.editor_word_wrap, Some(true));
+        assert_eq!(content.editor.editor_git_word_diff, Some(false));
+        assert_eq!(content.editor.editor_auto_close_brackets, Some(false));
+        assert_eq!(content.editor.editor_auto_surround, Some(false));
+        assert_eq!(content.editor.editor_drag_and_drop_selection, Some(false));
+        assert_eq!(content.editor.editor_mouse_wheel_zoom, Some(true));
+        assert_eq!(content.editor.editor_scroll_sensitivity, Some(1.5));
+        assert_eq!(content.editor.editor_fast_scroll_sensitivity, Some(6.0));
+        assert_eq!(content.editor.editor_vertical_scroll_margin, Some(5));
+        assert_eq!(
+            content.editor.editor_lsp_document_colors,
+            Some(labonair_settings_content::editor::EditorDocumentColorMode::Inline)
+        );
+    }
+
+    #[test]
+    fn filter_and_parse_never_fails_on_garbage() {
+        let (content, rejected) = filter_and_parse("not json at all {{{");
+        assert_eq!(content, SettingsContent::default());
+        assert!(rejected.is_empty());
+    }
+
+    #[test]
+    fn project_write_whitelist_matches_the_persisted_contract() {
+        assert!(is_project_setting_allowed("general.restoreWindowState"));
+        assert!(is_project_setting_allowed("editor.editorTabSize"));
+        assert!(is_project_setting_allowed("editor.editorLspDocumentColors"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeNormal"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeInsert"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeReplace"));
+        assert!(is_project_setting_allowed("editor.vimCursorShapeVisual"));
+        assert!(!is_project_setting_allowed("general.autostart"));
+        assert!(!is_project_setting_allowed("mcp.bridgePort"));
+        assert!(!is_project_setting_allowed("general"));
+    }
+
+    #[test]
+    fn ensure_project_settings_file_creates_once_and_never_overwrites() {
+        let root = std::env::temp_dir().join(format!("labonair-project-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let path = ensure_project_settings_file(&root).unwrap();
+        assert!(path.ends_with(".labonair/settings.json"));
+        let scaffold = std::fs::read_to_string(&path).unwrap();
+        assert!(scaffold.contains("Labonair project settings"));
+
+        std::fs::write(&path, r#"{"general":{"defaultStartupTab":"terminal"}}"#).unwrap();
+        let path2 = ensure_project_settings_file(&root).unwrap();
+        assert_eq!(path, path2);
+        let unchanged = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(unchanged, r#"{"general":{"defaultStartupTab":"terminal"}}"#);
+    }
+}

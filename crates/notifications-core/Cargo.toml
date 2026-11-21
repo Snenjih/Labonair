@@ -1,0 +1,11 @@
+[package]
+name = "labonair-notifications-core"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_notifications_core"
+path = "src/lib.rs"
+
+[dependencies]

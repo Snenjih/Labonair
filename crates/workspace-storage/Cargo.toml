@@ -1,0 +1,16 @@
+[package]
+name = "labonair-workspace-storage"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+# Workspace-owned process-safe persistence. This crate is GPUI-free so SQLite
+# operations can run on a worker thread without crossing UI boundaries.
+[lib]
+name = "labonair_workspace_storage"
+
+[dependencies]
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }

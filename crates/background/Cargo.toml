@@ -1,0 +1,26 @@
+[package]
+name = "labonair-background"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_background"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+gpui-component = { workspace = true }
+image = { workspace = true }
+base64 = "0.22"
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+labonair-filesystem = { path = "../filesystem" }
+labonair-theme = { path = "../theme" }
+labonair-background-host = { path = "../background-host" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-settings = { path = "../settings" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

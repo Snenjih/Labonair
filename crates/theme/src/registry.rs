@@ -1,0 +1,1008 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Theme registry + JSON theme families (T20-005).
+//!
+//! Where [`crate::import`] models the *single imported custom theme* of the
+//! T02-003 era, this module turns that into a **registry**: multiple theme
+//! *families*, each with one or more named light/dark variants. The supported
+//! product catalog currently contains only the embedded JSON built-in
+//! "Labonair" family; the file loader remains an isolated extension boundary
+//! for a later theme-package decision.
+//!
+//! # JSON format ([`ThemeFamilyContent`])
+//!
+//! ```json
+//! {
+//!   "name": "Labonair",
+//!   "author": "Labonair",
+//!   "themes": [
+//!     { "name": "Labonair Light", "appearance": "light", "colors": { "background": "#f7f7f7", … } },
+//!     { "name": "Labonair Dark",  "appearance": "dark",  "colors": { "background": "#181818", … } }
+//!   ]
+//! }
+//! ```
+//!
+//! `colors` is a flat token-name → color-string map (same token names and color
+//! grammar as [`crate::import`], see [`crate::COLOR_TOKENS`]). Any token a
+//! variant omits inherits the built-in default of the **same appearance**
+//! ([`Theme::light`] / [`Theme::dark`]). Unknown token names and unparseable
+//! color values are skipped with a warning — a malformed entry never aborts the
+//! rest of the registry.
+//!
+//! Every family must provide at least one **light and one dark** variant
+//! ([`ThemeFamilyContent::validate`]); the file loader skips incomplete files
+//! and reports them as [`RejectedTheme`]s so the shell can raise a notification
+//! (ADR 0006). No lookup falls back to the other mode.
+//!
+//! Legacy [`crate::ThemeFile`] documents (the `variants: { … }` map format) are
+//! still accepted by [`ThemeRegistry::load_user_themes`] via
+//! [`ThemeFamilyContent::from`], so existing user theme files keep working.
+
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+use crate::import::{get_token, set_token, ThemeFile};
+use crate::COLOR_TOKENS;
+use labonair_theme_tokens::parse_color;
+use labonair_theme_tokens::{ShadowLayer, Theme};
+
+/// Which system appearance a theme variant targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    /// `true` for [`Appearance::Dark`].
+    pub fn is_dark(self) -> bool {
+        matches!(self, Appearance::Dark)
+    }
+
+    fn base_theme(self) -> Theme {
+        match self {
+            Appearance::Light => Theme::light(),
+            Appearance::Dark => Theme::dark(),
+        }
+    }
+}
+
+impl Appearance {
+    fn label(self) -> &'static str {
+        match self {
+            Appearance::Light => "light",
+            Appearance::Dark => "dark",
+        }
+    }
+}
+
+/// Why a [`ThemeFamilyContent`] is not a usable theme family.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThemeValidationError {
+    /// The family name is empty.
+    EmptyName,
+    /// The family declares no variants.
+    NoVariants,
+    /// The family has no variant of this appearance. Every family must provide
+    /// both a light and a dark variant so switching modes never silently shows
+    /// the wrong one.
+    MissingAppearance(Appearance),
+}
+
+impl std::fmt::Display for ThemeValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyName => write!(f, "theme name must not be empty"),
+            Self::NoVariants => write!(f, "theme must contain at least one variant"),
+            Self::MissingAppearance(a) => write!(
+                f,
+                "theme has no {} variant; a theme must provide both a light and a dark variant",
+                a.label()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ThemeValidationError {}
+
+/// Why a user theme file was skipped by [`ThemeRegistry::load_user_themes`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThemeRejection {
+    /// The file could not be read.
+    Unreadable(String),
+    /// The file is not a theme document.
+    Malformed(String),
+    /// The document parsed but is not a valid family (for example one mode
+    /// only).
+    Invalid(ThemeValidationError),
+}
+
+impl std::fmt::Display for ThemeRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreadable(e) | Self::Malformed(e) => write!(f, "{e}"),
+            Self::Invalid(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+/// A user theme file that was skipped, as plain data. The shell turns each
+/// entry into a notification ("Theme `<file>` ignored: `<reason>`", action
+/// "Open themes folder"); this crate has no notification dependency.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RejectedTheme {
+    pub path: std::path::PathBuf,
+    pub reason: ThemeRejection,
+}
+
+impl std::fmt::Display for RejectedTheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.path.display(), self.reason)
+    }
+}
+
+/// One named color scheme inside a [`ThemeFamilyContent`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThemeVariantContent {
+    /// Display name, unique within the family (e.g. `"Labonair Dark"`).
+    pub name: String,
+    /// `"light"` or `"dark"`.
+    pub appearance: Appearance,
+    /// Token name → color string. Omitted tokens inherit the built-in default.
+    #[serde(default)]
+    pub colors: BTreeMap<String, String>,
+    /// Shadow tier name (see [`SHADOW_TIERS`]) → its layers. Omitted tiers
+    /// inherit the built-in default; an empty list removes the tier's shadow.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub shadows: BTreeMap<String, Vec<ShadowSpec>>,
+}
+
+/// One shadow layer in a theme document: the CSS `box-shadow` quintuple.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShadowSpec {
+    #[serde(default)]
+    pub x: f32,
+    #[serde(default)]
+    pub y: f32,
+    #[serde(default)]
+    pub blur: f32,
+    #[serde(default)]
+    pub spread: f32,
+    /// Any color string [`parse_color`] accepts; usually `#rrggbbaa`.
+    pub color: String,
+}
+
+/// The shadow tiers a theme may override, in document order.
+pub const SHADOW_TIERS: &[&str] = &["row", "pane", "pane_focused", "popover", "modal"];
+
+fn shadow_tier<'a>(theme: &'a mut Theme, name: &str) -> Option<&'a mut Vec<ShadowLayer>> {
+    Some(match name {
+        "row" => &mut theme.shadows.row,
+        "pane" => &mut theme.shadows.pane,
+        "pane_focused" => &mut theme.shadows.pane_focused,
+        "popover" => &mut theme.shadows.popover,
+        "modal" => &mut theme.shadows.modal,
+        _ => return None,
+    })
+}
+
+fn shadow_specs_of(theme: &Theme) -> BTreeMap<String, Vec<ShadowSpec>> {
+    let tiers = [
+        ("row", &theme.shadows.row),
+        ("pane", &theme.shadows.pane),
+        ("pane_focused", &theme.shadows.pane_focused),
+        ("popover", &theme.shadows.popover),
+        ("modal", &theme.shadows.modal),
+    ];
+    tiers
+        .into_iter()
+        .map(|(name, layers)| {
+            let specs = layers
+                .iter()
+                .map(|l| ShadowSpec {
+                    x: l.x,
+                    y: l.y,
+                    blur: l.blur,
+                    spread: l.spread,
+                    color: crate::to_hex(l.color),
+                })
+                .collect();
+            (name.to_string(), specs)
+        })
+        .collect()
+}
+
+/// A theme family document: a name plus one or more light/dark variants.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThemeFamilyContent {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    pub themes: Vec<ThemeVariantContent>,
+}
+
+impl ThemeFamilyContent {
+    /// Parse from JSON. Tries the [`ThemeFamilyContent`] shape first, then falls
+    /// back to the legacy [`ThemeFile`] (`variants` map) format.
+    pub fn from_json(json: &str) -> Result<Self, String> {
+        match serde_json::from_str::<ThemeFamilyContent>(json) {
+            Ok(f) if !f.themes.is_empty() => Ok(f),
+            _ => {
+                let legacy = ThemeFile::from_json(json)?;
+                Ok(ThemeFamilyContent::from(&legacy))
+            }
+        }
+    }
+
+    pub fn to_json(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self).map_err(|e| format!("failed to serialize theme: {e}"))
+    }
+
+    /// A family needs a name and at least one light **and** one dark variant.
+    /// Both the registry loader and [`ThemeFile::validate`] use this single
+    /// rule.
+    pub fn validate(&self) -> Result<(), ThemeValidationError> {
+        if self.name.trim().is_empty() {
+            return Err(ThemeValidationError::EmptyName);
+        }
+        if self.themes.is_empty() {
+            return Err(ThemeValidationError::NoVariants);
+        }
+        for appearance in [Appearance::Light, Appearance::Dark] {
+            if self.variant_of(appearance).is_none() {
+                return Err(ThemeValidationError::MissingAppearance(appearance));
+            }
+        }
+        Ok(())
+    }
+
+    /// Build a full-color family document from a pair of renderable themes —
+    /// the inverse of [`Self::resolve_variant`]. Every [`COLOR_TOKENS`] entry is
+    /// written for both variants, so the result re-parses without inheritance.
+    pub fn from_themes(name: impl Into<String>, light: &Theme, dark: &Theme) -> Self {
+        let colors_of = |t: &Theme| -> BTreeMap<String, String> {
+            COLOR_TOKENS
+                .iter()
+                .map(|&k| (k.to_string(), crate::to_hex(get_token(t, k))))
+                .collect()
+        };
+        let name = name.into();
+        Self {
+            name: name.clone(),
+            author: None,
+            themes: vec![
+                ThemeVariantContent {
+                    name: format!("{name} Light"),
+                    appearance: Appearance::Light,
+                    colors: colors_of(light),
+                    shadows: shadow_specs_of(light),
+                },
+                ThemeVariantContent {
+                    name: format!("{name} Dark"),
+                    appearance: Appearance::Dark,
+                    colors: colors_of(dark),
+                    shadows: shadow_specs_of(dark),
+                },
+            ],
+        }
+    }
+
+    /// Resolve one variant to a renderable [`Theme`]: start from the built-in
+    /// default of the variant's appearance, then overlay every token it sets.
+    /// Returns non-fatal warnings for unknown tokens / bad color values.
+    fn resolve_variant(&self, variant: &ThemeVariantContent) -> (Theme, Vec<String>) {
+        let mut theme = variant.appearance.base_theme();
+        let mut warnings = Vec::new();
+        for (key, value) in &variant.colors {
+            match parse_color(value) {
+                Ok(color) => {
+                    if !set_token(&mut theme, key, color) {
+                        warnings.push(format!(
+                            "{}: unknown color token {key:?} — ignored",
+                            self.name
+                        ));
+                    }
+                }
+                Err(e) => warnings.push(format!(
+                    "{}: bad color for {key:?} ({value:?}): {e} — kept default",
+                    self.name
+                )),
+            }
+        }
+        for (tier, specs) in &variant.shadows {
+            let Some(slot) = shadow_tier(&mut theme, tier) else {
+                warnings.push(format!(
+                    "{}: unknown shadow tier {tier:?} — ignored",
+                    self.name
+                ));
+                continue;
+            };
+            let parsed: Result<Vec<ShadowLayer>, String> = specs
+                .iter()
+                .map(|spec| {
+                    parse_color(&spec.color)
+                        .map(|color| ShadowLayer {
+                            x: spec.x,
+                            y: spec.y,
+                            blur: spec.blur.max(0.0),
+                            spread: spec.spread,
+                            color,
+                        })
+                        .map_err(|e| format!("{:?}: {e}", spec.color))
+                })
+                .collect();
+            match parsed {
+                Ok(layers) => *slot = layers,
+                Err(e) => warnings.push(format!(
+                    "{}: bad shadow for {tier:?} ({e}) — kept default",
+                    self.name
+                )),
+            }
+        }
+        (theme, warnings)
+    }
+
+    /// The first variant of exactly this appearance. There is deliberately no
+    /// cross-mode fallback: a valid family has both modes
+    /// ([`Self::validate`]).
+    fn variant_of(&self, appearance: Appearance) -> Option<&ThemeVariantContent> {
+        self.themes.iter().find(|v| v.appearance == appearance)
+    }
+}
+
+impl From<&ThemeFile> for ThemeFamilyContent {
+    fn from(file: &ThemeFile) -> Self {
+        let themes = file
+            .variants
+            .iter()
+            .map(|(key, v)| ThemeVariantContent {
+                name: v.label.clone().unwrap_or_else(|| key.clone()),
+                appearance: if v.mode == "dark" {
+                    Appearance::Dark
+                } else {
+                    Appearance::Light
+                },
+                colors: v.colors.clone(),
+                shadows: BTreeMap::new(),
+            })
+            .collect();
+        Self {
+            name: file.name.clone(),
+            author: (!file.author.is_empty()).then(|| file.author.clone()),
+            themes,
+        }
+    }
+}
+
+/// Metadata for one selectable theme variant — what a picker lists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeMeta {
+    /// The family's stable id — the source file stem for user themes,
+    /// `"default"` for the built-in family. Persisted to `appearance.app_theme`
+    /// (with the variant appended, see [`Self::id`]).
+    pub family_id: String,
+    /// The family display name (`"Labonair"`).
+    pub family: String,
+    /// The variant name (`"Labonair Dark"`).
+    pub variant_name: String,
+    pub appearance: Appearance,
+    /// `true` for the embedded built-in family.
+    pub builtin: bool,
+}
+
+impl ThemeMeta {
+    /// The canonical id used by [`ThemeRegistry::get`] — `"family_id/Variant"`.
+    pub fn id(&self) -> String {
+        format!("{}/{}", self.family_id, self.variant_name)
+    }
+}
+
+/// An unknown theme id was requested.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeNotFoundError(pub String);
+
+impl std::fmt::Display for ThemeNotFoundError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "theme not found: {}", self.0)
+    }
+}
+
+impl std::error::Error for ThemeNotFoundError {}
+
+/// The embedded built-in family — a different serialization form of the exact
+/// `globals.css` values in [`crate::tokens`]. Regenerate with
+/// `REGEN_BUILTIN_THEME=1 cargo test -p labonair-theme builtin_json`.
+pub const BUILTIN_THEME_JSON: &str = include_str!("../assets/themes/labonair.json");
+
+/// The built-in family name.
+pub const BUILTIN_FAMILY: &str = "Labonair";
+
+/// The stable id of the built-in family (kept as the historical `appTheme`
+/// sentinel so pre-T20-005 settings keep resolving).
+pub const BUILTIN_FAMILY_ID: &str = "default";
+
+struct RegisteredFamily {
+    /// Stable id: file stem for user themes, [`BUILTIN_FAMILY_ID`] for built-in.
+    id: String,
+    content: ThemeFamilyContent,
+    builtin: bool,
+}
+
+/// A set of theme families. The runtime starts with the embedded built-in;
+/// optional file loading is retained as a future extension adapter and is not
+/// part of the current product workflow.
+pub struct ThemeRegistry {
+    families: Vec<RegisteredFamily>,
+}
+
+impl Default for ThemeRegistry {
+    fn default() -> Self {
+        Self::builtin()
+    }
+}
+
+impl ThemeRegistry {
+    /// A registry holding only the embedded built-in family. Never fails — a
+    /// broken embedded asset falls back to the hardcoded [`Theme`] tokens.
+    pub fn builtin() -> Self {
+        let content = ThemeFamilyContent::from_json(BUILTIN_THEME_JSON)
+            .and_then(|c| c.validate().map(|()| c).map_err(|e| e.to_string()))
+            .unwrap_or_else(|e| {
+                eprintln!("labonair-theme: embedded built-in theme is invalid ({e}); using tokens");
+                ThemeFamilyContent::from_themes(BUILTIN_FAMILY, &Theme::light(), &Theme::dark())
+            });
+        Self {
+            families: vec![RegisteredFamily {
+                id: BUILTIN_FAMILY_ID.to_string(),
+                content,
+                builtin: true,
+            }],
+        }
+    }
+
+    /// Replace the non-built-in families with everything valid in `dir`.
+    ///
+    /// This is an extension adapter, not part of the current static catalog.
+    /// Unreadable, malformed, and invalid files (see
+    /// [`ThemeFamilyContent::validate`]: both a light and a dark variant are
+    /// required) are skipped and returned as [`RejectedTheme`]s for the caller
+    /// to surface through the notification center; the registry is never left
+    /// empty (the built-in family always remains).
+    ///
+    /// Deferred boundary (R08-011): retained under test, not wired to any UI.
+    pub fn load_user_themes(&mut self, dir: &Path) -> Vec<RejectedTheme> {
+        self.families.retain(|f| f.builtin);
+        let mut rejected = Vec::new();
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return rejected;
+        };
+        let mut loaded: Vec<RegisteredFamily> = Vec::new();
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|x| x.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(id) = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(str::to_string)
+            else {
+                continue;
+            };
+            if id == BUILTIN_FAMILY_ID {
+                continue;
+            }
+            let raw = match std::fs::read_to_string(&path) {
+                Ok(r) => r,
+                Err(e) => {
+                    rejected.push(RejectedTheme {
+                        path,
+                        reason: ThemeRejection::Unreadable(e.to_string()),
+                    });
+                    continue;
+                }
+            };
+            match ThemeFamilyContent::from_json(&raw) {
+                Ok(content) => match content.validate() {
+                    Ok(()) => loaded.push(RegisteredFamily {
+                        id,
+                        content,
+                        builtin: false,
+                    }),
+                    Err(e) => rejected.push(RejectedTheme {
+                        path,
+                        reason: ThemeRejection::Invalid(e),
+                    }),
+                },
+                Err(e) => rejected.push(RejectedTheme {
+                    path,
+                    reason: ThemeRejection::Malformed(e),
+                }),
+            }
+        }
+        loaded.sort_by_key(|f| f.content.name.to_lowercase());
+        self.families.extend(loaded);
+        rejected
+    }
+
+    /// Every selectable variant, built-in family first, then user families by
+    /// name; variants in document order within a family.
+    pub fn list(&self) -> Vec<ThemeMeta> {
+        self.families
+            .iter()
+            .flat_map(|f| {
+                f.content.themes.iter().map(move |v| ThemeMeta {
+                    family_id: f.id.clone(),
+                    family: f.content.name.clone(),
+                    variant_name: v.name.clone(),
+                    appearance: v.appearance,
+                    builtin: f.builtin,
+                })
+            })
+            .collect()
+    }
+
+    /// Whether `id` names a known family or variant.
+    pub fn contains(&self, id: &str) -> bool {
+        self.get(id).is_ok()
+    }
+
+    /// Look a family up by its stable id first, then by display name.
+    fn family(&self, key: &str) -> Option<&ThemeFamilyContent> {
+        self.families
+            .iter()
+            .find(|f| f.id.eq_ignore_ascii_case(key) || f.content.name.eq_ignore_ascii_case(key))
+            .map(|f| &f.content)
+    }
+
+    /// The stable family id for a display-name-or-id key.
+    fn family_id(&self, key: &str) -> Option<&str> {
+        self.families
+            .iter()
+            .find(|f| f.id.eq_ignore_ascii_case(key) || f.content.name.eq_ignore_ascii_case(key))
+            .map(|f| f.id.as_str())
+    }
+
+    /// Resolve a theme id to a renderable [`Theme`].
+    ///
+    /// Accepted id forms:
+    /// - `"Family/Variant"` — that exact variant;
+    /// - `"Variant"` — the first variant with that name across all families;
+    /// - `"Family"` — that family's first variant of the given `appearance`
+    ///   (no cross-mode fallback; a family without that mode is not found).
+    ///
+    /// `appearance` is the mode the caller wants when the id does not pin one.
+    pub fn get(&self, id: &str) -> Result<Theme, ThemeNotFoundError> {
+        self.resolve(id, Appearance::Dark).map(|(t, _)| t)
+    }
+
+    /// As [`Self::get`], honoring a preferred `appearance` for family-level ids
+    /// and also returning any non-fatal token warnings.
+    pub fn resolve(
+        &self,
+        id: &str,
+        appearance: Appearance,
+    ) -> Result<(Theme, Vec<String>), ThemeNotFoundError> {
+        let not_found = || ThemeNotFoundError(id.to_string());
+
+        if let Some((fam, var)) = id.split_once('/') {
+            let family = self.family(fam).ok_or_else(not_found)?;
+            let variant = family
+                .themes
+                .iter()
+                .find(|v| v.name.eq_ignore_ascii_case(var))
+                .ok_or_else(not_found)?;
+            return Ok(family.resolve_variant(variant));
+        }
+
+        // Bare name: try a family first (pick its variant by appearance), then a
+        // flat variant name across every family.
+        if let Some(family) = self.family(id) {
+            let variant = family.variant_of(appearance).ok_or_else(not_found)?;
+            return Ok(family.resolve_variant(variant));
+        }
+        for f in &self.families {
+            if let Some(variant) = f
+                .content
+                .themes
+                .iter()
+                .find(|v| v.name.eq_ignore_ascii_case(id))
+            {
+                return Ok(f.content.resolve_variant(variant));
+            }
+        }
+        Err(not_found())
+    }
+
+    /// The best variant of the family named by `family_id` for `appearance`,
+    /// preferring `variant_name` when it names an existing variant of that
+    /// appearance. Used to honor `theme_variant_overrides`.
+    pub fn resolve_family_variant(
+        &self,
+        family_id: &str,
+        appearance: Appearance,
+        variant_name: Option<&str>,
+    ) -> Result<(Theme, Vec<String>), ThemeNotFoundError> {
+        let family = self
+            .family(family_id)
+            .or_else(|| {
+                // `family_id` might be "Family/Variant" — take the family part.
+                family_id.split_once('/').and_then(|(f, _)| self.family(f))
+            })
+            .ok_or_else(|| ThemeNotFoundError(family_id.to_string()))?;
+
+        if let Some(name) = variant_name {
+            if let Some(v) = family
+                .themes
+                .iter()
+                .find(|v| v.name.eq_ignore_ascii_case(name) && v.appearance == appearance)
+            {
+                return Ok(family.resolve_variant(v));
+            }
+        }
+        let variant = family
+            .variant_of(appearance)
+            .ok_or_else(|| ThemeNotFoundError(family_id.to_string()))?;
+        Ok(family.resolve_variant(variant))
+    }
+
+    /// The `(name, appearance)` variants of a family — for a variant picker.
+    pub fn family_variants(&self, family_key: &str) -> Vec<(String, Appearance)> {
+        let fam = family_key
+            .split_once('/')
+            .map(|(f, _)| f)
+            .unwrap_or(family_key);
+        self.family(fam)
+            .map(|f| {
+                f.themes
+                    .iter()
+                    .map(|v| (v.name.clone(), v.appearance))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The stable family id for an id (`"family/Variant"` → `"family"`; a bare
+    /// family name/id → its id; a bare variant name → its owning family's id).
+    pub fn family_of(&self, id: &str) -> Option<String> {
+        if let Some((fam, _)) = id.split_once('/') {
+            return self.family_id(fam).map(str::to_string);
+        }
+        if let Some(fid) = self.family_id(id) {
+            return Some(fid.to_string());
+        }
+        self.families
+            .iter()
+            .find(|f| {
+                f.content
+                    .themes
+                    .iter()
+                    .any(|v| v.name.eq_ignore_ascii_case(id))
+            })
+            .map(|f| f.id.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use labonair_theme_tokens::to_rgb8;
+
+    fn close(a: [u8; 3], b: [u8; 3]) -> bool {
+        a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| (*x as i32 - *y as i32).abs() <= 1)
+    }
+
+    fn assert_theme_eq(got: &Theme, want: &Theme, ctx: &str) {
+        assert_eq!(got.is_dark, want.is_dark, "{ctx}: is_dark");
+        for &token in COLOR_TOKENS {
+            assert!(
+                close(
+                    to_rgb8(get_token(got, token)),
+                    to_rgb8(get_token(want, token))
+                ),
+                "{ctx}: token {token} drifted"
+            );
+        }
+    }
+
+    #[test]
+    fn builtin_json_round_trips_to_the_hardcoded_theme() {
+        // Optional regen: writes the asset from the current tokens.
+        if std::env::var("REGEN_BUILTIN_THEME").is_ok() {
+            let fam =
+                ThemeFamilyContent::from_themes(BUILTIN_FAMILY, &Theme::light(), &Theme::dark());
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/themes/labonair.json");
+            std::fs::write(path, fam.to_json().unwrap()).unwrap();
+        }
+
+        let reg = ThemeRegistry::builtin();
+        let dark = reg.get("Labonair/Labonair Dark").unwrap();
+        assert_theme_eq(&dark, &Theme::dark(), "builtin dark");
+        let light = reg.get("Labonair/Labonair Light").unwrap();
+        assert_theme_eq(&light, &Theme::light(), "builtin light");
+    }
+
+    #[test]
+    fn a_theme_can_replace_or_remove_shadow_tiers() {
+        let json = r##"{
+            "name": "Flat",
+            "themes": [
+                { "name": "Flat Dark", "appearance": "dark",
+                  "shadows": { "pane": [], "popover": [{ "y": 4, "blur": 10, "color": "#00000080" }] } },
+                { "name": "Flat Light", "appearance": "light", "shadows": { "nope": [] } }
+            ]
+        }"##;
+        let content = ThemeFamilyContent::from_json(json).unwrap();
+        let (dark, warnings) = content.resolve_variant(&content.themes[0]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(dark.shadows.pane.is_empty(), "an empty tier removes it");
+        assert_eq!(dark.shadows.popover.len(), 1);
+        assert_eq!(dark.shadows.popover[0].blur, 10.0);
+        assert_eq!(
+            dark.shadows.pane_focused,
+            Theme::dark().shadows.pane_focused
+        );
+        let (_, warnings) = content.resolve_variant(&content.themes[1]);
+        assert_eq!(warnings.len(), 1, "unknown tier warns");
+    }
+
+    #[test]
+    fn builtin_json_carries_float_tokens_and_shadows() {
+        let fam = ThemeFamilyContent::from_json(BUILTIN_THEME_JSON).unwrap();
+        for v in &fam.themes {
+            assert!(v.colors.contains_key("canvas.top"));
+            assert!(v.colors.contains_key("pane.border_focused"));
+            assert_eq!(v.shadows.len(), SHADOW_TIERS.len());
+        }
+    }
+
+    #[test]
+    fn json_theme_round_trips() {
+        let fam = ThemeFamilyContent::from_themes("Trip", &Theme::light(), &Theme::dark());
+        let json = fam.to_json().unwrap();
+        let reparsed = ThemeFamilyContent::from_json(&json).unwrap();
+        assert_eq!(fam, reparsed);
+    }
+
+    #[test]
+    fn missing_tokens_inherit_the_same_appearance_default() {
+        let json = r##"{
+            "name": "Sparse",
+            "themes": [
+                { "name": "Sparse Dark",  "appearance": "dark",  "colors": { "primary": "#ff0000" } },
+                { "name": "Sparse Light", "appearance": "light", "colors": {} }
+            ]
+        }"##;
+        let mut reg = ThemeRegistry::builtin();
+        // stash it as a user family via the legacy-tolerant parser
+        let content = ThemeFamilyContent::from_json(json).unwrap();
+        reg.families.push(RegisteredFamily {
+            id: "user".to_string(),
+            content,
+            builtin: false,
+        });
+
+        let dark = reg.get("Sparse/Sparse Dark").unwrap();
+        assert_eq!(to_rgb8(dark.core.primary), [0xff, 0x00, 0x00]);
+        // Untouched token equals the dark default.
+        assert_eq!(dark.core.background, Theme::dark().core.background);
+
+        let light = reg.get("Sparse/Sparse Light").unwrap();
+        assert_eq!(light.core.background, Theme::light().core.background);
+    }
+
+    #[test]
+    fn unknown_id_is_a_typed_error() {
+        let reg = ThemeRegistry::builtin();
+        let err = reg.get("Nope/Nope").unwrap_err();
+        assert_eq!(err, ThemeNotFoundError("Nope/Nope".to_string()));
+        assert!(err.to_string().contains("theme not found"));
+    }
+
+    #[test]
+    fn load_user_themes_skips_broken_files_with_warnings() {
+        let dir = std::env::temp_dir().join(format!("labonair-themes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("good.json"),
+            r##"{ "name": "Good", "themes": [
+                { "name": "Good Dark", "appearance": "dark", "colors": {} },
+                { "name": "Good Light", "appearance": "light", "colors": {} } ] }"##,
+        )
+        .unwrap();
+        std::fs::write(dir.join("broken.json"), "{ not json").unwrap();
+
+        let mut reg = ThemeRegistry::builtin();
+        let rejected = reg.load_user_themes(&dir);
+        assert_eq!(rejected.len(), 1, "{rejected:?}");
+        assert!(rejected[0].path.ends_with("broken.json"));
+        assert!(matches!(rejected[0].reason, ThemeRejection::Malformed(_)));
+        assert!(reg.contains("Good/Good Dark"));
+        // Built-in still present.
+        assert!(reg.contains("Labonair/Labonair Dark"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn family(modes: &[Appearance]) -> ThemeFamilyContent {
+        ThemeFamilyContent {
+            name: "Fam".to_string(),
+            author: None,
+            themes: modes
+                .iter()
+                .enumerate()
+                .map(|(i, a)| ThemeVariantContent {
+                    name: format!("Fam {i}"),
+                    appearance: *a,
+                    colors: BTreeMap::new(),
+                    shadows: BTreeMap::new(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn validate_requires_both_light_and_dark() {
+        assert_eq!(
+            family(&[Appearance::Light, Appearance::Dark]).validate(),
+            Ok(())
+        );
+        assert_eq!(
+            family(&[Appearance::Dark]).validate(),
+            Err(ThemeValidationError::MissingAppearance(Appearance::Light))
+        );
+        assert_eq!(
+            family(&[Appearance::Light, Appearance::Light]).validate(),
+            Err(ThemeValidationError::MissingAppearance(Appearance::Dark))
+        );
+        assert_eq!(
+            family(&[]).validate(),
+            Err(ThemeValidationError::NoVariants)
+        );
+        let mut unnamed = family(&[Appearance::Light, Appearance::Dark]);
+        unnamed.name = "  ".to_string();
+        assert_eq!(unnamed.validate(), Err(ThemeValidationError::EmptyName));
+    }
+
+    #[test]
+    fn embedded_builtin_family_is_valid() {
+        let content = ThemeFamilyContent::from_json(BUILTIN_THEME_JSON).unwrap();
+        assert_eq!(content.validate(), Ok(()));
+    }
+
+    #[test]
+    fn loader_rejects_one_mode_files_and_keeps_both_mode_files() {
+        let dir =
+            std::env::temp_dir().join(format!("labonair-themes-modes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("dark-only.json"),
+            r##"{ "name": "DarkOnly", "themes": [
+                { "name": "DarkOnly Dark", "appearance": "dark", "colors": {} } ] }"##,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("both.json"),
+            r##"{ "name": "Both", "themes": [
+                { "name": "Both Dark", "appearance": "dark", "colors": {} },
+                { "name": "Both Light", "appearance": "light", "colors": {} } ] }"##,
+        )
+        .unwrap();
+
+        let mut reg = ThemeRegistry::builtin();
+        let rejected = reg.load_user_themes(&dir);
+        assert_eq!(rejected.len(), 1, "{rejected:?}");
+        assert!(rejected[0].path.ends_with("dark-only.json"));
+        assert_eq!(
+            rejected[0].reason,
+            ThemeRejection::Invalid(ThemeValidationError::MissingAppearance(Appearance::Light))
+        );
+        assert!(!reg.contains("DarkOnly/DarkOnly Dark"));
+        assert!(reg.contains("Both/Both Dark"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn family_id_resolves_each_mode_to_its_own_variant() {
+        let mut reg = ThemeRegistry::builtin();
+        let mut fam = family(&[Appearance::Light, Appearance::Dark]);
+        fam.themes[0]
+            .colors
+            .insert("primary".into(), "#111111".into());
+        fam.themes[1]
+            .colors
+            .insert("primary".into(), "#222222".into());
+        reg.families.push(RegisteredFamily {
+            id: "fam".to_string(),
+            content: fam,
+            builtin: false,
+        });
+        let (light, _) = reg.resolve("Fam", Appearance::Light).unwrap();
+        let (dark, _) = reg.resolve("Fam", Appearance::Dark).unwrap();
+        assert_eq!(to_rgb8(light.core.primary), [0x11, 0x11, 0x11]);
+        assert_eq!(to_rgb8(dark.core.primary), [0x22, 0x22, 0x22]);
+    }
+
+    #[test]
+    fn missing_mode_never_falls_back_to_the_other_mode() {
+        // Bypass the loader on purpose: even a registry holding an invalid
+        // family must not show the wrong mode.
+        let mut reg = ThemeRegistry::builtin();
+        reg.families.push(RegisteredFamily {
+            id: "darkonly".to_string(),
+            content: family(&[Appearance::Dark]),
+            builtin: false,
+        });
+        assert!(reg.resolve("Fam", Appearance::Light).is_err());
+        assert!(reg
+            .resolve_family_variant("Fam", Appearance::Light, None)
+            .is_err());
+        assert!(reg.resolve("Fam", Appearance::Dark).is_ok());
+    }
+
+    #[test]
+    fn legacy_theme_file_format_still_loads() {
+        let legacy = r##"{
+            "name": "Legacy",
+            "variants": {
+                "dark":  { "mode": "dark",  "label": "Legacy Dark",  "colors": { "primary": "#010203" } },
+                "light": { "mode": "light", "label": "Legacy Light", "colors": {} }
+            }
+        }"##;
+        let fam = ThemeFamilyContent::from_json(legacy).unwrap();
+        assert_eq!(fam.name, "Legacy");
+        assert_eq!(fam.themes.len(), 2);
+        let mut reg = ThemeRegistry::builtin();
+        reg.families.push(RegisteredFamily {
+            id: "user".to_string(),
+            content: fam,
+            builtin: false,
+        });
+        let t = reg.get("Legacy/Legacy Dark").unwrap();
+        assert_eq!(to_rgb8(t.core.primary), [0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn resolve_family_variant_honors_override_then_appearance() {
+        let json = r##"{
+            "name": "Catppuccin",
+            "themes": [
+                { "name": "Latte",     "appearance": "light", "colors": { "primary": "#111111" } },
+                { "name": "Frappe",    "appearance": "dark",  "colors": { "primary": "#222222" } },
+                { "name": "Macchiato", "appearance": "dark",  "colors": { "primary": "#333333" } },
+                { "name": "Mocha",     "appearance": "dark",  "colors": { "primary": "#444444" } }
+            ]
+        }"##;
+        let mut reg = ThemeRegistry::builtin();
+        reg.families.push(RegisteredFamily {
+            id: "user".to_string(),
+            content: ThemeFamilyContent::from_json(json).unwrap(),
+            builtin: false,
+        });
+
+        // No override → first dark variant.
+        let (def, _) = reg
+            .resolve_family_variant("Catppuccin", Appearance::Dark, None)
+            .unwrap();
+        assert_eq!(to_rgb8(def.core.primary), [0x22, 0x22, 0x22]);
+        // Override picks the named dark variant.
+        let (mocha, _) = reg
+            .resolve_family_variant("Catppuccin", Appearance::Dark, Some("Mocha"))
+            .unwrap();
+        assert_eq!(to_rgb8(mocha.core.primary), [0x44, 0x44, 0x44]);
+        // Light appearance ignores a dark-only override name.
+        let (latte, _) = reg
+            .resolve_family_variant("Catppuccin", Appearance::Light, Some("Mocha"))
+            .unwrap();
+        assert_eq!(to_rgb8(latte.core.primary), [0x11, 0x11, 0x11]);
+    }
+}

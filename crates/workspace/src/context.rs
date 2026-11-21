@@ -1,0 +1,356 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Identity and activity state for project and standalone workspaces.
+//!
+//! The identity is deliberately separate from the tab count: a project
+//! workspace may temporarily have no tabs, and a standalone workspace may
+//! contain several tabs. The shell and tool modules therefore share one
+//! state model instead of maintaining separate project/standalone layouts.
+
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+/// Durable identity of a workspace.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceIdentity {
+    /// A temporary context for a one-off tool action.
+    #[default]
+    Standalone,
+    /// A context anchored to a local or remote project root.
+    Project { root: PathBuf },
+}
+
+impl WorkspaceIdentity {
+    pub fn standalone() -> Self {
+        Self::Standalone
+    }
+
+    pub fn project(root: impl Into<PathBuf>) -> Self {
+        Self::Project { root: root.into() }
+    }
+
+    pub fn is_project(&self) -> bool {
+        matches!(self, Self::Project { .. })
+    }
+
+    pub fn project_root(&self) -> Option<&Path> {
+        match self {
+            Self::Standalone => None,
+            Self::Project { root } => Some(root),
+        }
+    }
+}
+
+/// Explicit identity transitions accepted by the workspace owner.
+///
+/// A terminal working-directory change is deliberately not represented here:
+/// it can affect a tool instance, but it cannot change workspace identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorkspaceTransition {
+    /// Anchor the workspace to a selected local or remote project root.
+    OpenProject { root: PathBuf },
+    /// Remove project scope while preserving the workspace's tools and layout.
+    ReturnToStandalone,
+}
+
+/// Runtime activity of a workspace, combining identity with tab presence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorkspaceState {
+    Empty {
+        identity: WorkspaceIdentity,
+    },
+    Active {
+        identity: WorkspaceIdentity,
+        tab_count: usize,
+    },
+}
+
+impl WorkspaceState {
+    pub fn from_parts(identity: WorkspaceIdentity, tab_count: usize) -> Self {
+        if tab_count == 0 {
+            Self::Empty { identity }
+        } else {
+            Self::Active {
+                identity,
+                tab_count,
+            }
+        }
+    }
+
+    pub fn identity(&self) -> &WorkspaceIdentity {
+        match self {
+            Self::Empty { identity } | Self::Active { identity, .. } => identity,
+        }
+    }
+
+    pub fn tab_count(&self) -> usize {
+        match self {
+            Self::Empty { .. } => 0,
+            Self::Active { tab_count, .. } => *tab_count,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty { .. })
+    }
+}
+
+/// Mutable workspace identity owned by the workspace module.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WorkspaceContext {
+    identity: WorkspaceIdentity,
+}
+
+impl WorkspaceContext {
+    pub fn standalone() -> Self {
+        Self::default()
+    }
+
+    pub fn identity(&self) -> &WorkspaceIdentity {
+        &self.identity
+    }
+
+    /// Apply an explicit identity transition and report whether the identity
+    /// changed. This pure operation is the only place where the mutable
+    /// workspace context changes identity.
+    pub(crate) fn apply_transition(&mut self, transition: &WorkspaceTransition) -> bool {
+        let next = match transition {
+            WorkspaceTransition::OpenProject { root } => WorkspaceIdentity::project(root.clone()),
+            WorkspaceTransition::ReturnToStandalone => WorkspaceIdentity::standalone(),
+        };
+        if self.identity == next {
+            return false;
+        }
+        self.identity = next;
+        true
+    }
+}
+
+/// Resolve the filesystem root used by workspace-owned file surfaces.
+///
+/// An explicit project identity is authoritative. Standalone workspaces may
+/// fall back to the active terminal directory and finally the user's home
+/// directory so one-off sessions still have a useful explorer root.
+pub fn resolve_filesystem_root(
+    project_root: Option<PathBuf>,
+    active_cwd: Option<String>,
+    home: Option<PathBuf>,
+) -> Option<String> {
+    project_root
+        .map(|path| path.to_string_lossy().into_owned())
+        .or(active_cwd)
+        .or_else(|| home.map(|path| path.to_string_lossy().into_owned()))
+}
+
+/// `(path, ssh_session_id)` the Explorer browses; `Some` id = remote host.
+pub type ExplorerTarget = (String, Option<String>);
+
+/// Per-pane override of whether the Explorer follows the pane's cwd.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExplorerMode {
+    Follow,
+    /// Stay put: at the stored target, or at the project root when `None`.
+    Pinned(Option<ExplorerTarget>),
+}
+
+/// Resolve the Explorer root for the focused pane; returns `(target, follows)`.
+///
+/// Without an override, standalone spaces and SSH panes follow the pane's cwd
+/// while project spaces stay on their project root. A pane without a live cwd
+/// (an editor) keeps the last followed target (`sticky`) instead of snapping
+/// to home.
+pub fn resolve_explorer_root(
+    mode: Option<&ExplorerMode>,
+    project_root: Option<PathBuf>,
+    live: Option<ExplorerTarget>,
+    sticky: Option<ExplorerTarget>,
+    home: Option<PathBuf>,
+) -> (Option<ExplorerTarget>, bool) {
+    let follows = match mode {
+        Some(mode) => *mode == ExplorerMode::Follow,
+        None => project_root.is_none() || live.as_ref().is_some_and(|(_, ssh)| ssh.is_some()),
+    };
+    let local = |path: PathBuf| (path.to_string_lossy().into_owned(), None);
+    let target = if follows {
+        live.or(sticky).or(project_root.map(local))
+    } else {
+        match mode {
+            Some(ExplorerMode::Pinned(Some(target))) => Some(target.clone()),
+            _ => project_root.map(local).or(sticky),
+        }
+    };
+    (target.or(home.map(local)), follows)
+}
+
+/// Resolve the repository root used by workspace-owned Git surfaces.
+///
+/// Git deliberately has no home-directory fallback: an unscoped standalone
+/// workspace must not accidentally treat the user's home directory as a
+/// repository.
+pub fn resolve_git_root(
+    project_root: Option<PathBuf>,
+    active_cwd: Option<String>,
+) -> Option<String> {
+    project_root
+        .map(|path| path.to_string_lossy().into_owned())
+        .or(active_cwd)
+}
+
+/// Resolve the working directory to seed a freshly spawned local terminal
+/// with.
+///
+/// Unlike [`resolve_filesystem_root`]/[`resolve_git_root`], the live pane cwd
+/// is tried *first*: a split or a new tab opened while a session is already
+/// running should keep following wherever the user already `cd`-ed to, not
+/// snap back to the project root underneath them. The project root is only a
+/// fallback for when there is no live cwd yet — e.g. the very first terminal
+/// opened in a brand-new Project space.
+pub fn resolve_terminal_cwd(
+    active_cwd: Option<String>,
+    project_root: Option<PathBuf>,
+) -> Option<String> {
+    active_cwd.or_else(|| project_root.map(|path| path.to_string_lossy().into_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn explorer_root_defaults_and_overrides() {
+        let t = |p: &str| (p.to_string(), None);
+        let proj = Some(PathBuf::from("/proj"));
+        let home = Some(PathBuf::from("/home"));
+        // Standalone follows the live cwd; an editor (no cwd) keeps the sticky one.
+        let r = |mode, project: Option<PathBuf>, live, sticky| {
+            resolve_explorer_root(mode, project, live, sticky, home.clone())
+        };
+        assert_eq!(r(None, None, Some(t("/a")), None), (Some(t("/a")), true));
+        assert_eq!(r(None, None, None, Some(t("/a"))), (Some(t("/a")), true));
+        assert_eq!(r(None, None, None, None), (Some(t("/home")), true));
+        // Project spaces stay on the project root by default.
+        assert_eq!(
+            r(None, proj.clone(), Some(t("/a")), None),
+            (Some(t("/proj")), false)
+        );
+        // Opt in to following, and pin at a path.
+        let follow = ExplorerMode::Follow;
+        assert_eq!(
+            r(Some(&follow), proj.clone(), Some(t("/a")), None),
+            (Some(t("/a")), true)
+        );
+        let pinned = ExplorerMode::Pinned(Some(t("/pin")));
+        assert_eq!(
+            r(Some(&pinned), None, Some(t("/a")), None),
+            (Some(t("/pin")), false)
+        );
+        // SSH panes follow even inside a project space.
+        let ssh = ("/remote".to_string(), Some("s1".to_string()));
+        assert_eq!(r(None, proj, Some(ssh.clone()), None), (Some(ssh), true));
+    }
+    use super::*;
+
+    #[test]
+    fn empty_and_active_are_orthogonal_to_identity() {
+        let project = WorkspaceIdentity::project("/work/app");
+        assert!(WorkspaceState::from_parts(project.clone(), 0).is_empty());
+        assert_eq!(
+            WorkspaceState::from_parts(project.clone(), 0).identity(),
+            &project
+        );
+        assert_eq!(WorkspaceState::from_parts(project, 2).tab_count(), 2);
+
+        let standalone = WorkspaceIdentity::standalone();
+        assert!(WorkspaceState::from_parts(standalone.clone(), 0).is_empty());
+        assert!(!WorkspaceState::from_parts(standalone, 1).is_empty());
+    }
+
+    #[test]
+    fn context_transitions_do_not_create_a_second_layout_model() {
+        let mut context = WorkspaceContext::standalone();
+        assert!(!context.identity().is_project());
+
+        context.apply_transition(&WorkspaceTransition::OpenProject {
+            root: PathBuf::from("/work/app"),
+        });
+        assert_eq!(
+            context.identity().project_root(),
+            Some(Path::new("/work/app"))
+        );
+
+        context.apply_transition(&WorkspaceTransition::ReturnToStandalone);
+        assert_eq!(context.identity(), &WorkspaceIdentity::Standalone);
+    }
+
+    #[test]
+    fn context_applies_only_explicit_identity_transitions() {
+        let mut context = WorkspaceContext::standalone();
+        let open = WorkspaceTransition::OpenProject {
+            root: PathBuf::from("/work/app"),
+        };
+        assert!(context.apply_transition(&open));
+        assert_eq!(context.identity(), &WorkspaceIdentity::project("/work/app"));
+        assert!(!context.apply_transition(&open));
+
+        let standalone = WorkspaceTransition::ReturnToStandalone;
+        assert!(context.apply_transition(&standalone));
+        assert_eq!(context.identity(), &WorkspaceIdentity::Standalone);
+        assert!(!context.apply_transition(&standalone));
+    }
+
+    #[test]
+    fn explicit_project_root_wins_over_terminal_cwd() {
+        assert_eq!(
+            resolve_filesystem_root(
+                Some(PathBuf::from("/project")),
+                Some("/project/src".into()),
+                Some(PathBuf::from("/Users/test")),
+            ),
+            Some("/project".into())
+        );
+        assert_eq!(
+            resolve_git_root(Some(PathBuf::from("/project")), Some("/project/src".into())),
+            Some("/project".into())
+        );
+    }
+
+    #[test]
+    fn standalone_root_uses_terminal_cwd_then_home() {
+        assert_eq!(
+            resolve_filesystem_root(
+                None,
+                Some("/tmp/standalone".into()),
+                Some(PathBuf::from("/Users/test")),
+            ),
+            Some("/tmp/standalone".into())
+        );
+        assert_eq!(
+            resolve_filesystem_root(None, None, Some(PathBuf::from("/Users/test"))),
+            Some("/Users/test".into())
+        );
+        assert_eq!(resolve_git_root(None, None), None);
+    }
+
+    #[test]
+    fn terminal_cwd_prefers_live_pane_cwd_over_project_root() {
+        assert_eq!(
+            resolve_terminal_cwd(Some("/project/src".into()), Some(PathBuf::from("/project")),),
+            Some("/project/src".into())
+        );
+    }
+
+    #[test]
+    fn terminal_cwd_falls_back_to_project_root_when_no_live_cwd() {
+        assert_eq!(
+            resolve_terminal_cwd(None, Some(PathBuf::from("/project"))),
+            Some("/project".into())
+        );
+    }
+
+    #[test]
+    fn terminal_cwd_is_none_for_a_fresh_standalone_space() {
+        assert_eq!(resolve_terminal_cwd(None, None), None);
+    }
+}

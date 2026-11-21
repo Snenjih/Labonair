@@ -1,0 +1,359 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! [`Titlebar`] — the app's top chrome, redesigned in T18-001.
+//!
+//! The titlebar now carries **only**:
+//!
+//! * **left** — the tab strip (`workspace.render_tab_bar`), which already owns
+//!   its trailing `＋` new-tab button + `NewTabDropdownItems` port (Terminal /
+//!   Editor / Preview / Git Graph · SSH ▸ / SFTP ▸ recent hosts · All hosts…).
+//!   The `＋` button is part of the tab strip, so it does not count as a
+//!   "second button" against the layout contract (`docs/architecture.md` §7).
+//! * **right** — exactly one [`IconName::Ellipsis`] button that opens the
+//!   global menu (`Settings`, `Keymap`, `Themes`, `Icon Themes`, `Hosts`).
+//!
+//! Gone from the old header: the app title, the `⋯` app-menu, the inline search
+//! box (`⌘F` now opens the workspace's [`labonair_workspace::search_overlay::SearchOverlay`],
+//! T18-002), every bar item / badge (they are `StatusItem`s since T17-003) and
+//! the sidebar toggle (a status-bar control since T18-003).
+//!
+//! Window chrome: the titlebar background is a drag region, and double-clicking
+//! it zooms the window. Interactive children handle their own clicks; only a
+//! bare press-and-drag on empty background moves the window.
+//!
+//! `zen_mode_show_header` still gates the whole thing — when off, the titlebar
+//! renders nothing and the OS window frame / traffic lights take over.
+
+use gpui::{
+    canvas, div, point, prelude::FluentBuilder, px, App, Bounds, ClickEvent, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
+    StatefulInteractiveElement, Styled, Window, WindowControlArea,
+};
+use labonair_command_palette::Page as PalettePage;
+use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
+use labonair_ui_kit::{icon_button_builder, popover_menu, ButtonSize, IconName, MenuItem, Palette};
+
+use crate::theme::ThemeStore;
+use crate::workspace::Workspace;
+
+const HEADER_H: f32 = 40.0;
+
+/// Navigation requested by the titlebar's single global menu. The titlebar
+/// emits intent only; the shell composition root connects it to the owning
+/// Settings, Workspace, and Command Palette surfaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TitlebarEvent {
+    Settings,
+    Keymap,
+    Hosts,
+    Palette(PalettePage),
+}
+
+/// Window-space anchor for the global menu: the bottom-left of the `⋯`
+/// trigger's rendered bounds when known (measured by a `canvas` probe on the
+/// last paint), so any click inside the trigger produces the same stable
+/// anchor. Falls back to the click x + titlebar bottom before the first paint.
+fn global_menu_anchor(
+    trigger_bounds: Option<Bounds<Pixels>>,
+    click: Point<Pixels>,
+) -> Point<Pixels> {
+    match trigger_bounds {
+        Some(b) => b.bottom_left(),
+        None => point(click.x, px(HEADER_H)),
+    }
+}
+/// Left inset reserved for the macOS traffic-light buttons, plus extra
+/// breathing room so the first tab doesn't crowd the traffic lights. Linux
+/// has no traffic lights, so the tab strip starts flush there.
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_INSET: f32 = 100.0;
+#[cfg(not(target_os = "macos"))]
+const TRAFFIC_LIGHT_INSET: f32 = 8.0;
+
+pub struct Titlebar {
+    theme: Entity<ThemeStore>,
+    workspace: Entity<Workspace>,
+    /// The right-hand global menu dropdown.
+    menu_open: bool,
+    /// Window-space anchor for that dropdown — the bottom-left of the `⋯`
+    /// trigger, so `popover_menu` drops below the button regardless of where
+    /// inside it the click landed.
+    menu_anchor: Point<Pixels>,
+    /// The `⋯` trigger's window-space bounds from the last paint, measured by
+    /// a `canvas` probe. Drives [`global_menu_anchor`].
+    trigger_bounds: Option<Bounds<Pixels>>,
+    /// Drag-to-move latch: set on a background press, consumed on the first
+    /// move (→ `start_window_move`), cleared on release.
+    should_move: bool,
+    focus_handle: FocusHandle,
+}
+
+impl Titlebar {
+    pub fn new(
+        theme: Entity<ThemeStore>,
+        workspace: Entity<Workspace>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        if cx.has_global::<SettingsStore>() {
+            cx.observe_global::<SettingsStore>(|_, cx| cx.notify())
+                .detach();
+        }
+        Self {
+            theme,
+            workspace,
+            menu_open: false,
+            menu_anchor: point(px(0.0), px(HEADER_H)),
+            trigger_bounds: None,
+            should_move: false,
+            focus_handle: cx.focus_handle(),
+        }
+    }
+
+    /// The single right-hand icon button + its dropdown.
+    ///
+    /// The menu only publishes typed navigation intent. Feature behavior stays
+    /// in the owning surface and is wired by `bootstrap`.
+    fn render_account_menu(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let c = Palette::from_theme(self.theme.read(cx));
+        let open = self.menu_open;
+        let anchor = self.menu_anchor;
+        let view = cx.entity();
+
+        // T20-001: the dropdown is the shared `popover_menu` primitive (the
+        // anchored sibling of `context_menu`) instead of a hand-rolled
+        // absolutely-positioned card with its own hover styling.
+        let menu = open.then(|| {
+            let close = {
+                let v = view.clone();
+                move |cx: &mut App| {
+                    v.update(cx, |this, cx| {
+                        this.menu_open = false;
+                        cx.notify();
+                    })
+                }
+            };
+            let items = vec![
+                MenuItem::new("global-settings", "Settings\u{2026}")
+                    .icon(IconName::Settings)
+                    .keybind(["\u{2318}", ","])
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _w, cx| {
+                            emit_titlebar_event(&view, TitlebarEvent::Settings, cx);
+                        }
+                    }),
+                MenuItem::new("global-keymap", "Keymap")
+                    .icon(IconName::Pencil)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _w, cx| {
+                            emit_titlebar_event(&view, TitlebarEvent::Keymap, cx);
+                        }
+                    }),
+                MenuItem::separator(),
+                MenuItem::new("global-themes", "Themes\u{2026}")
+                    .icon(IconName::Sparkles)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _w, cx| {
+                            emit_titlebar_event(
+                                &view,
+                                TitlebarEvent::Palette(PalettePage::Themes),
+                                cx,
+                            );
+                        }
+                    }),
+                MenuItem::new("global-icon-themes", "Icon Themes\u{2026}")
+                    .icon(IconName::Palette)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _w, cx| {
+                            emit_titlebar_event(
+                                &view,
+                                TitlebarEvent::Palette(PalettePage::IconThemes),
+                                cx,
+                            );
+                        }
+                    }),
+                MenuItem::new("global-hosts", "Hosts\u{2026}")
+                    .icon(IconName::Server)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _w, cx| {
+                            emit_titlebar_event(&view, TitlebarEvent::Hosts, cx);
+                        }
+                    }),
+            ];
+            let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
+            (items, dismiss)
+        });
+
+        div()
+            .relative()
+            .flex_shrink_0()
+            .child(
+                icon_button_builder("account-menu", c, IconName::Ellipsis)
+                    .size(ButtonSize::Icon)
+                    .selected(open)
+                    .tooltip("Menu")
+                    .render()
+                    .relative()
+                    .child({
+                        let weak = cx.weak_entity();
+                        canvas(
+                            move |bounds, _window, cx| {
+                                let _ = weak.update(cx, |this, cx| {
+                                    if this.trigger_bounds != Some(bounds) {
+                                        this.trigger_bounds = Some(bounds);
+                                        cx.notify();
+                                    }
+                                });
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full()
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
+                            this.menu_open = !this.menu_open;
+                            // Anchor the flyout's top-right under the button:
+                            // snap-to-window pulls it left off this near-edge x.
+                            this.menu_anchor = global_menu_anchor(this.trigger_bounds, ev.position);
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .children(menu.map(|(items, dismiss)| popover_menu(anchor, c, dismiss, items)))
+    }
+}
+
+impl EventEmitter<TitlebarEvent> for Titlebar {}
+
+fn emit_titlebar_event(view: &Entity<Titlebar>, event: TitlebarEvent, cx: &mut App) {
+    view.update(cx, |this, cx| {
+        this.menu_open = false;
+        cx.emit(event);
+        cx.notify();
+    });
+}
+
+impl Render for Titlebar {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "titlebar").entered();
+        let show_header = ThemeSettings::try_get(cx)
+            .map(|s| s.zen_mode_show_header())
+            .unwrap_or(true);
+        if !show_header {
+            // `zen_mode_show_header == false`: no custom titlebar — the OS
+            // frame / traffic lights take over. On macOS the window still uses
+            // `appears_transparent`, so the tabs simply move into the Tabs
+            // sidebar panel via `tabs_location` if the user wants them.
+            return div().into_any_element();
+        }
+
+        // Floating layer (comfortable pane layout): the titlebar has no fill
+        // and no divider, so the window canvas shows through and the tab
+        // track floats on it. Compact keeps the flat toolbar.
+        let (toolbar, border, floating) = {
+            let theme = self.theme.read(cx);
+            (
+                theme.toolbar(),
+                theme.border(),
+                theme.metrics().pane_layout == labonair_theme::PaneLayout::Comfortable,
+            )
+        };
+
+        // `tabsLocation === "sidebar"` moves the tab strip out of the titlebar
+        // and into the Tabs sidebar panel.
+        let tabs_in_sidebar = ThemeSettings::try_get(cx)
+            .map(|s| s.tabs_location() == "sidebar")
+            .unwrap_or(false);
+        let tabs = (!tabs_in_sidebar).then(|| {
+            self.workspace
+                .update(cx, |w, cx| w.render_tab_bar(cx).into_any_element())
+        });
+
+        div()
+            .id("titlebar")
+            .relative()
+            .flex()
+            .items_center()
+            .gap_2()
+            .h(px(HEADER_H))
+            .w_full()
+            .flex_shrink_0()
+            .pl(px(TRAFFIC_LIGHT_INSET))
+            .pr_2()
+            .when(!floating, |bar| {
+                bar.bg(toolbar).border_b_1().border_color(border)
+            })
+            // The background is a window drag region; double-click zooms.
+            // Interactive children consume their own
+            // clicks, so this only fires on empty background.
+            .window_control_area(WindowControlArea::Drag)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                    this.should_move = true;
+                    cx.notify();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _w, _cx| {
+                    this.should_move = false;
+                }),
+            )
+            .on_mouse_move(cx.listener(|this, _: &MouseMoveEvent, window, _cx| {
+                if this.should_move {
+                    this.should_move = false;
+                    crate::window_drag::start(window);
+                }
+            }))
+            .on_click(cx.listener(|_, ev: &ClickEvent, window, _cx| {
+                if ev.click_count() == 2 {
+                    window.titlebar_double_click();
+                }
+            }))
+            .child(div().flex_1().min_w_0().children(tabs))
+            .child(self.render_account_menu(cx))
+            .into_any_element()
+    }
+}
+
+impl Focusable for Titlebar {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_menu_anchor_prefers_trigger_bottom_left() {
+        // Known trigger bounds → any click inside produces the trigger's
+        // bottom-left, so the menu is stable regardless of click x.
+        let bounds = Bounds {
+            origin: point(px(700.0), px(7.0)),
+            size: gpui::size(px(26.0), px(26.0)),
+        };
+        let anchor = global_menu_anchor(Some(bounds), point(px(719.0), px(19.0)));
+        assert_eq!(anchor, point(px(700.0), px(33.0)));
+    }
+
+    #[test]
+    fn global_menu_anchor_falls_back_to_click_before_first_paint() {
+        let anchor = global_menu_anchor(None, point(px(712.0), px(19.0)));
+        assert_eq!(anchor.x, px(712.0));
+        assert_eq!(anchor.y, px(HEADER_H));
+    }
+}

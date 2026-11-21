@@ -1,0 +1,97 @@
+// Labonair's built-in default keymap (Linux) — mirrors default-macos.json
+// with Cmd swapped for Ctrl (the app has no Linux-specific accelerator
+// scheme yet; see crates/shell/src/menu.rs). Generated from the pre-T19-008
+// `ShortcutId` table (crates/command-palette/src/keybind.rs) crossed with
+// `CommandId::action_name()`. A handful of OS-reserved accelerators are
+// intentionally absent here — they are never user-customizable, so they
+// never go through keymap.json.
+[
+  {
+    "context": null,
+    "bindings": {
+      "ctrl-p": "command_palette::Toggle",
+      "ctrl-shift-/": "settings::OpenShortcuts",
+      "ctrl-t": "tab::NewTerminal",
+      "ctrl-shift-p": "tab::NewPreview",
+      "ctrl-e": "tab::NewEditor",
+      "ctrl-w": "tab::Close",
+      "ctrl-tab": "tab::Next",
+      "ctrl-shift-tab": "tab::Prev",
+      "ctrl-1": "tab::Select1",
+      "ctrl-2": "tab::Select2",
+      "ctrl-3": "tab::Select3",
+      "ctrl-4": "tab::Select4",
+      "ctrl-5": "tab::Select5",
+      "ctrl-6": "tab::Select6",
+      "ctrl-7": "tab::Select7",
+      "ctrl-8": "tab::Select8",
+      "ctrl-9": "tab::Select9",
+      "ctrl-]": "pane::FocusNext",
+      "ctrl-[": "pane::FocusPrev",
+      "ctrl-shift-]": "tab::Next",
+      "ctrl-shift-[": "tab::Prev",
+      "ctrl-f": "search::Toggle",
+      "ctrl-b": "sidebar::Toggle",
+      "ctrl-shift-z": "view::ToggleZenMode",
+      "ctrl-alt-shift-m": "debug::CyclePanelDock",
+      "ctrl-alt-shift-z": "debug::ToggleDockZoom",
+      // Chord demo (T19-008 acceptance criterion): a two-keystroke binding
+      // to prove chords work end-to-end.
+      "ctrl-k ctrl-s": "zed::OpenKeymap"
+    }
+  },
+  {
+    // Terminal-only aliases for the pane split keys (the `Pane` block below
+    // holds the universal ones).
+    "context": "Terminal",
+    "bindings": {
+      "ctrl-d": "pane::SplitRight",
+      "ctrl-shift-d": "pane::SplitDown",
+      "ctrl-shift-c": "terminal::Copy",
+      "ctrl-insert": "terminal::Copy",
+      "ctrl-shift-v": "terminal::Paste",
+      "shift-insert": "terminal::Paste",
+      "ctrl-alt-space": "terminal::ShowCharacterPalette",
+      "ctrl-shift-l": "terminal::Clear",
+      // Keys the app binds globally but a shell needs: forwarded back to the
+      // terminal. `SendKeystroke` takes one keystroke, `SendText` writes its
+      // argument to the PTY verbatim.
+      "ctrl-b": ["terminal::SendKeystroke", "ctrl-b"],
+      "ctrl-e": ["terminal::SendKeystroke", "ctrl-e"],
+      "ctrl-w": ["terminal::SendKeystroke", "ctrl-w"],
+      "ctrl-backspace": ["terminal::SendKeystroke", "ctrl-w"],
+      "ctrl-delete": ["terminal::SendText", "\u001b[3;5~"],
+      "alt-b": ["terminal::SendText", "\u001bb"],
+      "alt-f": ["terminal::SendText", "\u001bf"],
+      "alt-.": ["terminal::SendText", "\u001b."],
+      "shift-pageup": "terminal::ScrollPageUp",
+      "shift-pagedown": "terminal::ScrollPageDown",
+      "shift-up": "terminal::ScrollLineUp",
+      "shift-down": "terminal::ScrollLineDown",
+      "shift-home": "terminal::ScrollToTop",
+      "shift-end": "terminal::ScrollToBottom"
+    }
+  },
+  {
+    // `Pane` wraps every pane of a tab's pane group, whatever its kind
+    // (R10-002, ADR 0005). Editor-context bindings (multi-cursor, indent,
+    // fold) are deeper and win inside editor panes.
+    "context": "Pane",
+    "bindings": {
+      "ctrl-\\": "pane::SplitRight",
+      "ctrl-shift-\\": "pane::SplitDown",
+      "ctrl-k left": "pane::SplitLeft",
+      "ctrl-k up": "pane::SplitUp",
+      "ctrl-alt-left": "pane::FocusLeft",
+      "ctrl-alt-right": "pane::FocusRight",
+      "ctrl-alt-up": "pane::FocusUp",
+      "ctrl-alt-down": "pane::FocusDown",
+      "ctrl-alt-shift-left": "pane::MoveLeft",
+      "ctrl-alt-shift-right": "pane::MoveRight",
+      "ctrl-alt-shift-up": "pane::MoveUp",
+      "ctrl-alt-shift-down": "pane::MoveDown",
+      "ctrl-shift-enter": "pane::ToggleZoom",
+      "ctrl-shift-w": "pane::Close"
+    }
+  }
+]

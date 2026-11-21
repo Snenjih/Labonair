@@ -1,0 +1,537 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! `CommandDispatcher` — application composition for command contributions.
+//!
+//! Before T17-007 the shell root carried a ~50-entry
+//! `.on_action(cx.listener(Self::act_*))` chain plus a parallel
+//! `run_palette_command` match. The long-term contract is now split into a
+//! UI-free metadata registry and owner-provided executable handlers; this
+//! module only assembles those contributions and retains transitional shell
+//! adapters for commands that have not moved yet.
+//!
+//! ## Sanctioned deviation (see `docs/registries.md`, Command registry)
+//!
+//! The UI-free metadata registry lives in `labonair-command-palette-core`.
+//! `labonair-command-palette-runtime` carries GPUI-facing owner handlers
+//! without making the core registry depend on GPUI or `AppShell`.
+
+use std::rc::Rc;
+
+use gpui::{Context, Div, Entity, InteractiveElement, Window};
+use labonair_command_palette_core::{
+    CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
+    CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
+};
+use labonair_command_palette_runtime::{CommandHandlerRegistry, PaletteActionHandlerRegistry};
+
+use crate::app_shell::AppShell;
+use crate::menu;
+use crate::updater::UpdaterView;
+use crate::workspace::Workspace;
+
+/// The behaviour half of a command: run against the app root. Boxed so the
+/// registry is plain data and a command can be cloned out before it runs
+/// (side-stepping the `&mut AppShell` / `&AppShell.command_registry` borrow).
+pub(crate) type CommandFn = Rc<dyn Fn(&mut AppShell, &mut Window, &mut Context<AppShell>)>;
+
+/// Shell-owned execution half of one registered command.
+#[derive(Clone)]
+pub(crate) struct Command {
+    pub(crate) id: CommandId,
+    pub(crate) run: CommandFn,
+}
+
+/// Shell dispatcher backed by the UI-free command metadata registry.
+#[derive(Clone, Default)]
+pub(crate) struct CommandDispatcher {
+    metadata: PaletteCommandRegistry,
+    commands: Vec<Command>,
+    owner_handlers: CommandHandlerRegistry,
+    palette_actions: PaletteActionHandlerRegistry,
+}
+
+/// Native-window metadata owned by the shell composition surface. This is
+/// intentionally the only command provider that lives in `labonair-shell`:
+/// the command targets a GPUI `Window`, not a product capability.
+#[derive(Clone, Copy, Debug, Default)]
+struct ShellCommandProvider;
+
+impl CommandProvider for ShellCommandProvider {
+    fn commands(&self) -> Vec<CommandDescriptor> {
+        vec![
+            CommandDescriptor::new(CommandId::ToggleFullScreen, "Toggle Full Screen", "View")
+                .with_icon(CommandIcon::Square),
+        ]
+    }
+}
+
+impl CommandDispatcher {
+    /// Register metadata and behaviour together. The descriptor is the only
+    /// source consumed by palette, menus, and keymap tooling.
+    pub(crate) fn register(
+        &mut self,
+        descriptor: CommandDescriptor,
+        run: impl Fn(&mut AppShell, &mut Window, &mut Context<AppShell>) + 'static,
+    ) {
+        let id = descriptor.id;
+        if let Some(registered) = self.metadata.command(id) {
+            assert_eq!(
+                registered, &descriptor,
+                "command metadata differs between its owner provider and shell adapter"
+            );
+        } else if let Err(error) = self.metadata.register(descriptor) {
+            panic!("invalid built-in command registry: {error}");
+        }
+        // Owner handlers are registered before the compatibility adapters
+        // below. Do not retain a second executable behavior for an owner-owned
+        // command while the old table is being removed incrementally.
+        if self.owner_handlers.handler(id).is_some() {
+            return;
+        }
+        self.commands.push(Command {
+            id,
+            run: Rc::new(run),
+        });
+    }
+
+    /// Register metadata contributed by an owning capability. The shell only
+    /// assembles providers; it does not define their palette rows.
+    pub(crate) fn register_provider<P: CommandProvider>(&mut self, provider: &P) {
+        if let Err(error) = self.metadata.register_provider(provider) {
+            panic!("invalid command provider registry: {error}");
+        }
+    }
+
+    /// The `run` closure for `id`, if one is registered.
+    pub(crate) fn run_for(&self, id: CommandId) -> Option<CommandFn> {
+        self.commands
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.run.clone())
+    }
+
+    /// Owner-provided executable handler for `id`, if one is registered.
+    pub(crate) fn owner_handler_for(
+        &self,
+        id: CommandId,
+    ) -> Option<labonair_command_palette_runtime::CommandHandler> {
+        self.owner_handlers.handler(id)
+    }
+
+    /// Whether a registered command has executable behavior at the
+    /// composition boundary. The keymap adapter uses this before converting a
+    /// feature-owned command into the generic GPUI action.
+    pub(crate) fn has_execution_handler(&self, id: CommandId) -> bool {
+        self.owner_handlers.handler(id).is_some()
+            || self.commands.iter().any(|command| command.id == id)
+    }
+
+    /// Mutable assembly boundary for dynamic palette action contributions.
+    pub(crate) fn palette_action_handlers_mut(&mut self) -> &mut PaletteActionHandlerRegistry {
+        &mut self.palette_actions
+    }
+
+    /// Forward an opaque dynamic palette action to its owning contribution.
+    pub(crate) fn dispatch_palette_action(
+        &self,
+        action: &labonair_command_palette_core::PaletteAction,
+        window: &mut Window,
+        cx: &mut gpui::App,
+    ) -> bool {
+        self.palette_actions.dispatch(action, window, cx)
+    }
+
+    /// Every registered command. Part of the registry read API (also consumed
+    /// by the file-based keymap in T19-008).
+    #[allow(dead_code)]
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &CommandDescriptor> {
+        self.metadata.iter()
+    }
+
+    /// Commands available in `ctx` (no-context commands always; context-scoped
+    /// ones only when their context is active) — same rule the palette applies.
+    #[allow(dead_code)]
+    pub(crate) fn visible_in(&self, ctx: Option<CommandContext>) -> Vec<&CommandDescriptor> {
+        self.metadata.available(ctx)
+    }
+
+    /// Clone the descriptor snapshot for the palette view.
+    pub(crate) fn descriptors(&self) -> Vec<CommandDescriptor> {
+        self.metadata.snapshot()
+    }
+}
+
+impl AppShell {
+    /// Run the command bound to `id`. No-op for ids with no behaviour of their
+    /// own — the palette sub-page navigators (`SwitchTab`, `ConnectSsh`, …),
+    /// which were no-op action dispatches before T17-007.
+    pub(crate) fn dispatch_command(
+        &mut self,
+        id: CommandId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // These four ids' owner handlers close over a clone of the shell
+        // entity and call `.update()` on it to reach this same `AppShell` —
+        // fine when invoked from an arbitrary `App` context, but
+        // `dispatch_command` is only ever called with `AppShell` already
+        // leased (from an `on_action` listener or `PaletteEvent::Run`), so
+        // going through them here re-enters `AppShell::update` and panics
+        // ("already being updated"), same as the `menu::CommandPalette`
+        // bridge above. Call the shell method directly instead.
+        match id {
+            CommandId::OpenCommandPalette => {
+                self.toggle_command_palette(window, cx);
+                return;
+            }
+            CommandId::Find => {
+                self.toggle_search_overlay(window, cx);
+                return;
+            }
+            CommandId::NewSftpTab => {
+                self.show_command_palette(
+                    Some(labonair_command_palette::Page::SftpHosts),
+                    window,
+                    cx,
+                );
+                return;
+            }
+            CommandId::NewSshTab => {
+                self.show_command_palette(Some(labonair_command_palette::Page::Hosts), window, cx);
+                return;
+            }
+            _ => {}
+        }
+
+        if let Some(run) = self.command_registry.owner_handler_for(id) {
+            run(window, cx);
+        } else if let Some(run) = self.command_registry.run_for(id) {
+            run(self, window, cx);
+        }
+    }
+}
+
+/// Bridge every native-menu / key-binding [`menu`] action to its [`CommandId`]
+/// on the shell root element. Lives here, not in `app_shell.rs`, so the shell
+/// root stays pure composition (≤ 8 genuine window `.on_action`s). The menu
+/// actions keep their stable types (macOS accelerator display) — this is the
+/// task's "Action → Command bridge".
+pub(crate) fn attach_action_handlers(
+    mut el: Div,
+    can_split: bool,
+    has_split: bool,
+    cx: &mut Context<AppShell>,
+) -> Div {
+    macro_rules! on {
+        ($act:path => $id:expr) => {
+            el = el.on_action(cx.listener(|this, _: &$act, window, cx| {
+                this.dispatch_command($id, window, cx);
+            }));
+        };
+    }
+
+    el = el.on_action(
+        cx.listener(|this, action: &menu::RunRegisteredCommand, window, cx| {
+            this.dispatch_command(action.command, window, cx);
+        }),
+    );
+
+    on!(menu::NewTerminalTab => CommandId::NewTerminalTab);
+    on!(menu::OpenProject => CommandId::OpenProject);
+    on!(menu::ReturnToStandalone => CommandId::ReturnToStandalone);
+    on!(menu::NewEditorTab => CommandId::NewEditorTab);
+    on!(menu::NewPreviewTab => CommandId::NewPreviewTab);
+    on!(menu::NewSshTab => CommandId::NewSshTab);
+    on!(menu::NewSftpTab => CommandId::NewSftpTab);
+    on!(menu::OpenHosts => CommandId::OpenHosts);
+    on!(menu::Save => CommandId::Save);
+    on!(menu::CloseTab => CommandId::CloseTab);
+    on!(menu::NextTab => CommandId::NextTab);
+    on!(menu::PrevTab => CommandId::PrevTab);
+    on!(menu::Find => CommandId::Find);
+    on!(menu::OpenFile => CommandId::OpenFile);
+    on!(menu::ToggleSidebar => CommandId::ToggleSidebar);
+    on!(menu::ToggleZenMode => CommandId::ToggleZenMode);
+    on!(menu::FocusNextPane => CommandId::FocusNextPane);
+    on!(menu::FocusPrevPane => CommandId::FocusPrevPane);
+    on!(menu::FocusPaneLeft => CommandId::FocusPaneLeft);
+    on!(menu::FocusPaneRight => CommandId::FocusPaneRight);
+    on!(menu::FocusPaneUp => CommandId::FocusPaneUp);
+    on!(menu::FocusPaneDown => CommandId::FocusPaneDown);
+    on!(menu::MovePaneLeft => CommandId::MovePaneLeft);
+    on!(menu::MovePaneRight => CommandId::MovePaneRight);
+    on!(menu::MovePaneUp => CommandId::MovePaneUp);
+    on!(menu::MovePaneDown => CommandId::MovePaneDown);
+    on!(menu::OpenSettings => CommandId::OpenSettings);
+    on!(menu::OpenKeymapJson => CommandId::OpenKeymapJson);
+    on!(menu::CheckForUpdates => CommandId::CheckForUpdates);
+    // Toggling the palette updates the shell entity itself; routing it through
+    // `dispatch_command` -> owner handler re-enters `AppShell::update` from
+    // inside this listener and panics ("already being updated"). Call direct.
+    el = el.on_action(cx.listener(|this, _: &menu::CommandPalette, window, cx| {
+        this.toggle_command_palette(window, cx);
+    }));
+    on!(menu::DebugCyclePanelDock => CommandId::DebugCyclePanelDock);
+    on!(menu::DebugToggleDockZoom => CommandId::DebugToggleDockZoom);
+    on!(menu::SelectTab1 => CommandId::SelectTab1);
+    on!(menu::SelectTab2 => CommandId::SelectTab2);
+    on!(menu::SelectTab3 => CommandId::SelectTab3);
+    on!(menu::SelectTab4 => CommandId::SelectTab4);
+    on!(menu::SelectTab5 => CommandId::SelectTab5);
+    on!(menu::SelectTab6 => CommandId::SelectTab6);
+    on!(menu::SelectTab7 => CommandId::SelectTab7);
+    on!(menu::SelectTab8 => CommandId::SelectTab8);
+    on!(menu::SelectTab9 => CommandId::SelectTab9);
+
+    // Context-gated: the handler only exists while the active tab supports it,
+    // so the matching menu item greys out on its own (parity with the former
+    // `.when(can_split)` / `.when(has_split)` guards).
+    if can_split {
+        on!(menu::SplitPaneLeft => CommandId::SplitLeft);
+        on!(menu::SplitPaneRight => CommandId::SplitRight);
+        on!(menu::SplitPaneUp => CommandId::SplitUp);
+        on!(menu::SplitPaneDown => CommandId::SplitDown);
+    }
+    if has_split {
+        on!(menu::ClosePane => CommandId::ClosePane);
+        on!(menu::TogglePaneZoom => CommandId::TogglePaneZoom);
+    }
+
+    el
+}
+
+/// Shared descriptor helper for the remaining shell-owned adapters. Feature
+/// commands are defined by their owner `CommandProvider`; a shell-owned
+/// command is limited to composition or a native-window action.
+const ALWAYS: &[CommandContext] = &[];
+
+fn command_descriptor(
+    id: CommandId,
+    title: &str,
+    section: &str,
+    contexts: &[CommandContext],
+    icon: CommandIcon,
+    submenu: Option<CommandSubmenu>,
+) -> CommandDescriptor {
+    let mut descriptor = CommandDescriptor::new(id, title, section)
+        .with_contexts(contexts)
+        .with_icon(icon);
+    if let Some(submenu) = submenu {
+        descriptor = descriptor.with_submenu(submenu);
+    }
+    descriptor
+}
+
+#[allow(dead_code)]
+pub(crate) fn register_builtin_commands() -> CommandDispatcher {
+    compose_builtin_commands(None, None, None, None, None, None, None)
+}
+
+/// Compose the command registry with owner-provided executable handlers.
+pub(crate) fn register_builtin_commands_for(
+    workspace: &gpui::Entity<Workspace>,
+    updater: &Entity<UpdaterView>,
+    palette_toggle: labonair_command_palette::command_provider::ToggleHandler,
+    search_toggle: labonair_workspace::command_provider::SearchToggleHandler,
+    file_finder_toggle: labonair_workspace::command_provider::FileFinderToggleHandler,
+    host_picker: labonair_hosts_ui::command_provider::HostPickerHandler,
+    onboarding_open: labonair_onboarding::command_provider::OpenHandler,
+) -> CommandDispatcher {
+    compose_builtin_commands(
+        Some(workspace),
+        Some(updater),
+        Some(palette_toggle),
+        Some(search_toggle),
+        Some(file_finder_toggle),
+        Some(host_picker),
+        Some(onboarding_open),
+    )
+}
+
+fn compose_builtin_commands(
+    workspace: Option<&Entity<Workspace>>,
+    updater: Option<&Entity<UpdaterView>>,
+    palette_toggle: Option<labonair_command_palette::command_provider::ToggleHandler>,
+    search_toggle: Option<labonair_workspace::command_provider::SearchToggleHandler>,
+    file_finder_toggle: Option<labonair_workspace::command_provider::FileFinderToggleHandler>,
+    host_picker: Option<labonair_hosts_ui::command_provider::HostPickerHandler>,
+    onboarding_open: Option<labonair_onboarding::command_provider::OpenHandler>,
+) -> CommandDispatcher {
+    let mut r = CommandDispatcher::default();
+    let always = ALWAYS;
+
+    // Capability-owned metadata enters through providers. The existing
+    // execution registrations below are transitional shell adapters; their
+    // descriptors are checked against the owner snapshot and never become a
+    // second palette source.
+    r.register_provider(&labonair_workspace::command_provider::WorkspaceCommandProvider);
+    r.register_provider(&labonair_terminal::command_provider::TerminalCommandProvider);
+    r.register_provider(&labonair_editor::command_provider::EditorCommandProvider);
+    r.register_provider(&labonair_hosts::command_provider::HostsCommandProvider);
+    r.register_provider(&labonair_theme::command_provider::ThemeCommandProvider);
+    r.register_provider(&labonair_settings::command_provider::SettingsCommandProvider);
+    r.register_provider(&labonair_keymap::command_provider::KeymapCommandProvider);
+    r.register_provider(&labonair_git::command_provider::GitCommandProvider);
+    r.register_provider(&labonair_snippets::command_provider::SnippetsCommandProvider);
+    r.register_provider(
+        &labonair_command_palette_core::command_provider::CommandPaletteCommandProvider,
+    );
+    r.register_provider(&ShellCommandProvider);
+    r.register_provider(&labonair_updater_ui::command_provider::UpdaterCommandProvider);
+    r.register_provider(&labonair_onboarding::command_provider::OnboardingCommandProvider);
+    labonair_settings::command_provider::register_handlers(&mut r.owner_handlers);
+    labonair_settings_ui::command_provider::register_handlers(&mut r.owner_handlers);
+    if let Some(palette_toggle) = palette_toggle {
+        labonair_command_palette::command_provider::register_handlers(
+            &mut r.owner_handlers,
+            palette_toggle,
+        );
+    }
+    if let Some(search_toggle) = search_toggle {
+        labonair_workspace::command_provider::register_search_handler(
+            &mut r.owner_handlers,
+            search_toggle,
+        );
+    }
+    if let Some(file_finder_toggle) = file_finder_toggle {
+        labonair_workspace::command_provider::register_file_finder_handler(
+            &mut r.owner_handlers,
+            file_finder_toggle,
+        );
+    }
+    if let Some(host_picker) = host_picker {
+        labonair_hosts_ui::command_provider::register_picker_handlers(
+            &mut r.owner_handlers,
+            host_picker,
+        );
+    }
+    if let Some(onboarding_open) = onboarding_open {
+        labonair_onboarding::command_provider::register_handlers(
+            &mut r.owner_handlers,
+            onboarding_open,
+        );
+    }
+    if let Some(updater) = updater {
+        labonair_updater_ui::command_provider::register_handlers(&mut r.owner_handlers, updater);
+    }
+    if let Some(workspace) = workspace {
+        labonair_workspace::command_provider::register_handlers(&mut r.owner_handlers, workspace);
+        // The Editor owns command meaning; Workspace only resolves the active
+        // editor entity at this composition boundary.
+        labonair_workspace::command_provider::register_editor_handlers(
+            &mut r.owner_handlers,
+            workspace,
+        );
+        labonair_workspace::command_provider::register_hosts_handler(
+            &mut r.owner_handlers,
+            workspace,
+        );
+        labonair_terminal::command_provider::register_handlers(
+            &mut r.owner_handlers,
+            labonair_workspace::command_provider::terminal_command_target(workspace),
+        );
+        let descriptors = r.descriptors();
+        labonair_workspace::command_provider::register_keymap_handler(
+            &mut r.owner_handlers,
+            workspace,
+            descriptors,
+        );
+    }
+
+    // ── Application ────────────────────────────────────────────────────
+    // T20-004: debug-only — open the ui-kit component gallery in its own
+    // window. The palette row (`Debug: Open Component Gallery`) and the
+    // `gallery.rs` view are both compiled out of release builds too.
+    #[cfg(debug_assertions)]
+    r.register(
+        command_descriptor(
+            CommandId::OpenComponentGallery,
+            "Debug: Open Component Gallery",
+            "Application",
+            always,
+            CommandIcon::Palette,
+            None,
+        ),
+        |_s, _window, cx| {
+            crate::gallery::open_gallery_window(cx);
+        },
+    );
+
+    // Native-window command: the shell owns both metadata and execution
+    // because the action targets GPUI's Window directly.
+    r.register(
+        command_descriptor(
+            CommandId::ToggleFullScreen,
+            "Toggle Full Screen",
+            "View",
+            always,
+            CommandIcon::Square,
+            None,
+        ),
+        |_s, window, _cx| window.toggle_fullscreen(),
+    );
+
+    r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_builtin_id_is_unique_and_context_rules_hold() {
+        let r = register_builtin_commands();
+        let ids: Vec<_> = r.iter().map(|c| c.id).collect();
+        let mut deduped = ids.clone();
+        deduped.sort_by_key(|id| format!("{id:?}"));
+        deduped.dedup();
+        assert_eq!(ids.len(), deduped.len(), "duplicate command registration");
+
+        // Split/close-pane are terminal-only; new-tab is always available.
+        let always = r.visible_in(None);
+        assert!(always.iter().any(|c| c.id == CommandId::NewTerminalTab));
+        assert!(!always.iter().any(|c| c.id == CommandId::SplitRight));
+        assert!(!always.iter().any(|c| c.id == CommandId::SplitLeft));
+        assert!(!always.iter().any(|c| c.id == CommandId::SplitUp));
+        assert!(!always.iter().any(|c| c.id == CommandId::ClosePane));
+
+        let term = r.visible_in(Some(CommandContext::Terminal));
+        assert!(term.iter().any(|c| c.id == CommandId::SplitRight));
+        assert!(term.iter().any(|c| c.id == CommandId::SplitLeft));
+        assert!(term.iter().any(|c| c.id == CommandId::SplitUp));
+        assert!(term.iter().any(|c| c.id == CommandId::ClosePane));
+    }
+
+    #[test]
+    fn navigator_ids_resolve_to_no_run() {
+        // Sub-page navigators carry no executable handler — the palette
+        // forwards them as navigation, not a command run.
+        let r = register_builtin_commands();
+        assert!(r.run_for(CommandId::SwitchTab).is_none());
+        assert!(r.run_for(CommandId::OpenShortcuts).is_none());
+    }
+
+    #[test]
+    fn project_lifecycle_commands_share_the_typed_registry_path() {
+        let r = register_builtin_commands();
+        let descriptors = r.iter().collect::<Vec<_>>();
+
+        let open = descriptors
+            .iter()
+            .find(|command| command.id == CommandId::OpenProject)
+            .expect("open-project command must be registered");
+        let standalone = descriptors
+            .iter()
+            .find(|command| command.id == CommandId::ReturnToStandalone)
+            .expect("return-to-standalone command must be registered");
+
+        assert_eq!(open.id.action_name(), "workspace::OpenProject");
+        assert_eq!(standalone.id.action_name(), "workspace::ReturnToStandalone");
+        // These behaviors are supplied by Workspace when the runtime
+        // composition path has a live entity; the metadata-only helper must
+        // not recreate a shell-owned fallback.
+        assert!(r.run_for(CommandId::OpenProject).is_none());
+        assert!(r.run_for(CommandId::ReturnToStandalone).is_none());
+    }
+}

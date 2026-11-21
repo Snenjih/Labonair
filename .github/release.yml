@@ -1,0 +1,29 @@
+changelog:
+  exclude:
+    labels:
+      - ci
+      - dependencies
+  categories:
+    - title: "AI"
+      labels:
+        - ai
+    - title: "SSH / SFTP"
+      labels:
+        - ssh/sftp
+        - hosts
+    - title: "Terminal"
+      labels:
+        - terminal
+    - title: "Editor"
+      labels:
+        - editor
+    - title: "Git"
+      labels:
+        - git
+    - title: "UI / Theme"
+      labels:
+        - ui
+        - theme
+    - title: "Other Changes"
+      labels:
+        - "*"

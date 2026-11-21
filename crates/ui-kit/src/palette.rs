@@ -1,0 +1,431 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! The token bundle the ui-kit primitives are styled from.
+//!
+//! Rendering a primitive from inside a view's `render` usually cannot hold a
+//! `&impl UiTheme` borrow: `theme.read(cx)` borrows `cx` immutably, while
+//! `cx.listener(..)` for the primitive's `on_click` needs `&mut Context`. Every
+//! view therefore already snapshots the handful of tokens it needs into a local
+//! struct before building elements (`settings-ui`'s `Palette`,
+//! `panel-explorer`'s `Colors`, …).
+//!
+//! [`Palette`] is the shared version of that snapshot: `Copy`, built once per
+//! render via [`Palette::from_theme`], and the single parameter the primitives
+//! with more than ~3 colour needs take. This is what keeps every primitive
+//! token-bound (Critical Rule 3) without forcing the borrow gymnastics — a call
+//! site literally cannot pass a hardcoded colour without writing one itself.
+
+use gpui::{px, BoxShadow, Hsla, Pixels};
+use labonair_theme_tokens::{RadiusScale, ShadowStack, VibrancyLayer};
+
+use crate::animation::MotionPrefs;
+use crate::theme::UiTheme;
+
+/// The five shadow tiers of a theme as `Copy` stacks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PaletteShadows {
+    row: ShadowStack,
+    pane: ShadowStack,
+    pane_focused: ShadowStack,
+    popover: ShadowStack,
+    modal: ShadowStack,
+}
+
+/// A per-render snapshot of the design tokens the primitives read.
+///
+/// ```ignore
+/// let c = Palette::from_theme(self.theme.read(cx));
+/// div().child(checkbox("cb", c, checked).on_click(cx.listener(..)))
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Palette {
+    /// `--background`.
+    pub bg: Hsla,
+    /// `--toolbar-background` (the titlebar and inactive tab-strip surface).
+    pub toolbar_bg: Hsla,
+    /// `--foreground`.
+    pub fg: Hsla,
+    /// `--muted-foreground` (the "secondary text" colour).
+    pub muted: Hsla,
+    /// `--border`.
+    pub border: Hsla,
+    /// `--muted` (the muted *surface*, not the muted text colour).
+    pub muted_bg: Hsla,
+    /// `--input` (the border of form controls; see [`Palette::field_bg`] for
+    /// their fill).
+    pub input: Hsla,
+    /// `--field-bg`: the resting fill of form controls (the surface in light
+    /// themes, the muted surface in dark ones).
+    pub field_bg: Hsla,
+    /// `--field-ring`: the focus border of form controls.
+    pub field_ring: Hsla,
+    /// Whether the active theme is dark (picks shadow strength).
+    pub is_dark: bool,
+    /// `--ring` (the focus ring).
+    pub ring: Hsla,
+    /// `--card` (raised surfaces: cards, panels).
+    pub card: Hsla,
+    /// `--card-foreground`.
+    pub card_fg: Hsla,
+    /// `--popover` (menus, dropdowns, floating cards).
+    pub popover: Hsla,
+    /// `--popover-foreground`.
+    pub popover_fg: Hsla,
+    /// `--sidebar` (navigation rails: settings sidebar, dock panels).
+    pub sidebar: Hsla,
+    /// `--sidebar-foreground`.
+    pub sidebar_fg: Hsla,
+    /// `--sidebar-border`.
+    pub sidebar_border: Hsla,
+    /// `--accent` (neutral hover fill).
+    pub accent: Hsla,
+    /// `--accent-foreground`.
+    pub accent_fg: Hsla,
+    /// `--surface-hover-strong`: hover on an already-hovered fill.
+    pub hover_strong: Hsla,
+    /// `--surface-sunken`: the one selected/active fill (Ciel §8), always paired
+    /// with a semibold label — never an accent tint.
+    pub sunken: Hsla,
+    /// `--line-strong`: popover/dialog hairlines, active segment rings.
+    pub line_strong: Hsla,
+    /// `--line-subtle`: row separators inside a filled group.
+    pub line_subtle: Hsla,
+    /// `--action-surface`: the neutral high-contrast primary-action fill.
+    pub action: Hsla,
+    /// `--action-foreground`.
+    pub action_fg: Hsla,
+    /// `--action-hover`.
+    pub action_hover: Hsla,
+    /// `--action-active`.
+    pub action_active: Hsla,
+    /// `--scrim`: dialog/overlay backdrop.
+    pub scrim: Hsla,
+    /// Canonical selected/active fill — alias of [`Palette::sunken`].
+    pub selected_fill: Hsla,
+    /// The accent (`--accent` blue) marker for genuine "active/changed" state
+    /// (toggled icons, match highlights) — never a row selection.
+    pub selected_accent: Hsla,
+    /// `--primary`.
+    pub primary: Hsla,
+    /// `--primary-foreground`.
+    pub primary_fg: Hsla,
+    /// `--secondary`.
+    pub secondary: Hsla,
+    /// `--secondary-foreground`.
+    pub secondary_fg: Hsla,
+    /// `--destructive`.
+    pub destructive: Hsla,
+    /// Status `error`.
+    pub error: Hsla,
+    /// Status `warning`.
+    pub warning: Hsla,
+    /// Status `info`.
+    pub info: Hsla,
+    /// Status `success`.
+    pub success: Hsla,
+    /// The canvas gradient behind the window, top to bottom, and its
+    /// horizontal wash (`float.canvas_*`). Alphas are already scaled by the
+    /// surface material so Glassy and background images show through.
+    pub canvas: [Hsla; 4],
+    pub canvas_tint: Hsla,
+    /// A floating card's fill and rim, at rest and focused (`float.pane*`).
+    pub pane: Hsla,
+    pub pane_focused: Hsla,
+    /// A framed dock's card fill (Sidebar role, stacked over the canvas).
+    pub dock_card: Hsla,
+    pub pane_line: Hsla,
+    pub pane_line_focused: Hsla,
+    /// The tab track pill, its rim, the selected tab's pill and the divider
+    /// between inactive tabs (`float.track*`, `float.tab_*`).
+    pub track: Hsla,
+    pub track_line: Hsla,
+    pub tab_active: Hsla,
+    pub tab_separator: Hsla,
+    /// Neutral hover / pressed overlays for borderless controls
+    /// (`float.hover` / `float.pressed`).
+    pub hover: Hsla,
+    pub pressed: Hsla,
+    /// Elevation shadows (`Theme::shadows`); read them through
+    /// [`Palette::row_shadow`] and friends.
+    shadows: PaletteShadows,
+    /// The active `--radius` family — already scaled by the T20-007
+    /// `corner_radius_scale` metric (via [`UiTheme::radius`]).
+    pub radius: RadiusScale,
+    /// The T20-007 UI-density spacing multiplier (`0.85` / `1.0` / `1.15`).
+    /// Feed spacing/size literals through [`Palette::space`] rather than
+    /// multiplying by hand.
+    pub density: f32,
+    /// UI-font rem scale used by controls whose dimensions track text size.
+    pub ui_font_scale: f32,
+    /// Motion tokens: the active [`crate::animation::MotionLevel`], the theme durations and
+    /// easing curves (see [`crate::animation`]).
+    pub motion: MotionPrefs,
+}
+
+impl Palette {
+    /// Snapshot the tokens off any [`UiTheme`] (the runtime `ThemeStore`, or a
+    /// bare `Theme` in tests).
+    pub fn from_theme(theme: &impl UiTheme) -> Self {
+        let t = theme.theme();
+        let core = &t.core;
+        let status = &t.status;
+        let translucent = theme.surface_material();
+        let f = &t.float;
+        // The canvas fades with the surface material; opaque keeps the stops.
+        // Cards sit on this canvas, so both layers use the *stacked* opacity:
+        // together they are as glassy as the flat Compact surface.
+        let canvas_alpha = VibrancyLayer::Canvas.stacked_opacity_in(translucent);
+        let fade = |c: Hsla| Hsla {
+            a: c.a * canvas_alpha,
+            ..c
+        };
+        let shadows = &t.shadows;
+        // GPUI paints a box-shadow quad under the whole box, so a translucent
+        // card would show its own shadow through its fill (darkening the glass
+        // to near-opaque). Glass surfaces keep only the rim.
+        let no_shadow = !matches!(translucent, labonair_theme_tokens::SurfaceMaterial::Opaque);
+        let card_shadow =
+            |layers: &[_]| ShadowStack::from_layers(if no_shadow { &[] } else { layers });
+        Self {
+            canvas: [
+                fade(f.canvas_top),
+                fade(f.canvas_mid),
+                fade(f.canvas_low),
+                fade(f.canvas_bottom),
+            ],
+            canvas_tint: fade(f.canvas_tint),
+            pane: VibrancyLayer::Canvas.resolve_stacked(f.pane, translucent),
+            pane_focused: VibrancyLayer::Canvas.resolve_stacked(f.pane_focused, translucent),
+            dock_card: VibrancyLayer::Sidebar.resolve_stacked(t.sidebar.background, translucent),
+            pane_line: f.pane_border,
+            pane_line_focused: f.pane_border_focused,
+            track: f.track,
+            track_line: f.track_border,
+            tab_active: f.tab_active,
+            tab_separator: f.tab_separator,
+            hover: f.hover,
+            pressed: f.pressed,
+            shadows: PaletteShadows {
+                row: ShadowStack::from_layers(&shadows.row),
+                pane: card_shadow(&shadows.pane),
+                pane_focused: card_shadow(&shadows.pane_focused),
+                popover: ShadowStack::from_layers(&shadows.popover),
+                modal: ShadowStack::from_layers(&shadows.modal),
+            },
+            bg: theme.content_fill(VibrancyLayer::Canvas, core.background),
+            toolbar_bg: VibrancyLayer::Toolbar.resolve(t.surface.toolbar, translucent),
+            fg: core.foreground,
+            muted: core.muted_foreground,
+            border: VibrancyLayer::Divider.resolve(core.border, translucent),
+            muted_bg: core.muted,
+            input: core.input,
+            field_bg: VibrancyLayer::Control.resolve(
+                if t.is_dark {
+                    core.muted
+                } else {
+                    core.background
+                },
+                translucent,
+            ),
+            field_ring: t.border.focused,
+            is_dark: t.is_dark,
+            ring: core.ring,
+            card: VibrancyLayer::Card.resolve(core.card, translucent),
+            card_fg: core.card_foreground,
+            popover: VibrancyLayer::Popover.resolve(core.popover, translucent),
+            popover_fg: core.popover_foreground,
+            sidebar: VibrancyLayer::Sidebar.resolve(t.sidebar.background, translucent),
+            sidebar_fg: t.sidebar.foreground,
+            sidebar_border: VibrancyLayer::Divider.resolve(t.sidebar.border, translucent),
+            accent: core.accent,
+            accent_fg: core.accent_foreground,
+            hover_strong: t.surface.hover_strong,
+            sunken: t.surface.sunken,
+            line_strong: t.border.strong,
+            line_subtle: t.border.subtle,
+            action: t.surface.action,
+            action_fg: t.surface.action_foreground,
+            action_hover: t.surface.action_hover,
+            action_active: t.surface.action_active,
+            scrim: Hsla {
+                h: 0.0,
+                s: 0.0,
+                l: 0.0,
+                a: if t.is_dark { 0.55 } else { 0.30 },
+            },
+            selected_fill: t.surface.sunken,
+            selected_accent: core.primary,
+            primary: core.primary,
+            primary_fg: core.primary_foreground,
+            secondary: core.secondary,
+            secondary_fg: core.secondary_foreground,
+            destructive: core.destructive,
+            error: status.error,
+            warning: status.warning,
+            info: status.info,
+            success: status.success,
+            radius: theme.radius(),
+            density: theme.metrics().density.spacing_scale(),
+            ui_font_scale: theme.metrics().ui_font_size / 16.0,
+            motion: MotionPrefs::from_theme(theme),
+        }
+    }
+
+    /// The floating-layer shadow (`shadows.popover`): menus, dropdowns,
+    /// tooltips and toasts.
+    pub fn popover_shadow(&self) -> Vec<BoxShadow> {
+        self.shadows.popover.to_box_shadows()
+    }
+
+    /// The dialog / command-palette shadow (`shadows.modal`).
+    pub fn modal_shadow(&self) -> Vec<BoxShadow> {
+        self.shadows.modal.to_box_shadows()
+    }
+
+    /// A raised control at rest (`shadows.row`): the selected tab pill.
+    pub fn row_shadow(&self) -> Vec<BoxShadow> {
+        self.shadows.row.to_box_shadows()
+    }
+
+    /// A floating card (`shadows.pane` / `shadows.pane_focused`).
+    pub fn pane_shadow(&self, focused: bool) -> Vec<BoxShadow> {
+        if focused {
+            self.shadows.pane_focused.to_box_shadows()
+        } else {
+            self.shadows.pane.to_box_shadows()
+        }
+    }
+
+    /// A spacing/size literal (px) scaled by the active UI density (T20-007).
+    /// Primitives use this for every padding / gap / height / fixed layout
+    /// dimension instead of a bare `px(..)`. Hairlines (1px borders/dividers),
+    /// icon glyph sizes and `text_size` are *typographic*, not spacing, and
+    /// stay as literals (`docs/design-system.md`).
+    pub fn space(&self, value: f32) -> Pixels {
+        px(value * self.density)
+    }
+
+    /// A control dimension scaled by both the UI density and the active UI
+    /// font size, matching rem-sized native controls.
+    pub fn control_space(&self, value: f32) -> Pixels {
+        px(value * self.density * self.ui_font_scale)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use labonair_theme_tokens::Theme;
+
+    struct TestTheme(Theme);
+    impl UiTheme for TestTheme {
+        fn theme(&self) -> &Theme {
+            &self.0
+        }
+    }
+
+    struct GlassTheme(Theme);
+    impl UiTheme for GlassTheme {
+        fn theme(&self) -> &Theme {
+            &self.0
+        }
+        fn metrics(&self) -> labonair_theme_tokens::ThemeMetrics {
+            labonair_theme_tokens::ThemeMetrics {
+                translucent_surfaces: true,
+                ..Default::default()
+            }
+        }
+    }
+
+    /// Comfortable layout: a card over the canvas must be exactly as glassy as
+    /// the flat Compact surface, not the compounded product of both layers.
+    #[test]
+    fn card_over_canvas_is_as_glassy_as_the_flat_surface() {
+        for theme in [Theme::dark(), Theme::light()] {
+            let c = Palette::from_theme(&GlassTheme(theme.clone()));
+            let flat = 1.0
+                - VibrancyLayer::Canvas.opacity_in(GlassTheme(theme.clone()).surface_material());
+            let canvas_a = c.canvas[0].a / theme.float.canvas_top.a;
+            let stacked = (1.0 - canvas_a) * (1.0 - c.pane.a / theme.float.pane.a);
+            assert!(c.pane.a < 1.0 && c.canvas[0].a < 1.0 && c.dock_card.a < 1.0);
+            assert!((stacked - flat).abs() < 1e-4, "{stacked} vs {flat}");
+        }
+    }
+
+    /// A shadow quad is painted under the whole card; on glass it would show
+    /// through the fill, so translucent cards carry no shadow.
+    /// Content inside a Comfortable glass card adds no fill of its own.
+    #[test]
+    fn content_inside_a_glass_card_is_transparent() {
+        let c = Palette::from_theme(&GlassTheme(Theme::dark()));
+        assert_eq!(c.bg.a, 0.0);
+    }
+
+    #[test]
+    fn glass_cards_drop_their_shadow() {
+        let c = Palette::from_theme(&GlassTheme(Theme::dark()));
+        assert!(c.pane_shadow(false).is_empty() && c.pane_shadow(true).is_empty());
+    }
+
+    #[test]
+    fn snapshot_matches_the_theme_tokens() {
+        let theme = TestTheme(Theme::dark());
+        let c = Palette::from_theme(&theme);
+        assert_eq!(c.fg, theme.0.core.foreground);
+        // Opaque by default: the theme colors pass through untouched.
+        assert_eq!(c.toolbar_bg, theme.0.surface.toolbar);
+        assert_eq!(c.border, theme.0.core.border);
+        assert_eq!(c.sunken, theme.0.surface.sunken);
+        assert_eq!(c.selected_fill, c.sunken);
+        assert_eq!(c.warning, theme.0.status.warning);
+        assert_eq!(c.radius.sm, theme.0.radius.sm);
+    }
+
+    #[test]
+    fn shadows_and_float_colors_come_from_the_theme() {
+        let theme = TestTheme(Theme::light());
+        let c = Palette::from_theme(&theme);
+        assert_eq!(c.pane_shadow(false).len(), theme.0.shadows.pane.len());
+        let focused = c.pane_shadow(true);
+        assert_eq!(focused[1].color, theme.0.shadows.pane_focused[1].color);
+        assert_eq!(
+            c.popover_shadow()[0].color,
+            theme.0.shadows.popover[0].color
+        );
+        assert_eq!(
+            c.canvas[0], theme.0.float.canvas_top,
+            "opaque keeps the stops"
+        );
+        assert_eq!(c.hover, theme.0.float.hover);
+    }
+
+    #[test]
+    fn space_scales_with_density() {
+        use gpui::px;
+        let mut c = Palette::from_theme(&TestTheme(Theme::dark()));
+        assert_eq!(c.density, 1.0);
+        assert_eq!(c.space(40.0), px(40.0));
+        c.density = 0.85;
+        assert_eq!(c.space(40.0), px(34.0));
+        c.density = 1.15;
+        assert_eq!(c.space(40.0), px(46.0));
+    }
+
+    #[test]
+    fn control_space_scales_with_density_and_ui_font_size() {
+        use gpui::px;
+        let mut c = Palette::from_theme(&TestTheme(Theme::dark()));
+        c.density = 0.85;
+        c.ui_font_scale = 1.25;
+        assert_eq!(c.control_space(32.0), px(34.0));
+    }
+
+    #[test]
+    fn light_and_dark_differ() {
+        assert_ne!(
+            Palette::from_theme(&TestTheme(Theme::dark())),
+            Palette::from_theme(&TestTheme(Theme::light()))
+        );
+    }
+}

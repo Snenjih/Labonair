@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+use gpui::{
+    point, prelude::*, px, size, App, Application, Bounds, TitlebarOptions, WindowBounds,
+    WindowOptions,
+};
+
+use gpui_component::Root;
+
+mod dock_icon;
+use labonair_shell::{window_state, AppComposition, AppShell};
+use tracing_subscriber::EnvFilter;
+
+/// `tracing` logging: default-off for noisy deps, `debug` for our crates, all
+/// overridable via `RUST_LOG`.
+fn init_logging() {
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,labonair=debug"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_ansi(true)
+        .with_target(true)
+        .init();
+}
+
+fn main() {
+    init_logging();
+
+    let runtime = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
+    let tokio_handle = runtime.handle().clone();
+    let guard = runtime.enter();
+
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("labonair");
+    let composition =
+        AppComposition::new(&data_dir).expect("failed to initialize application state");
+    composition.spawn_workers();
+    #[cfg(debug_assertions)]
+    composition.spawn_event_logger();
+
+    // T19-009: one-time migration of the legacy `preferences`/`editor`/`mcp`
+    // split into the flat `SettingsContent` area layout (+ `keymap.json` for
+    // keybind overrides). Hosts remain owned by their SQLite registry; no
+    // host definitions are projected into Settings.
+    labonair_shell::migrate_legacy_settings();
+
+    // Keep both the runtime and the entered guard alive for the process: GPUI
+    // drives its foreground executor (`cx.spawn`) on this same main thread,
+    // and code reached from it — e.g. `labonair-git-transport`'s local
+    // executor — calls the ambient `tokio::task::spawn_blocking`/
+    // `Handle::current()` instead of the explicit `tokio_handle` threaded
+    // elsewhere. Dropping the guard here removed the main thread's Tokio
+    // context before the app even opened its window, so every local git
+    // command run from GPUI's event loop (e.g. the git-gutter refresh on
+    // every file open) panicked with "there is no reactor running" and
+    // aborted the whole process.
+    std::mem::forget(guard);
+    std::mem::forget(runtime);
+
+    tracing::info!("Labonair-rust starting");
+
+    let (open_urls_tx, open_urls_rx) = tokio::sync::mpsc::unbounded_channel();
+    let application = Application::new().with_assets(labonair_shell::Assets);
+    application.on_open_urls(move |urls| {
+        let _ = open_urls_tx.send(urls);
+    });
+    application.run(move |cx: &mut App| {
+        // Dock / cmd-tab icon for the un-bundled `cargo run` binary
+        // (a packaged `.app` uses the embedded `icon.icns` instead).
+        dock_icon::set_dock_icon();
+        labonair_shell::init_fonts(cx);
+        // T19-002: layered SettingsStore (default < user < …) — before
+        // the first render, before gpui-component so nothing built below
+        // can race a `XSettings::get(cx)` call against an unpopulated
+        // store.
+        labonair_shell::init_settings(cx);
+        gpui_component::init(cx);
+        let bounds = window_state::load()
+            .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
+        let window = cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_background: labonair_shell::window_background(cx),
+                    titlebar: Some(TitlebarOptions {
+                        // Reference uses macOS `titleBarStyle: "Overlay"` +
+                        // `hiddenTitle: true`: one transparent overlay titlebar
+                        // with the traffic lights floating over the app's own
+                        // header. No OS-drawn title text.
+                        title: None,
+                        appears_transparent: true,
+                        // Vertically centre the 14px-tall traffic lights inside
+                        // the 40px custom header.
+                        traffic_light_position: Some(point(px(19.0), px((40.0 - 14.0) / 2.0))),
+                    }),
+                    window_min_size: Some(size(px(720.0), px(480.0))),
+                    // Moves start from the titlebar background only
+                    // (`labonair_shell::window_drag`), never via a tab.
+                    is_movable: false,
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let theme = labonair_shell::init_theme(window.appearance(), cx);
+                    labonair_shell::apply_window_blur(window, cx);
+                    window
+                        .observe_window_appearance({
+                            let theme = theme.clone();
+                            move |window, cx| {
+                                let appearance = window.appearance();
+                                theme.update(cx, |store, cx| {
+                                    store.set_system_appearance(appearance, cx)
+                                });
+                            }
+                        })
+                        .detach();
+                    let background = labonair_shell::init_background(cx);
+                    let notifications = labonair_shell::init_notifications(cx);
+                    labonair_shell::init_activity(cx);
+                    let composition = composition.clone();
+                    let tokio_handle = tokio_handle.clone();
+                    // The window's first layer must be a `gpui_component::Root`
+                    // so gpui-component primitives (Input, popovers, dialogs,
+                    // notifications) can reach their deferred render layers.
+                    let shell = cx.new(|cx| {
+                        AppShell::new(
+                            theme,
+                            background,
+                            notifications,
+                            composition,
+                            tokio_handle,
+                            window,
+                            cx,
+                        )
+                    });
+                    let shell_view: gpui::AnyView = shell.into();
+                    cx.new(|cx| Root::new(shell_view, window, cx))
+                },
+            )
+            .expect("failed to open window");
+        labonair_shell::init_menus(cx);
+        cx.activate(true);
+        window
+            .update(cx, |_, window, _| window.activate_window())
+            .expect("failed to activate main window");
+
+        let mut open_urls_rx = open_urls_rx;
+        cx.spawn(async move |cx| {
+            while let Some(urls) = open_urls_rx.recv().await {
+                let handled = cx.update(|cx| {
+                    urls.into_iter()
+                        .filter(|url| labonair_shell::handle_open_url(url, cx))
+                        .count()
+                });
+                if handled.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    });
+}

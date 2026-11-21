@@ -1,0 +1,29 @@
+[package]
+name = "labonair-panel-snippets"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_panel_snippets"
+path = "src/panel_snippets.rs"
+
+[dependencies]
+gpui = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-panel = { path = "../panel" }
+labonair-notifications = { path = "../notifications" }
+labonair-hosts = { path = "../hosts" }
+labonair-snippets = { path = "../snippets" }
+labonair-snippets-host = { path = "../snippets-host" }
+labonair-persistence = { path = "../persistence" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

@@ -1,0 +1,55 @@
+[package]
+name = "labonair-workspace"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_workspace"
+path = "src/workspace.rs"
+
+[dependencies]
+gpui = { workspace = true }
+image = { workspace = true }
+resvg = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+dirs = { workspace = true }
+jsonc-parser = { version = "0.23", features = ["serde"] }
+labonair-theme = { path = "../theme" }
+labonair-background-host = { path = "../background-host" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-gpui-ext = { path = "../gpui-ext" }
+labonair-activity-ui = { path = "../activity-ui" }
+labonair-notifications = { path = "../notifications" }
+labonair-command-palette = { path = "../command-palette" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
+labonair-keymap = { path = "../keymap" }
+labonair-keymap-ui = { path = "../keymap-ui" }
+labonair-panel = { path = "../panel" }
+labonair-explorer-host = { path = "../explorer-host" }
+labonair-panel-git-graph = { path = "../panel-git-graph" }
+labonair-hosts = { path = "../hosts" }
+labonair-hosts-host = { path = "../hosts-host" }
+labonair-hosts-ui = { path = "../hosts-ui" }
+labonair-terminal = { path = "../terminal" }
+labonair-editor = { path = "../editor" }
+labonair-editor-ui = { path = "../editor-ui" }
+labonair-git = { path = "../git" }
+labonair-filesystem = { path = "../filesystem" }
+labonair-ssh = { path = "../ssh" }
+labonair-sftp = { path = "../sftp" }
+labonair-transfers = { path = "../transfers" }
+labonair-ai = { path = "../ai" }
+labonair-settings = { path = "../settings" }
+labonair-settings-json = { path = "../settings-json" }
+labonair-mcp-core = { path = "../mcp-core" }
+labonair-workspace-storage = { path = "../workspace-storage" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

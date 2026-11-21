@@ -1,0 +1,26 @@
+[package]
+name = "labonair-editor-ui"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_editor_ui"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-editor = { path = "../editor" }
+labonair-filesystem = { path = "../filesystem" }
+labonair-activity-ui = { path = "../activity-ui" }
+labonair-notifications = { path = "../notifications" }
+labonair-panel = { path = "../panel" }
+labonair-settings = { path = "../settings" }
+labonair-settings-json = { path = "../settings-json" }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+tokio = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

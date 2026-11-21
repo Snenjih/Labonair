@@ -1,0 +1,310 @@
+# R07-001 — Verify the coherent product surface
+
+## Status
+
+`🔄 In Progress`
+
+## Owner
+
+- Module: application composition with every capability owner
+- Capability-matrix row: [`../../docs/modules.md`](../../modules.md)
+- Composition entry point: application startup and registered surfaces
+
+## Dependencies
+
+- `R06-001-backend-adapter-eradication`
+
+## Goal
+
+Prove that the target architecture, documentation, dependency graph, and
+user-facing product behavior agree. This is an acceptance gate, not a place
+to introduce new features.
+
+## Scope
+
+- In scope: full capability matrix audit, repository layout, registry
+  ownership, Settings boundary, notifications, command/keymap flows, hosts,
+  themes, transfers, standalone/project workflows, and visual consistency.
+- Out of scope for this bounded acceptance task: expanding product scope or
+  adding capabilities. The product decision and feature scope are defined by
+  [`../../docs/product.md`](../../product.md) and the owner-backed
+  capability and workflow contracts.
+
+## Contracts and ownership
+
+- Normative sources: `docs/product.md`, `docs/architecture.md`,
+  `docs/modules.md`, `docs/registries.md`, `docs/design-system.md`,
+  `docs/repository-layout.md`, and `docs/architecture.md`.
+- Evidence sources: capability matrix, architecture inventory, active task
+  queue, dependency verifier, focused tests, and visual captures.
+- Working evidence matrix: [`../../docs/archive/audits/product-surface-acceptance.md`](../../archive/audits/product-surface-acceptance.md)
+- Each discrepancy becomes a bounded follow-up task; it is not silently
+  accepted as a target statement.
+
+## Dependencies
+
+- Existing edges removed: any final transitional dependency or duplicate
+  surface found by the audit.
+- New edges: none.
+- Dependency verifier change: none except removal of obsolete allowances.
+
+## Persistence and migration
+
+- Settings, hosts, themes, keymap, transfers, and session data must each have
+  one documented owner and migration story.
+- No audit step may delete user data; unresolved data migrations are blockers
+  for the relevant capability, not reasons to hide the finding.
+
+## User-visible behavior
+
+- Verify local and remote standalone workflows, project workspace workflows,
+  notification history, transfer statusbar access, and keyboard navigation.
+- Passive messages appear only in the notification dropdown; actionable
+  controls remain where the user must decide or correct input.
+- No undocumented permanent chrome, toast system, duplicate settings surface,
+  or feature-local styling variant remains.
+
+## Implementation plan
+
+1. Run source, metadata, documentation, and registry audits → record evidence
+   for every capability and disposition.
+2. Run full tests, dependency checks, and visual state matrix → compare against
+   the design contract.
+3. Resolve discrepancies or create explicitly ordered follow-up tasks → verify
+   the final tree contains no unowned capability or stale authority.
+
+## Acceptance criteria
+
+- [x] Every capability has one owner, one canonical crate, one entry point,
+      and one documented persistence/notification story in the capability
+      matrix and registry contracts; remaining implementation gaps are marked
+      explicitly as partial or pending.
+- [x] No normative document presents an archived task or report as current
+      authority; `docs/README.md` and `tasks/rework/README.md` define the
+      current documentation and implementation sources.
+- [x] Dependency graph, source layout, and inventory agree; the dependency
+      verifier reports an acyclic graph with no untracked boundary violations.
+- [x] All repository verification gates pass on the current tree.
+- [ ] Normal, narrow, focused, empty, loading, error, long-list, and overlay
+      states are visually checked for each permanent surface.
+- [x] Any remaining product idea is explicitly keep, redesign, defer, or
+      remove in the capability matrix and product dispositions; none remains
+      an implicit obligation.
+
+## Removal condition
+
+This task is complete only when the audit produces no unowned capability,
+contradictory normative rule, undocumented compatibility path, or unverified
+permanent UI surface.
+
+## Notes and follow-ups
+
+This gate does not authorize adding extensions or remote downloads. Those need
+a separate product decision after the core workflow is stable.
+
+## Audit findings
+
+- [x] The broad backend facade is absent from the workspace and the dependency
+      graph; R06-001 records the removal evidence.
+- [x] Current normative documents identify the product scope, capability
+      owners, registry contracts, Settings boundary, and deferred ideas.
+- [x] Product command behavior is owner-registered. Workspace, Terminal,
+  Hosts-UI, Settings, Settings-UI, Keymap-UI, Updater-UI, and Command
+  Palette now contribute executable handlers through the typed runtime
+  registry. The shell command table retains only the native Fullscreen
+  action and the debug-only component gallery, which are composition/native
+  concerns rather than product capability behavior.
+- [x] The active source audit found no passive toast renderer or duplicate
+      operation-error surface. The Explorer clipboard strip and editor conflict
+      banner are actionable decision surfaces, not passive error reporting;
+      operational failures are published to the notification registry.
+- [x] The AI error model no longer embeds a removed Settings → AI route or a
+      chat-error-banner assumption; callers choose the notification or future
+      actionable surface at the capability boundary.
+- [x] Theme registry selections remain persistable values, but `appTheme` and
+      `themeVariantOverrides` are no longer registered as editable Settings
+      fields; theme management now has only the Themes palette surface.
+- [x] Hosts management uses the canonical `OpenHosts` command identity;
+      `connections::OpenHostSettings` remains readable only as a keymap
+      compatibility alias and is not discoverable.
+- [x] The Notifications dropdown now composes notification rows from the
+      shared UI-kit `ListItem`; its expansion, read-state, scrolling, and
+      action behavior remain owned by Notifications.
+- [x] Dynamic palette submenu actions now cross the typed `PaletteAction`
+      contract and are dispatched through
+      `labonair-command-palette-runtime::PaletteActionHandlerRegistry`.
+      Workspace, Hosts-UI, Themes/Settings-UI, Source Control, and Snippets
+      own their action matching; `shell/src/actions.rs` only forwards opaque
+      actions.
+- [x] The final status-item source audit found only typed owner registrations
+      composed by `shell/src/status_items.rs`; no feature-owned statusbar
+      behavior remains in the shell.
+- [x] Known legacy Settings input is classified once by the Settings owner;
+      retained migration and capability-owned paths are quiet while unknown
+      future paths remain non-fatal warnings. R07-003 records the disposition
+      and focused regression evidence.
+- [ ] A complete visual state matrix is still required for the permanent
+      surfaces. The working matrix is recorded in
+      [`../../docs/archive/audits/product-surface-acceptance.md`](../../archive/audits/product-surface-acceptance.md);
+      all applicable visual cells remain pending until native-bundle evidence
+      is recorded. This matrix also carries the sole remaining acceptance item
+      for [`R07-004`](../archive/rework-done/R07-004-explorer-host-contract.md) (Explorer layer) and
+      [`R07-005`](../archive/rework-done/R07-005-background-presentation-boundary.md) (terminal /
+      App-scope background layers), whose structural work has landed and whose
+      other criteria are met.
+- [ ] Native launch confirms the Rust window exists, but macOS currently denies
+      Screen Recording to the capture runner. A historical exact-bundle
+      diagnostic capture exists in the audit log, but it is not a durable
+      registry artifact; the complete visual matrix remains open until all
+      states are inspected and recorded under the current evidence contract.
+- [ ] Source Control visual follow-up: the panel now uses a compact flat tab
+      strip, trailing staging controls, visible selected
+      rows, repository push controls, and an editor-like commit composer. The
+      native screenshot comparison remains pending until the capture runner
+      can identify the rendered Rust window.
+- [x] The PID validator accepts both absolute packaged paths and the relative
+      executable path reported by `cargo run -p labonair`; the retry reached the
+      correct native window before macOS denied the capture.
+
+## Verification run — 2026-09-12
+
+- `scripts/check-crate-deps.sh` — passed: 57 workspace crates, 227 internal
+  edges, acyclic, no untracked boundary violations.
+- `python3 scripts/check_rework_queue.py` — passed; R07-001 remains the active
+  task and R09 remains planned.
+- `python3 scripts/check_documentation.py` — passed: 13 normative docs and 93
+  Markdown files checked.
+- `cargo fmt --check` — failed on pre-existing formatting differences in
+  unrelated `command-palette`, `hosts-ui`, `panel-*`, `settings*`, and
+  `workspace` files; no formatting-only changes were made in this acceptance
+  task.
+- `cargo check --workspace --all-targets` — passed, with the existing unused
+  `cx` warning in `hosts-ui`.
+- `cargo clippy --workspace --all-targets -- -D warnings` — failed on existing
+  `hosts-ui` unused-variable/too-many-arguments lints and existing
+  `settings-ui` too-many-arguments/unnecessary-map-or lints; these are outside
+  R07-001 scope.
+- `cargo test --workspace` — passed after the sandbox-only first attempt was
+  repeated with the required elevated execution; all tests and doc-tests passed.
+- `LABONAIR_SMOKE_LAUNCH=1 scripts/smoke-test.sh` — passed: release bundle,
+  bundle metadata, core smoke tests, and exact Rust launch survived five
+  seconds.
+- `scripts/screenshot.sh /tmp/labonair-r07-native.png 94593` — passed with
+  exact Rust executable validation; the native evidence is recorded in the
+  acceptance matrix. The process was then stopped cleanly.
+
+R07-001 remains `In Progress`: structural and automated gates are evidenced,
+but the complete native visual-state matrix is not yet verified.
+
+## Baseline gate repair — 2026-09-12
+
+The repository-gate findings from the previous verification run were repaired
+with formatting-only changes and minimal local lint fixes. No R09/editor code
+or ADR was changed by this repair.
+
+### Formatting evidence
+
+Before the repair, `cargo fmt --all -- --check` reported these exact files:
+
+- `crates/command-palette/src/palette.rs`
+- `crates/hosts-ui/src/hosts.rs`
+- `crates/panel-git-graph/src/panel_git_graph.rs`
+- `crates/panel-scm/src/panel_scm.rs`
+- `crates/panel-snippets/src/panel_snippets.rs`
+- `crates/settings/src/concrete.rs`
+- `crates/settings-content/src/file_manager.rs`
+- `crates/settings-ui/src/panes/generic.rs`
+- `crates/shell/src/commands.rs`
+- `crates/workspace/src/command_provider.rs`
+- `crates/workspace/src/views/sftp.rs`
+
+`cargo fmt --all` was applied only to those reported Rust files. A subsequent
+`cargo fmt --all -- --check` passed.
+
+### Clippy evidence
+
+The first post-format Clippy run reported an unused `cx` in
+`hosts-ui/src/hosts.rs` and `too_many_arguments` in its two local field
+renderers. The repair removed the unused renderer/closure parameter and
+grouped the two visual booleans into a private `FieldRenderState`, preserving
+the existing rendering behavior.
+
+The next run exposed the remaining local `settings-ui` findings: the
+crate-private `render_field` helper had `too_many_arguments`, and one
+`map_or(true, ...)` could use `is_none_or(...)`. The helper now receives a
+private `FieldRowState`, is private because it has no external callers, and
+uses `is_none_or`.
+
+After these minimal changes:
+
+- `cargo clippy --workspace --all-targets -- -D warnings` — passed.
+- `cargo check --workspace --all-targets` — passed.
+- `cargo test --workspace` — passed outside the sandbox: all workspace unit,
+  integration, and doc tests passed; the initial sandbox run was blocked only
+  by the local HTTP-listener permission required by the AI client test.
+- `python3 scripts/check_rework_queue.py` — passed; R07-001 is still the only
+  active task and R09 remains planned.
+- `python3 scripts/check_documentation.py` — passed after the external native
+  screenshot artifact was recorded as a filesystem path rather than an
+  escaping Markdown link.
+- `git diff --check` — passed.
+
+The complete native visual-state matrix remains the only known R07-001
+acceptance blocker. R09 remains planned and was not started.
+
+## Documentation reform baseline — 2026-10-09
+
+The repository knowledge infrastructure needed to make this acceptance
+auditable is now implemented and passes its canonical checks:
+
+- `python3 scripts/verify.py --scope knowledge` — passed; documentation,
+  agent routes, queue, architecture, capability coverage, command/surface/menu
+  catalogs, workflows, Settings, performance, release, evidence, and MCP
+  automation checks are green.
+- `python3 scripts/verify.py --scope rust` — passed; formatting, workspace
+  check, Clippy with `-D warnings`, unit/integration tests, and doc-tests are
+  green.
+- `scripts/check-crate-deps.sh` — passed: 57 workspace crates, 227 internal
+  edges, acyclic, with the Explorer transport edges removed behind the
+  injected host contract.
+
+The reform sources and generated views make the remaining acceptance state
+explicit, but they do not close the visual gate. The native macOS matrix,
+including Explorer, background, narrow, focused, loading, error, long-list,
+and overlay states, remains `Pending` until exact-binary/PID evidence is
+captured on the supported host.
+
+## Structured visual evidence baseline — 2026-10-09
+
+The native acceptance matrix now has a checked machine-readable companion:
+
+- `docs/testing/visual-evidence.toml` derives all 11 surface records and 63
+  exact state labels from `docs/product/surfaces.toml`;
+- `scripts/check_visual_evidence.py` rejects missing/extra states, unsupported
+  statuses, unsafe artifact paths, and verified captures without exact
+  binary/PID/date/artifact fields;
+- `scripts/visual_capture_path.py` resolves only a declared surface/state and
+  commit to the deterministic artifact path, rejecting unknown states and
+  viewport mismatches; `.github/workflows/visual-native.yml` uses that helper
+  for one reviewer-inspected macOS capture at a time;
+- `scripts/check_visual_capture_path.py` exercises all 63 catalog states and
+  negative input cases in the visual verification scope;
+- `docs/generated/visual-evidence.md` is the generated per-surface screenshot
+  index and prints the deterministic future artifact path for every pending
+  state;
+- `python3 scripts/verify.py --scope visual` is the dedicated freshness and
+  schema gate.
+
+The registry intentionally contains zero accepted captures in this Linux
+session. The native macOS matrix remains `Pending`; no source inspection,
+process-only launch, or historical path is promoted to visual evidence.
+
+## Supplemental native Linux diagnostic — 2026-10-09
+
+The exact `target/debug/labonair` binary was launched under an isolated Xvfb
+display as PID `967190`, produced a 1200×800 X11 window, and survived the
+eight-second run. The diagnostic capture was `/tmp/labonair-linux-xvfb.png`.
+This confirms that the native GPUI process can render in a headless Linux
+diagnostic environment, but it does not satisfy the supported macOS R07
+matrix. The runner reported no X11 input pointers, so no keyboard/focus
+interaction evidence was accepted either.

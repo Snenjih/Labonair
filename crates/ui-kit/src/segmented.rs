@@ -1,0 +1,363 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! `SegmentedControl` — a row of mutually exclusive options where exactly one
+//! is selected.
+//!
+//! Port of `reference-src/src/components/ui/toggle-group.tsx` +
+//! `tabs.tsx`, which share the two looks this primitive exposes:
+//! * [`SegmentVariant::Outline`] — `toggleVariants.outline`:
+//!   `border border-input bg-transparent hover:bg-muted`, the pressed segment
+//!   keeps the accent border. This is the shape the port already uses.
+//! * [`SegmentVariant::Solid`] — `tabsListVariants.default`: a `bg-muted`
+//!   container whose active segment lifts to `bg-background`.
+//! * [`SegmentVariant::Flat`] — a full-width, borderless tab strip for dense
+//!   workspace panels.
+//!
+//! Replaces hand-rolled theme picker controls and the theme variant picker.
+//! The ModelPicker's
+//! All/Favorites/Recent model-picker strip is the same shape and can reuse
+//! this primitive when that surface is introduced.
+//!
+//! ```ignore
+//! segmented_control("theme-tabs", c, selected_key)
+//!     .segment("installed", "Installed")
+//!     .segment("community", "Community")
+//!     .on_select(cx.listener(|this, key: &SharedString, _w, cx| this.pick(key, cx)))
+//! ```
+
+use std::rc::Rc;
+
+use gpui::{
+    div, prelude::FluentBuilder, px, App, ClickEvent, Div, ElementId, FontWeight,
+    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    Styled, Window,
+};
+
+use crate::animation::state_fill;
+use crate::palette::Palette;
+use crate::DISABLED_OPACITY;
+
+/// Which of the two reference looks the control uses.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SegmentVariant {
+    /// Bordered pills; the active one takes the sunken fill and a semibold label.
+    #[default]
+    Outline,
+    /// A muted track whose active segment lifts to the surface colour with a
+    /// 1px `line-strong` ring (readable in dark mode too).
+    Solid,
+    /// A full-width, borderless tab strip. The active tab takes the sunken fill
+    /// and a semibold label (no underline); inactive text remains muted.
+    Flat,
+}
+
+/// Segment height/typography. Matches [`crate::ButtonSize`]'s naming.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SegmentSize {
+    /// 24px — statusbar / dense panel strips.
+    Xs,
+    /// 28px — the settings and picker strips (`--control-h-dense`).
+    #[default]
+    Sm,
+    /// 32px — standalone page-level tabs (`--control-h-sm`).
+    Md,
+}
+
+impl SegmentSize {
+    fn height(self) -> f32 {
+        match self {
+            SegmentSize::Xs => 24.0,
+            SegmentSize::Sm => 28.0,
+            SegmentSize::Md => 32.0,
+        }
+    }
+
+    fn text(self) -> f32 {
+        match self {
+            SegmentSize::Xs => 12.0,
+            SegmentSize::Sm => 13.0,
+            SegmentSize::Md => 13.0,
+        }
+    }
+}
+
+/// A segmented control. Build with [`segmented_control`].
+pub struct SegmentedControl {
+    id: SharedString,
+    c: Palette,
+    selected: SharedString,
+    variant: SegmentVariant,
+    size: SegmentSize,
+    disabled: bool,
+    segments: Vec<(SharedString, SharedString)>,
+    #[allow(clippy::type_complexity)]
+    on_select: Option<Rc<dyn Fn(&SharedString, &mut Window, &mut App)>>,
+}
+
+/// A [`SegmentedControl`] whose active segment is the one whose key equals
+/// `selected`.
+pub fn segmented_control(
+    id: impl Into<SharedString>,
+    c: Palette,
+    selected: impl Into<SharedString>,
+) -> SegmentedControl {
+    SegmentedControl {
+        id: id.into(),
+        c,
+        selected: selected.into(),
+        variant: SegmentVariant::default(),
+        size: SegmentSize::default(),
+        disabled: false,
+        segments: Vec::new(),
+        on_select: None,
+    }
+}
+
+impl SegmentedControl {
+    /// Append one segment (`key` identifies it, `label` is shown).
+    pub fn segment(mut self, key: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
+        self.segments.push((key.into(), label.into()));
+        self
+    }
+
+    /// Append many segments at once.
+    pub fn segments<K: Into<SharedString>, L: Into<SharedString>>(
+        mut self,
+        segments: impl IntoIterator<Item = (K, L)>,
+    ) -> Self {
+        self.segments
+            .extend(segments.into_iter().map(|(k, l)| (k.into(), l.into())));
+        self
+    }
+
+    pub fn variant(mut self, variant: SegmentVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    pub fn size(mut self, size: SegmentSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Dim + inert.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Fires with the key of the clicked segment.
+    pub fn on_select(
+        mut self,
+        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_select = Some(Rc::new(handler));
+        self
+    }
+
+    /// The key of the currently active segment, or `None` when `selected`
+    /// matches nothing. Lets call sites (and tests) assert the reported
+    /// selection without rendering.
+    pub fn selection(&self) -> Option<&SharedString> {
+        self.segments
+            .iter()
+            .find(|(k, _)| *k == self.selected)
+            .map(|(k, _)| k)
+    }
+}
+
+impl IntoElement for SegmentedControl {
+    type Element = Div;
+
+    fn into_element(self) -> Self::Element {
+        let (c, variant, size, disabled) = (self.c, self.variant, self.size, self.disabled);
+        let selected = self.selected.clone();
+        let handler = self.on_select.clone();
+        let group_id = self.id.clone();
+        let keys: Vec<_> = self.segments.iter().map(|(key, _)| key.clone()).collect();
+
+        let track = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .when(variant == SegmentVariant::Flat, |d| d.w_full())
+            .when(variant == SegmentVariant::Outline, |d| d.gap(c.space(6.0)))
+            .when(variant == SegmentVariant::Solid, |d| {
+                d.gap(c.space(2.0))
+                    .p(c.space(2.0))
+                    .rounded(px(c.radius.md))
+                    .bg(c.muted_bg)
+            })
+            .when(disabled, |d| d.opacity(DISABLED_OPACITY));
+
+        track.children(
+            self.segments
+                .into_iter()
+                .enumerate()
+                .map(move |(index, (key, label))| {
+                    let on = key == selected;
+                    let click_handler = handler.clone();
+                    let key_handler = handler.clone();
+                    let clicked = key.clone();
+                    let key_list = keys.clone();
+                    let segment_id = SharedString::from(format!("{group_id}-{key}"));
+                    // The active pill is an always-built layer that fades
+                    // between segments; label colour and weight flip at once.
+                    let (pill_fill, pill_border) = match variant {
+                        SegmentVariant::Solid => (c.bg, Some(c.line_strong)),
+                        SegmentVariant::Outline => (c.sunken, Some(c.line_strong)),
+                        SegmentVariant::Flat => (c.sunken, None),
+                    };
+                    let pill = state_fill(
+                        (ElementId::from(segment_id.clone()), "pill"),
+                        c,
+                        on,
+                        pill_fill,
+                        pill_border,
+                        px(if variant == SegmentVariant::Flat {
+                            0.0
+                        } else {
+                            c.radius.md
+                        }),
+                        px(if variant == SegmentVariant::Outline {
+                            1.0
+                        } else {
+                            0.0
+                        }),
+                    );
+                    div()
+                        .id(segment_id)
+                        .relative()
+                        .flex()
+                        .flex_shrink_0()
+                        .when(variant == SegmentVariant::Flat, |d| d.flex_1())
+                        .items_center()
+                        .justify_center()
+                        .h(c.space(size.height()))
+                        .px(c.space(12.0))
+                        .when(variant != SegmentVariant::Flat, |d| {
+                            d.rounded(px(c.radius.md))
+                        })
+                        .text_size(px(size.text()))
+                        .text_color(if on { c.fg } else { c.muted })
+                        .when(variant == SegmentVariant::Outline, |d| {
+                            d.border_1().border_color(c.border)
+                        })
+                        .when(on, |d| d.font_weight(FontWeight::SEMIBOLD))
+                        .when(!disabled, |d| {
+                            d.tab_index(0)
+                                .focus(|style| style.border_1().border_color(c.ring))
+                        })
+                        .when(!disabled, |d| {
+                            d.cursor_pointer().hover(move |s| {
+                                if variant == SegmentVariant::Flat {
+                                    s.bg(c.muted_bg.opacity(0.45))
+                                } else {
+                                    s.bg(c.muted_bg)
+                                }
+                            })
+                        })
+                        .child(pill)
+                        .child(label)
+                        .when(!disabled, move |d| match click_handler {
+                            Some(h) => d.on_click(move |_: &ClickEvent, w, cx| h(&clicked, w, cx)),
+                            None => d,
+                        })
+                        .when(!disabled, move |d| {
+                            d.on_key_down(move |event, window, cx| {
+                                let key = event.keystroke.key.as_str();
+                                if matches!(key, "enter" | "space") {
+                                    cx.stop_propagation();
+                                    return;
+                                }
+
+                                let forward = match key {
+                                    "right" => true,
+                                    "left" => false,
+                                    _ => return,
+                                };
+                                if let Some(next_index) =
+                                    adjacent_segment_index(index, key_list.len(), forward)
+                                {
+                                    if let Some(handler) = &key_handler {
+                                        handler(&key_list[next_index], window, cx);
+                                    }
+                                    if forward {
+                                        window.focus_next();
+                                    } else {
+                                        window.focus_prev();
+                                    }
+                                    cx.stop_propagation();
+                                }
+                            })
+                        })
+                }),
+        )
+    }
+}
+
+pub(crate) fn adjacent_segment_index(index: usize, len: usize, forward: bool) -> Option<usize> {
+    if len == 0 || index >= len {
+        return None;
+    }
+    Some(if forward {
+        (index + 1) % len
+    } else {
+        (index + len - 1) % len
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::test_palette;
+
+    #[test]
+    fn keyboard_navigation_wraps_between_segments() {
+        assert_eq!(adjacent_segment_index(0, 3, false), Some(2));
+        assert_eq!(adjacent_segment_index(2, 3, true), Some(0));
+        assert_eq!(adjacent_segment_index(1, 3, true), Some(2));
+        assert_eq!(adjacent_segment_index(3, 3, true), None);
+        assert_eq!(adjacent_segment_index(0, 0, true), None);
+    }
+
+    #[test]
+    fn reports_the_active_segment() {
+        let c = test_palette();
+        let sc = segmented_control("tabs", c, "community")
+            .segment("installed", "Installed")
+            .segment("community", "Community");
+        assert_eq!(
+            sc.selection().map(SharedString::to_string).as_deref(),
+            Some("community")
+        );
+
+        // A selection that matches no segment reports nothing rather than
+        // silently highlighting the first one.
+        let none = segmented_control("tabs", c, "nope").segment("installed", "Installed");
+        assert!(none.selection().is_none());
+    }
+
+    #[test]
+    fn builds_in_every_variant_size_and_state() {
+        let c = test_palette();
+        for v in [
+            SegmentVariant::Outline,
+            SegmentVariant::Solid,
+            SegmentVariant::Flat,
+        ] {
+            for s in [SegmentSize::Xs, SegmentSize::Sm, SegmentSize::Md] {
+                for disabled in [true, false] {
+                    let _ = segmented_control("g", c, "a")
+                        .segments([("a", "A"), ("b", "B")])
+                        .variant(v)
+                        .size(s)
+                        .disabled(disabled)
+                        .on_select(|_, _, _| {})
+                        .into_element();
+                }
+            }
+        }
+    }
+}

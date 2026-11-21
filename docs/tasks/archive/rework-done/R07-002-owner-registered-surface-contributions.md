@@ -1,0 +1,87 @@
+# R07-002 — Move surface contributions to owning modules
+
+## Status
+
+`✅ Done`
+
+## Owner
+
+- Module: application composition with the affected capability owners
+- Capability-matrix rows: panels, status items, command palette, keymap
+- Composition entry point: `labonair-shell`
+
+## Dependencies
+
+- `R07-001-product-surface-acceptance`
+- `R03-001-command-palette-provider-registry`
+- `R03-002-keymap-runtime-and-editor`
+
+## Goal
+
+Close the owner-contribution residue discovered by the R07-001 acceptance
+audit. Capability modules must register their command and dynamic-palette
+action execution through typed owner APIs; `labonair-shell` may only assemble
+those contributions and connect native/debug actions that have no capability
+owner. Panel contributions, status items, and ordinary command handlers
+already follow this boundary and are the reference pattern.
+
+## Scope
+
+- In scope: any remaining feature-owned residue in
+  `shell/src/commands.rs`, `shell/src/actions.rs`, or shell status-item
+  registration; owner contribution APIs; command and submenu execution
+  callbacks; and dependency/documentation evidence.
+- Out of scope: redesigning command behavior, adding new commands, changing
+  product surfaces, or introducing extension/marketplace infrastructure.
+
+## Contracts and ownership
+
+- The command-palette core remains the single metadata registry.
+- Each owning module supplies its command metadata and execution contribution;
+  execution must not be duplicated in a shell-wide command table.
+- Dynamic submenu actions must resolve through owner contributions or a typed
+  action registry. The shell must not match every feature-specific
+  `PaletteEvent` variant and call feature entities directly.
+- Panel registrations are contributed by their owning modules and consumed by
+  the generic workspace registry. Status-item registrations must follow the
+  same pattern.
+- The shell remains responsible only for composition, native-window actions,
+  and wiring typed services/events.
+
+## Persistence and migration
+
+No persisted format changes are expected. Existing command IDs, keymap files,
+panel layout data, and statusbar placement data must remain compatible.
+
+## User-visible behavior
+
+This is an ownership refactor. Command search, keybindings, panel layout,
+statusbar placement, and native-window behavior must remain unchanged.
+
+## Current implementation
+
+The typed `PaletteAction` contract and `PaletteActionHandlerRegistry` are now
+in place. Workspace, Hosts-UI, Themes/Settings-UI, Source Control, and
+Snippets contribute their dynamic action handlers; shell composition only
+assembles those contributions and forwards opaque actions. Full verification
+and the source/audit update are complete.
+
+## Verification
+
+- Add or update focused registry/contribution tests.
+- Run the full repository verification gates from
+  [`feature-lifecycle.md`](../../../modules.md).
+- Recheck that no duplicate shell-wide command, panel, or status-item list
+  remains and update the capability matrix and architecture inventory.
+
+All verification gates pass. The source audit confirms that
+`shell/src/actions.rs` forwards opaque `PaletteAction` values only, while
+Workspace, Hosts-UI, Themes/Settings-UI, Source Control, and Snippets own the
+dynamic action matching. The dependency verifier reports an acyclic graph with
+the owner-contribution edges explicitly allow-listed.
+
+## Removal condition
+
+The task is complete when adding an owner command, dynamic submenu action, or
+status item does not require editing a shell feature table, while the shell
+still composes and the full verification gates pass.

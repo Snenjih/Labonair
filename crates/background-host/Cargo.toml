@@ -1,0 +1,15 @@
+[package]
+name = "labonair-background-host"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_background_host"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

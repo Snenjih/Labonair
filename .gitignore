@@ -1,0 +1,29 @@
+# Rust / Cargo
+/target
+**/*.rs.bk
+*.pdb
+
+# Logs
+logs
+*.log
+
+# Local session exports / scratch
+session-*.md
+last.md
+
+# OS / editor
+.DS_Store
+.idea
+*.sw?
+.vscode/*
+!.vscode/extensions.json
+
+# Agent-local (memory lives in ~/.claude/projects/.../memory/)
+.claude/
+temp/
+__pycache__/
+*.py[cod]
+
+reference/
+# reference-src/ is the frozen in-repo reference copy and IS tracked.
+# This fork is standalone — no external symlink to any other Labonair repo.

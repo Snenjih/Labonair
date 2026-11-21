@@ -1,0 +1,471 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Snenjih
+
+//! Spaces: named, switchable groups of tabs.
+//!
+//! A workspace previously had exactly one identity (Standalone or a single
+//! Project root, see [`crate::context::WorkspaceIdentity`]) and one flat list
+//! of tabs. A *Space* is a named group of tabs plus the identity they share;
+//! exactly one Space is visible in the tab strip at a time, but the others'
+//! tabs are not torn down — they simply aren't the ones [`crate::TabStore`]
+//! is currently handing out to the tab-strip renderer. Terminal/SSH/editor
+//! liveness already does not depend on tab visibility (see
+//! `labonair_terminal::TerminalRegistry`'s own doc comment), so hiding a
+//! Space's tabs costs nothing new.
+//!
+//! There is no such thing as an "ownerless" tab: every tab is created into
+//! whichever Space is active at creation time (mirrors `TabStore`'s
+//! `current_space`), and the seeded `DEFAULT_SPACE_ID` space — Standalone
+//! identity, never closable — is today's implicit single workspace, just
+//! given a name and a place in the model.
+
+use gpui::EventEmitter;
+
+use crate::context::WorkspaceIdentity;
+
+pub type SpaceId = u64;
+
+/// The always-present catch-all space. Never closable; every workspace has at
+/// least this one.
+pub const DEFAULT_SPACE_ID: SpaceId = 1;
+
+/// One named group of tabs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Space {
+    pub id: SpaceId,
+    /// Stable Workspace-owned identity persisted across application processes.
+    pub shared_id: labonair_workspace_storage::SpaceId,
+    /// `false` when this window knows the Space summary but has not joined it.
+    pub loaded: bool,
+    pub participants: u32,
+    pub shared_tab_count: u32,
+    pub name: String,
+    pub identity: WorkspaceIdentity,
+    /// Which tab to reactivate when switching back into this space. `None`
+    /// once the space has no tabs left.
+    pub last_active_tab: Option<u64>,
+}
+
+/// Emitted whenever the active space changes.
+pub struct ActiveSpaceChanged(pub SpaceId);
+
+/// The single source of truth for the set of spaces and which one is active.
+pub struct SpaceStore {
+    spaces: Vec<Space>,
+    active_id: SpaceId,
+    next_id: SpaceId,
+}
+
+impl EventEmitter<ActiveSpaceChanged> for SpaceStore {}
+
+impl Default for SpaceStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SpaceStore {
+    /// Seeds the permanent `Default` space (Standalone identity) and makes it
+    /// active — this is today's implicit single workspace, unchanged.
+    pub fn new() -> Self {
+        Self {
+            spaces: vec![Space {
+                id: DEFAULT_SPACE_ID,
+                shared_id: labonair_workspace_storage::SpaceId::new(),
+                loaded: true,
+                participants: 1,
+                shared_tab_count: 0,
+                name: "Default".to_string(),
+                identity: WorkspaceIdentity::Standalone,
+                last_active_tab: None,
+            }],
+            active_id: DEFAULT_SPACE_ID,
+            next_id: DEFAULT_SPACE_ID + 1,
+        }
+    }
+
+    pub fn spaces(&self) -> &[Space] {
+        &self.spaces
+    }
+
+    pub fn active_id(&self) -> SpaceId {
+        self.active_id
+    }
+
+    pub fn active(&self) -> Option<&Space> {
+        self.get(self.active_id)
+    }
+
+    pub fn get(&self, id: SpaceId) -> Option<&Space> {
+        self.spaces.iter().find(|s| s.id == id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.spaces.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.spaces.is_empty()
+    }
+
+    /// Create a new space and return its id. Does not switch to it — the
+    /// caller (`Workspace::create_space_from_project` /
+    /// `create_space_standalone`) does that as a separate, explicit step.
+    pub fn create(
+        &mut self,
+        name: impl Into<String>,
+        identity: WorkspaceIdentity,
+        cx: &mut gpui::Context<Self>,
+    ) -> SpaceId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.spaces.push(Space {
+            id,
+            shared_id: labonair_workspace_storage::SpaceId::new(),
+            loaded: false,
+            participants: 0,
+            shared_tab_count: 0,
+            name: name.into(),
+            identity,
+            last_active_tab: None,
+        });
+        cx.notify();
+        id
+    }
+
+    /// Re-create the seeded snapshot-restore shape used at startup: replaces
+    /// the seeded Default space's name/identity in place (keeping
+    /// `DEFAULT_SPACE_ID`) rather than creating a second space, or creates a
+    /// fresh space for every subsequent snapshot entry. Returns the id the
+    /// entry ended up at.
+    pub fn restore_entry(
+        &mut self,
+        is_first: bool,
+        shared_id: labonair_workspace_storage::SpaceId,
+        name: String,
+        identity: WorkspaceIdentity,
+        cx: &mut gpui::Context<Self>,
+    ) -> SpaceId {
+        if is_first {
+            if let Some(default) = self.spaces.iter_mut().find(|s| s.id == DEFAULT_SPACE_ID) {
+                default.shared_id = shared_id;
+                default.loaded = true;
+                default.name = name;
+                default.identity = identity;
+            }
+            cx.notify();
+            DEFAULT_SPACE_ID
+        } else {
+            let id = self.next_id;
+            self.next_id += 1;
+            self.spaces.push(Space {
+                id,
+                shared_id,
+                loaded: true,
+                participants: 1,
+                shared_tab_count: 0,
+                name,
+                identity,
+                last_active_tab: None,
+            });
+            cx.notify();
+            id
+        }
+    }
+
+    pub fn find_shared(&self, id: labonair_workspace_storage::SpaceId) -> Option<&Space> {
+        self.spaces.iter().find(|space| space.shared_id == id)
+    }
+
+    /// Replace local summaries with the process-safe Workspace catalog. Only
+    /// the claimed Space is marked loaded; other entries require an explicit
+    /// join before their tabs or sessions are attached in this process.
+    pub fn hydrate_shared(
+        &mut self,
+        summaries: &[labonair_workspace_storage::SpaceSummary],
+        active: labonair_workspace_storage::SpaceId,
+        cx: &mut gpui::Context<Self>,
+    ) -> Option<SpaceId> {
+        let mut next_id = DEFAULT_SPACE_ID;
+        self.spaces = summaries
+            .iter()
+            .map(|summary| {
+                let id = next_id;
+                next_id = next_id.saturating_add(1);
+                Space {
+                    id,
+                    shared_id: summary.id,
+                    loaded: summary.id == active,
+                    participants: summary.participant_count,
+                    shared_tab_count: summary.tab_count,
+                    name: summary.name.clone(),
+                    identity: serde_json::from_value(summary.identity.clone())
+                        .unwrap_or(WorkspaceIdentity::Standalone),
+                    last_active_tab: None,
+                }
+            })
+            .collect();
+        self.next_id = next_id;
+        let active_id = self
+            .spaces
+            .iter()
+            .find(|space| space.shared_id == active)
+            .map(|space| space.id);
+        self.active_id = active_id.unwrap_or(DEFAULT_SPACE_ID);
+        if let Some(id) = active_id {
+            cx.emit(ActiveSpaceChanged(id));
+        }
+        cx.notify();
+        active_id
+    }
+
+    pub fn update_shared_summary(
+        &mut self,
+        summary: &labonair_workspace_storage::SpaceSummary,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        if let Some(space) = self
+            .spaces
+            .iter_mut()
+            .find(|space| space.shared_id == summary.id)
+        {
+            space.name.clone_from(&summary.name);
+            space.identity = serde_json::from_value(summary.identity.clone())
+                .unwrap_or(WorkspaceIdentity::Standalone);
+            space.participants = summary.participant_count;
+            space.shared_tab_count = summary.tab_count;
+            cx.notify();
+        }
+    }
+
+    pub fn upsert_shared_summary(
+        &mut self,
+        summary: &labonair_workspace_storage::SpaceSummary,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        if let Some(space) = self
+            .spaces
+            .iter_mut()
+            .find(|space| space.shared_id == summary.id)
+        {
+            space.name.clone_from(&summary.name);
+            space.identity = serde_json::from_value(summary.identity.clone())
+                .unwrap_or(WorkspaceIdentity::Standalone);
+            space.participants = summary.participant_count;
+            space.shared_tab_count = summary.tab_count;
+        } else {
+            let id = self.next_id;
+            self.next_id = self.next_id.saturating_add(1);
+            self.spaces.push(Space {
+                id,
+                shared_id: summary.id,
+                loaded: false,
+                participants: summary.participant_count,
+                shared_tab_count: summary.tab_count,
+                name: summary.name.clone(),
+                identity: serde_json::from_value(summary.identity.clone())
+                    .unwrap_or(WorkspaceIdentity::Standalone),
+                last_active_tab: None,
+            });
+        }
+        cx.notify();
+    }
+
+    pub fn set_shared_loaded(
+        &mut self,
+        id: labonair_workspace_storage::SpaceId,
+        loaded: bool,
+        participants: u32,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        if let Some(space) = self.spaces.iter_mut().find(|space| space.shared_id == id) {
+            space.loaded = loaded;
+            space.participants = participants;
+            cx.notify();
+        }
+    }
+
+    pub fn shared_catalog_changed(
+        &self,
+        summaries: &[labonair_workspace_storage::SpaceSummary],
+    ) -> bool {
+        if self.spaces.len() != summaries.len() {
+            return true;
+        }
+        summaries.iter().any(|summary| {
+            self.spaces
+                .iter()
+                .find(|space| space.shared_id == summary.id)
+                .is_none_or(|space| {
+                    space.name != summary.name
+                        || space.participants != summary.participant_count
+                        || space.shared_tab_count != summary.tab_count
+                        || serde_json::to_value(&space.identity).ok().as_ref()
+                            != Some(&summary.identity)
+                })
+        })
+    }
+
+    pub fn rename(&mut self, id: SpaceId, name: impl Into<String>, cx: &mut gpui::Context<Self>) {
+        if let Some(space) = self.spaces.iter_mut().find(|s| s.id == id) {
+            space.name = name.into();
+            cx.notify();
+        }
+    }
+
+    pub fn set_identity(
+        &mut self,
+        id: SpaceId,
+        identity: WorkspaceIdentity,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        if let Some(space) = self.spaces.iter_mut().find(|s| s.id == id) {
+            space.identity = identity;
+            cx.notify();
+        }
+    }
+
+    /// Make `id` the active space (no-op if unknown or already active).
+    pub fn set_active(&mut self, id: SpaceId, cx: &mut gpui::Context<Self>) {
+        if self.active_id == id || !self.spaces.iter().any(|s| s.id == id) {
+            return;
+        }
+        self.active_id = id;
+        cx.emit(ActiveSpaceChanged(id));
+        cx.notify();
+    }
+
+    pub fn record_last_active_tab(&mut self, id: SpaceId, tab_id: Option<u64>) {
+        if let Some(space) = self.spaces.iter_mut().find(|s| s.id == id) {
+            space.last_active_tab = tab_id;
+        }
+    }
+
+    /// Remove a space. Rejected for [`DEFAULT_SPACE_ID`] — it always exists.
+    /// Returns the removed space so the caller can tear down its tabs.
+    pub fn close(&mut self, id: SpaceId, cx: &mut gpui::Context<Self>) -> Option<Space> {
+        if id == DEFAULT_SPACE_ID {
+            return None;
+        }
+        let idx = self.spaces.iter().position(|s| s.id == id)?;
+        let removed = self.spaces.remove(idx);
+        cx.notify();
+        Some(removed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{AppContext, TestAppContext};
+
+    #[gpui::test]
+    fn seeds_one_permanent_default_space(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| SpaceStore::new());
+            store.update(cx, |s, _| {
+                assert_eq!(s.len(), 1);
+                assert_eq!(s.active_id(), DEFAULT_SPACE_ID);
+                assert_eq!(s.active().unwrap().name, "Default");
+                assert_eq!(s.active().unwrap().identity, WorkspaceIdentity::Standalone);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn create_and_switch(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| SpaceStore::new());
+            store.update(cx, |s, cx| {
+                let id = s.create("Work", WorkspaceIdentity::project("/repo"), cx);
+                assert_eq!(s.len(), 2);
+                assert_eq!(s.active_id(), DEFAULT_SPACE_ID, "create does not switch");
+
+                s.set_active(id, cx);
+                assert_eq!(s.active_id(), id);
+                assert_eq!(s.active().unwrap().name, "Work");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn default_space_cannot_be_closed(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| SpaceStore::new());
+            store.update(cx, |s, cx| {
+                assert!(s.close(DEFAULT_SPACE_ID, cx).is_none());
+                assert_eq!(s.len(), 1);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn closing_a_space_removes_it(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| SpaceStore::new());
+            store.update(cx, |s, cx| {
+                let id = s.create("Scratch", WorkspaceIdentity::Standalone, cx);
+                let removed = s.close(id, cx).unwrap();
+                assert_eq!(removed.name, "Scratch");
+                assert_eq!(s.len(), 1);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn last_active_tab_round_trips(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| SpaceStore::new());
+            store.update(cx, |s, _| {
+                assert_eq!(s.get(DEFAULT_SPACE_ID).unwrap().last_active_tab, None);
+                s.record_last_active_tab(DEFAULT_SPACE_ID, Some(42));
+                assert_eq!(s.get(DEFAULT_SPACE_ID).unwrap().last_active_tab, Some(42));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn rename_and_retarget(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| SpaceStore::new());
+            store.update(cx, |s, cx| {
+                s.rename(DEFAULT_SPACE_ID, "Renamed", cx);
+                assert_eq!(s.get(DEFAULT_SPACE_ID).unwrap().name, "Renamed");
+
+                s.set_identity(DEFAULT_SPACE_ID, WorkspaceIdentity::project("/x"), cx);
+                assert_eq!(
+                    s.get(DEFAULT_SPACE_ID).unwrap().identity,
+                    WorkspaceIdentity::project("/x")
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn restore_entry_reuses_default_id_for_first(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| SpaceStore::new());
+            store.update(cx, |s, cx| {
+                let first = s.restore_entry(
+                    true,
+                    labonair_workspace_storage::SpaceId::new(),
+                    "Restored".into(),
+                    WorkspaceIdentity::project("/a"),
+                    cx,
+                );
+                assert_eq!(first, DEFAULT_SPACE_ID);
+                assert_eq!(s.len(), 1);
+
+                let second = s.restore_entry(
+                    false,
+                    labonair_workspace_storage::SpaceId::new(),
+                    "Second".into(),
+                    WorkspaceIdentity::Standalone,
+                    cx,
+                );
+                assert_ne!(second, DEFAULT_SPACE_ID);
+                assert_eq!(s.len(), 2);
+            });
+        });
+    }
+}
