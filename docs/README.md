@@ -9,7 +9,7 @@ Authority order when sources disagree: the user's current decision → these doc
 | [modules.md](modules.md) | Module/crate rules and the capability ownership matrix |
 | [registries.md](registries.md) | Registry contracts (commands, panels, themes, …) |
 | [workspace-model.md](workspace-model.md) | Project vs. standalone workspaces, panes, tabs |
-| [settings.md](settings.md) | Value-only settings, guidelines, persistence |
+| [settings.md](settings.md) | Settings ownership, value model, scope, persistence and UI contract |
 | [design-system.md](design-system.md) | UI-kit and visual consistency rules |
 | [security.md](security.md) | Threat model, trust boundaries, secrets, AI guards, remote access, detached host |
 | [automation.md](automation.md) | MCP bridge: grants, limits, tool catalog |
