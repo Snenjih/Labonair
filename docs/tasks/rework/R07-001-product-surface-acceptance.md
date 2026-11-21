@@ -148,8 +148,8 @@ a separate product decision after the core workflow is stable.
       [`../../docs/archive/audits/product-surface-acceptance.md`](../../archive/audits/product-surface-acceptance.md);
       all applicable visual cells remain pending until native-bundle evidence
       is recorded. This matrix also carries the sole remaining acceptance item
-      for [`R07-004`](R07-004-explorer-host-contract.md) (Explorer layer) and
-      [`R07-005`](R07-005-background-presentation-boundary.md) (terminal /
+      for [`R07-004`](../archive/rework-done/R07-004-explorer-host-contract.md) (Explorer layer) and
+      [`R07-005`](../archive/rework-done/R07-005-background-presentation-boundary.md) (terminal /
       App-scope background layers), whose structural work has landed and whose
       other criteria are met.
 - [ ] Native launch confirms the Rust window exists, but macOS currently denies

@@ -15,7 +15,7 @@ Done (2026-11-21)
 ## Owner
 
 - Module: Explorer with the Workspace composition boundary
-- Capability-matrix row: [`../../docs/modules.md`](../../modules.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../../modules.md)
 - Composition entry point: `labonair-shell` / Workspace construction
 
 ## Goal
@@ -29,7 +29,7 @@ than storing or calling a Workspace entity directly.
 
 - `R07-001-product-surface-acceptance` must be complete.
 - The current edge and its removal condition are recorded in
-  [`../../docs/archive/audits/remaining-boundaries.md`](../../archive/audits/remaining-boundaries.md).
+  [`../../docs/archive/audits/remaining-boundaries.md`](../../../archive/audits/remaining-boundaries.md).
 
 ## Scope
 

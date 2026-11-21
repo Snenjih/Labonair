@@ -7,7 +7,7 @@ Obsolete (2026-11-21): the docs governance system and its checkers were deleted 
 ## Owner
 
 - Module: repository documentation and application composition acceptance
-- Capability-matrix row: [`../../docs/modules.md`](../../modules.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../../modules.md)
 - Composition entry point: `scripts/verify.py` and `docs/README.md`
 
 ## Dependencies

@@ -7,7 +7,7 @@ Done (2026-11-21)
 ## Owner
 
 - Module: editor
-- Capability-matrix row: [Editor](../../modules.md)
+- Capability-matrix row: [Editor](../../../modules.md)
 - Composition entry point: labonair-shell editor registration and Workspace Editor tab construction
 
 ## Dependencies
