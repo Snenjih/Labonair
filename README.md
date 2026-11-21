@@ -13,11 +13,11 @@ The active architecture and rework sequence are documented in [`docs/`](docs/):
 - [`docs/modules.md`](docs/modules.md) — module and crate rules
 - [`docs/registries.md`](docs/registries.md) — registry contracts
 - [`docs/design-system.md`](docs/design-system.md) — UI consistency rules
-- [`docs/repository-layout.md`](docs/repository-layout.md) — canonical repository and crate placement
-- [`docs/feature-lifecycle.md`](docs/feature-lifecycle.md) — required feature change workflow
-- [`docs/documentation-governance.md`](docs/documentation-governance.md) — documentation ownership and authority rules
-- [`docs/rework-roadmap.md`](docs/rework-roadmap.md) — implementation sequence
-- [`docs/capabilities.md`](docs/capabilities.md) — ownership and migration matrix
+- [`docs/repository-layout.md`](docs/architecture.md) — canonical repository and crate placement
+- [`docs/feature-lifecycle.md`](docs/architecture.md) — required feature change workflow
+- [`docs/documentation-governance.md`](docs/README.md) — documentation ownership and authority rules
+- [`docs/rework-roadmap.md`](docs/archive/rework-roadmap.md) — implementation sequence
+- [`docs/capabilities.md`](docs/modules.md) — ownership and migration matrix
 - [`docs/settings.md`](docs/settings.md) — value-only settings boundary
 - [`docs/workspace-model.md`](docs/workspace-model.md) — project and standalone workflows
 

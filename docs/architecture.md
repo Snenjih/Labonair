@@ -2,7 +2,7 @@
 
 **Status:** Normative target architecture
 **Version:** 6
-**Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md), [`repository-layout.md`](repository-layout.md), [`feature-lifecycle.md`](feature-lifecycle.md), [`architecture/layers.md`](architecture/layers.md), [`architecture/composition-root.md`](architecture/composition-root.md), [`architecture/runtime-lifecycle.md`](architecture/runtime-lifecycle.md), [`architecture/dependency-rules.md`](architecture/dependency-rules.md)
+**Related:** [`product.md`](product.md), [`capabilities.md`](modules.md), [`modules.md`](modules.md), [`registries.md`](registries.md), [`repository-layout.md`](architecture.md), [`feature-lifecycle.md`](architecture.md), [`architecture/layers.md`](architecture.md), [`architecture/composition-root.md`](architecture.md), [`architecture/runtime-lifecycle.md`](architecture.md), [`architecture/dependency-rules.md`](architecture.md)
 
 ## 1. Architecture objective
 
@@ -184,8 +184,8 @@ Capability UI modules register their Settings links through the typed
 supplies the window/workspace callbacks; it does not own feature row metadata.
 
 The current repository does not yet match every ownership boundary in this
-map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md), and
-the observed state is recorded in [`audits/architecture-inventory.md`](audits/architecture-inventory.md).
+map. The migration is tracked in [`rework-roadmap.md`](archive/rework-roadmap.md), and
+the observed state is recorded in [`audits/architecture-inventory.md`](archive/audits/architecture-inventory.md).
 
 Workspace chrome state is persisted by `labonair-workspace` in the dedicated
 `workspace-layout.json` file. Dock membership, open/closed state, active panel,
@@ -499,10 +499,337 @@ Architecture changes require:
 - a visual check for any UI or layout change
 
 The dependency verifier currently permits only the explicit transitional edges
-listed in [`audits/architecture-inventory.md`](audits/architecture-inventory.md).
+listed in [`audits/architecture-inventory.md`](archive/audits/architecture-inventory.md).
 It must be kept strict while those edges are removed. A green dependency check
 therefore means "no untracked violation", not that the migration is complete.
 Each tolerated edge is also recorded in `architecture/graph.toml` with a
 bounded review/removal task, a review trigger, a last-reviewed date, and a
 machine-checked review interval. An expired review fails the architecture
 scope until the edge is re-evaluated.
+
+## Repository Layout
+
+
+This document defines where product code, contracts, documentation, and
+migration work belong. It is a structural rule, not a description of every
+file that currently exists. The current exceptions are recorded in the
+[architecture inventory](archive/audits/architecture-inventory.md).
+
+### Top-level layout
+
+```text
+Labonair-rust/
+├── crates/
+│   ├── app/                    # binary and process entry point
+│   ├── shell/                  # permanent chrome and composition wiring
+│   ├── <capability>/           # canonical product capability crate
+│   ├── <capability>-ui/        # optional sibling UI boundary
+│   ├── <capability>-storage/   # optional sibling persistence boundary
+│   ├── <capability>-integration/ # optional platform/protocol boundary
+│   └── foundation crates       # reusable contracts and infrastructure
+├── docs/                       # normative contracts, ADRs, audits, reports
+│   ├── agents/                 # agent orientation, routes, templates, gates
+│   ├── architecture/           # decomposed architecture contracts + graph source
+│   ├── product/                # command, surface, and menu catalog sources
+│   ├── testing/                # evidence and visual verification contracts
+│   ├── evidence/               # structured scorecard source
+│   ├── automation/             # MCP tools, grants, limits, test matrix
+│   ├── security/               # threat, secret, trust, remote contracts
+│   ├── settings/               # settings lifecycle + catalog source
+│   ├── performance/            # budgets + measurement catalog
+│   ├── release/                # packaging, rollback, support + checklist
+│   ├── generated/              # checked-in readable projections; never hand-edit
+│   └── capabilities/            # capability-specific contracts and inventories
+├── ideas/                      # non-normative proposals only
+├── tasks/rework/               # active migration queue
+├── tasks/archive/              # historical task records
+├── reference/              # frozen predecessor reference; read-only
+└── scripts/                    # repository checks and tooling
+```
+
+`target/`, generated output, and local runtime data are build or machine
+state; they are not product source and must not become architectural
+dependencies.
+
+### Crate placement
+
+Every product capability has one canonical crate under `crates/`. The crate
+owns the capability even when it is later split into siblings. For example,
+`themes` may contain `labonair-theme` and a future
+`labonair-<capability>-ui` sibling, but there is still one Themes owner and one
+public capability contract.
+
+Create a sibling crate only for a real boundary: UI versus UI-free logic,
+independent persistence, platform integration, or a stable contract consumed
+by multiple modules. Do not create empty `core`, `api`, or `facade` crates to
+make the tree look layered.
+
+Foundation crates may be shared by product modules but may not contain
+product-specific state or depend upward on a capability. `labonair-ui-kit`
+contains reusable interaction and visual primitives; it does not know about
+Hosts, Themes, Transfers, or Workspaces.
+
+`labonair-shell` and `labonair` are the only all-feature composition layers.
+They may construct concrete services, invoke registration functions, and
+connect typed events. They must not become the home of feature state,
+feature-specific rendering, or a second command/panel/status registry.
+
+### Capability crate contents
+
+A small capability may remain a single `src/lib.rs`. A larger capability may
+organize private implementation into files such as:
+
+```text
+crates/<capability>/src/
+├── lib.rs          # public contract and module exports
+├── domain.rs       # stable values and identifiers
+├── state.rs        # lifecycle and state transitions
+├── contract.rs     # traits and typed events for consumers
+├── registry.rs     # only when discovery has multiple providers/consumers
+├── commands.rs     # command/keymap contributions owned by the capability
+├── view.rs         # GPUI view when UI belongs in this crate
+├── storage.rs      # capability-owned persistence when needed
+└── integration.rs  # platform/protocol adapter when needed
+```
+
+These names are optional organizational tools, not a requirement to create
+files without a current responsibility. The owner keeps domain state,
+behavior, UI, persistence, commands, notifications, and tests together unless
+a sibling boundary is justified.
+
+### Cross-module placement
+
+- Stable domain values, traits, and typed events belong in the owning
+  capability's public contract or a clearly named foundation contract.
+- Feature behavior belongs to the owning capability, never to `shell`,
+  `workspace`, or `backend` merely because those crates can reach it.
+- Reusable controls belong in `ui-kit`; feature views compose them.
+- Platform and storage implementations are injected at the composition root
+  through narrow contracts.
+- Compatibility adapters stay next to the boundary they bridge and must have
+  a documented removal condition.
+
+### Documentation placement
+
+- `docs/*.md`: current normative contracts and implementation roadmap.
+- `docs/architecture/`: decomposed architecture contracts and the machine-
+  readable dependency/ownership policy.
+- `docs/agents/`: agent onboarding, structured request routes, change routing,
+  task, handoff, and finish gate guidance.
+- `docs/generated/`: deterministic projections generated from canonical sources;
+  update the generator or source, never the projection directly.
+- `docs/capabilities/`: capability-specific detail that is indexed by the
+  capability matrix and must not redefine ownership elsewhere.
+- `docs/adr/`: accepted architectural decisions and their consequences.
+- `docs/audits/`: evidence about the current, unfinished tree.
+- `docs/reports/`: research and comparisons; never the source of authority.
+- `docs/archive/`: superseded documents retained for traceability.
+- `ideas/`: proposals that are not binding until accepted into `docs/` or an
+  ADR.
+- `tasks/rework/`: the only active implementation queue for the architecture
+  rework.
+- `docs/reform/`: the repository goal and traceability contract for the
+  documentation/agent knowledge system. It is not a second task queue.
+
+The frozen predecessor source is read-only and is not a product dependency. It
+may be consulted for migration evidence, but it must not be imported into the
+native application or treated as current architecture authority.
+
+When a document changes an ownership or dependency rule, update the relevant
+normative contract, capability matrix, migration task, and inventory in the
+same change.
+
+## Architecture Layers
+
+**Related:** [`../architecture.md`](architecture.md), [`graph.toml`](../scripts/crate-graph.toml), [`dependency-rules.md`](architecture.md)
+
+This document defines the allowed direction of the Labonair crate graph. The
+machine-readable edge and ownership source is [`graph.toml`](../scripts/crate-graph.toml); this
+document explains how agents should interpret it.
+
+### Layers
+
+| Layer | Responsibility | May depend on |
+|---|---|---|
+| `application` | Process startup, native shell composition, window actions, and service wiring. | Product, integration, contract, and foundation crates through explicit composition edges. |
+| `product` | User-facing capabilities, workspace orchestration, panels, and feature presentation. | Foundation contracts/services and other capabilities only through typed contracts, registries, or events. |
+| `integration` | Concrete protocol, process, filesystem, or external-service adapters. | UI-free capability contracts and foundation services. |
+| `foundation` | Reusable values, contracts, UI primitives, persistence, errors, and platform services. | External libraries and lower-level foundation crates; never product modules. |
+
+The layer label describes the crate's architectural role, not the ownership
+module. A product owner may therefore have a foundation contract sibling and
+an integration sibling while retaining one canonical capability owner.
+
+### Direction rules
+
+1. Dependencies point from application to product/integration/foundation and
+   from product or integration toward foundation contracts.
+2. Foundation crates never depend on product crates, the shell, or the binary.
+3. Product crates never depend on `labonair-shell` or reach into another
+   feature's private state.
+4. Integration crates implement typed contracts; they do not become a second
+   owner of product state.
+5. `labonair-ui-kit` is reusable foundation infrastructure. It may consume
+   design tokens, but it must not know product modules.
+6. A dependency that cannot be explained by the owning capability, a typed
+   contract, a registry, or composition wiring is a boundary defect.
+
+### Current graph
+
+The generated projection at
+[`../generated/architecture.md`](architecture.md) lists every
+workspace crate and direct internal edge. Run
+`python3 scripts/verify.py --scope architecture` after changing a Cargo
+dependency or ownership record.
+
+## Dependency Rules
+
+**Related:** [`../architecture.md`](architecture.md), [`layers.md`](architecture.md), [`graph.toml`](../scripts/crate-graph.toml), [`../audits/remaining-boundaries.md`](archive/audits/remaining-boundaries.md)
+
+The architecture graph is an explicit policy, not a suggestion. Every internal
+Cargo edge must be declared in [`graph.toml`](../scripts/crate-graph.toml), and every temporary
+edge must have a removal condition, a bounded removal task, and a review
+interval.
+
+### Rules
+
+1. Every product capability has one owner and one canonical capability crate.
+2. Sibling crates are allowed only for a real contract, UI, storage, or
+   integration boundary under that same owner.
+3. Foundation crates do not depend on product modules.
+4. Feature crates do not depend on `labonair-shell` or private state from
+   another feature.
+5. Composition roots may wire concrete implementations but must not become
+   feature god objects.
+6. Shared discovery uses a typed registry only when there are multiple
+   providers or consumers; one caller gets a narrow typed contract.
+7. UI-free engines remain UI-free transitively.
+8. Panels never depend on another panel, and the panel contract stays below
+   Workspace and the shell.
+9. New dependencies require an ownership explanation, a task, and a passing
+   architecture check.
+10. A removed edge must be removed from the manifest, code, audit, and task
+    once no consumer needs it.
+11. A transitional edge whose review interval has expired fails the
+    architecture check until its owner records a fresh review.
+
+`labonair-background`, `labonair-theme-ui`, and `labonair-keymap-ui` may use
+the public `labonair-settings::SettingsSurfaceRegistry` contract to register
+their Settings entry points. These feature-level edges expose only Settings
+surface metadata and an owner callback; they do not grant access to Settings
+storage or another feature's private state. The composition root invokes those
+owner registration functions and injects the live window/workspace callback.
+`labonair-shell` therefore depends directly on `labonair-keymap-ui` to compose
+its registration function.
+
+### Verification
+
+Run the narrow check while editing boundaries:
+
+```text
+python3 scripts/verify.py --scope architecture
+```
+
+This validates the manifest against Cargo metadata, checks acyclicity, and
+retains the transitive UI/panel invariants. Regenerate the readable projection
+with:
+
+```text
+python3 scripts/gen_architecture.py
+```
+
+The full repository verifier is `python3 scripts/verify.py --scope all`.
+
+## Composition Root Contract
+
+**Related:** [`../architecture.md`](architecture.md), [`runtime-lifecycle.md`](architecture.md), [`../feature-lifecycle.md`](architecture.md)
+
+`labonair` and `labonair-shell` are the only all-feature composition roots.
+They assemble concrete services and connect typed contracts; they do not own
+feature behavior.
+
+### Responsibilities
+
+- construct the GPUI application and native window shell;
+- load settings, themes, keymap, persistence, and platform services;
+- construct integration adapters such as SSH, SFTP, Git, transfers, and MCP;
+- inject those adapters into owner-defined contracts;
+- register panels, commands, status items, notifications, and palette
+  providers through their canonical registries;
+- connect typed events between independently owned modules;
+- select the initial workspace and recoverable startup state.
+
+### Prohibited responsibilities
+
+The composition roots must not:
+
+- store feature state or duplicate feature persistence;
+- render feature-specific views or implement capability business logic;
+- contain a feature-name switch for command, panel, status, or notification
+  behavior;
+- expose a backend facade that every feature calls instead of its owner;
+- add a second settings, notification, command, or surface registry;
+- reach into private module state when a typed contract or event is required.
+
+### Construction rule
+
+For every injected service, the owning task and capability record must identify
+the contract, implementation adapter, construction site, and failure behavior.
+The adapter belongs in the integration or composition boundary; the contract
+belongs to the owning capability or a deliberately shared foundation crate.
+
+The preferred flow is:
+
+```text
+configuration and platform services
+        ↓
+typed capability contracts
+        ↓
+owner registration and feature views
+        ↓
+typed events back through the composition root
+```
+
+If construction requires a new permanent shell surface, first create or
+update an ADR and prove that an existing product surface cannot host it.
+
+## Runtime Lifecycle
+
+**Related:** [`../architecture.md`](architecture.md), [`composition-root.md`](architecture.md), [`../visual-verification.md`](testing.md)
+
+This is the canonical lifecycle vocabulary for implementation tasks, audits,
+and agent handoffs. A feature is not considered integrated because its crate
+compiles; it must be traceable through the relevant lifecycle states.
+
+### Lifecycle states
+
+| State | Owner | Required evidence |
+|---|---|---|
+| `construct` | Composition root | Concrete service and owner contract are wired without a duplicate owner. |
+| `register` | Owning module | Commands, panels, status items, notifications, and palette providers use canonical registries. |
+| `load` | Owning module plus injected services | Settings, persistence, or remote state is loaded asynchronously and failure is typed. |
+| `render` | Owning UI crate | The view uses `labonair-ui-kit`, preserves shell zones, and has native visual evidence when UI changes. |
+| `interact` | Owning module | User actions update owner state and emit typed events for other modules. |
+| `persist` | Owning module | Values and lifecycle state are written through the capability's persistence boundary. |
+| `shutdown` | Composition root and service owner | Tasks, sessions, watchers, and windows release resources without blocking the GPUI thread. |
+
+### Agent checklist
+
+For a lifecycle change, record:
+
+1. the owning module and canonical crate;
+2. the construction site and injected contract;
+3. the user entry point and all affected shell zones;
+4. state transitions, persistence, notifications, and emitted events;
+5. failure, retry, cancellation, and shutdown behavior;
+6. source, test, or native visual evidence for each claim.
+
+I/O, process execution, network work, and database operations must not block
+the GPUI foreground thread. Use async tasks or `spawn_blocking` and return
+descriptive errors for predictable failures.
+
+### Evidence vocabulary
+
+Use `Verified`, `Partial`, `Pending`, or `N/A` in audits. A successful build
+proves only the paths covered by that build. It does not prove visual layout,
+ownership, or remote runtime behavior without corresponding evidence.

@@ -3,7 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-11-06
 * **Deciders:** project owner and implementation team
-* **Related:** [`0006-settings-hosts-owner-surfaces-inline.md`](0006-settings-hosts-owner-surfaces-inline.md), [`../settings.md`](../settings.md), [`../settings-guidelines.md`](../settings-guidelines.md), [`../capabilities.md`](../capabilities.md)
+* **Related:** [`0006-settings-hosts-owner-surfaces-inline.md`](0006-settings-hosts-owner-surfaces-inline.md), [`../settings.md`](../settings.md), `../settings-guidelines.md`, `../capabilities.md`
 
 ## Context
 

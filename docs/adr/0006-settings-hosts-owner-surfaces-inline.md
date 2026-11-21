@@ -3,7 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-11-05
 * **Deciders:** project owner and implementation team
-* **Related:** [`../settings-guidelines.md`](../settings-guidelines.md), [`capabilities.md`](../capabilities.md), [`../design-system.md`](../design-system.md)
+* **Related:** `../settings-guidelines.md`, `capabilities.md`, [`../design-system.md`](../design-system.md)
 
 ## Context
 

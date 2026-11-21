@@ -3,7 +3,7 @@
 * **Status:** Accepted; implementation in progress
 * **Date:** 2026-11-19
 * **Deciders:** project owner (requested product behavior) and implementation team
-* **Related:** [`0009-detached-session-host.md`](0009-detached-session-host.md), [`../workspace-model.md`](../workspace-model.md), [`../capabilities.md`](../capabilities.md), [`../architecture.md`](../architecture.md), [`../security/trust-boundaries.md`](../security/trust-boundaries.md)
+* **Related:** [`0009-detached-session-host.md`](0009-detached-session-host.md), [`../workspace-model.md`](../workspace-model.md), `../capabilities.md`, [`../architecture.md`](../architecture.md), `../security/trust-boundaries.md`
 
 ## Context
 

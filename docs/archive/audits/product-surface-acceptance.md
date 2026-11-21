@@ -1,0 +1,113 @@
+# Product Surface Acceptance Matrix
+
+**Status:** Working acceptance evidence for R07-001
+**Date:** 2026-10-09
+
+This document is evidence for the current product-surface audit. It is not a
+replacement for the normative product or architecture contracts. A structural
+status is based on the current source tree and registry/dependency checks; a
+visual status is not complete until the surface has been inspected in the
+native Rust application at the listed states.
+
+The checked machine-readable state and artifact index is
+[`../testing/visual-evidence.toml`](../../testing.md), with the
+generated per-surface view at
+`../generated/visual-evidence.md`. This
+audit remains the current-state interpretation; it does not promote pending
+registry cells to verified evidence.
+
+## Evidence vocabulary
+
+| Status | Meaning |
+|---|---|
+| `Verified` | Source ownership and focused behavior evidence are present. |
+| `Partial` | The owner exists, but a documented compatibility or composition edge remains. |
+| `Pending` | Required source, workflow, or visual evidence is still missing. |
+| `N/A` | The state is not meaningful for that surface; the reason is recorded. |
+
+## Structural acceptance
+
+| Surface | Owner / canonical crate | Canonical entry point | Source evidence | Structural status |
+|---|---|---|---|---|
+| Titlebar and global menu | application shell / `labonair-shell` | titlebar global-menu button | `crates/shell/src/titlebar.rs`, `crates/shell/src/bootstrap.rs` | Verified; feature destinations are typed composition events |
+| Workspace and empty state | Workspace / `labonair-workspace` | workspace surface, project picker, standalone launch | `crates/workspace/src/workspace.rs`, `crates/workspace/src/context.rs` | Partial; feature-view extraction remains in progress |
+| Docks and panels | Workspace contracts / `labonair-panel` plus panel owners | dock panel controls | `crates/panel/src/`, `crates/workspace/src/dock.rs` | Verified; panel contributions are owner-registered |
+| Statusbar | Workspace host / `labonair-workspace` plus feature owners | permanent statusbar zones | `crates/workspace/src/status_bar.rs`, `crates/shell/src/status_items.rs` | Verified; shell only composes typed registrations |
+| Command Palette | Command Palette / `labonair-command-palette-core` | titlebar menu or global shortcut | `crates/command-palette-core/src/`, `crates/command-palette/src/`, `crates/command-palette-runtime/src/`, `crates/shell/src/actions.rs` | Verified; metadata and dynamic actions use owner contributions, while shell only forwards opaque actions |
+| Keymap | Keymap / `labonair-keymap` | titlebar menu → Keymap | `crates/keymap/src/`, `crates/keymap-ui/src/` | Partial; GPUI installation/watch remains a shell adapter |
+| Settings values | Settings / `labonair-settings` | Settings window | `crates/settings-content/src/areas.rs`, `crates/settings-ui/src/` | Verified; no Hosts/Themes/Icon Themes/Shortcuts management categories |
+| Hosts management and picker | Hosts / `labonair-hosts` and `labonair-hosts-ui` | titlebar menu → Hosts; palette Hosts page | `crates/hosts/src/`, `crates/hosts-ui/src/command_provider.rs`, `crates/shell/src/bootstrap.rs` | Verified; SSH primary and SFTP secondary actions are typed and Hosts-UI-owned, with only a narrow workspace opening callback injected |
+| Themes and icon themes | Themes / `labonair-theme` | titlebar menu → palette theme pages | `crates/theme/src/`, `crates/settings-ui/src/command_provider.rs`, `crates/shell/src/bootstrap.rs` | Verified; catalogs and preview state are theme-owned and selection/preview dispatch uses the typed owner registry |
+| Notifications | Notifications / `labonair-notifications-core` and `labonair-notifications` | statusbar notification dropdown | `crates/notifications-core/src/`, `crates/notifications/src/status_item.rs` | Verified; no toast renderer or second global surface; rows use the shared UI-kit `ListItem` |
+| Transfers | Transfers / `labonair-transfers` and `labonair-transfers-ui` | statusbar Transfers item | `crates/transfers/src/`, `crates/transfers-ui/src/` | Verified; queue state and presentation are separate from SFTP browsing |
+| Search overlay | Workspace / `labonair-workspace` | `Find` command | `crates/workspace/src/search_overlay.rs`, `crates/workspace/src/command_provider.rs` | Verified; shell injects only modal-host behavior |
+| Updater | Updater / `labonair-updater` and `labonair-updater-ui` | statusbar item or update command | `crates/updater/src/`, `crates/updater-ui/src/` | Verified; UI and command contribution are owner-owned |
+
+## Required visual state matrix
+
+`Pending` means the state still needs a native-bundle inspection record. A
+state may be marked `Verified` only together with a date, viewport/window
+condition, and a capture or reproducible inspection note in the task/handshake.
+
+| Surface | Normal | Narrow | Focused | Empty | Loading | Error | Long list | Overlay / anchoring |
+|---|---|---|---|---|---|---|---|---|
+| Titlebar / global menu | Pending | Pending | Pending | N/A | N/A | N/A | N/A | Pending |
+| Workspace / docks | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| Statusbar | Pending | Pending | Pending | Pending | Pending | N/A | N/A | Pending |
+| Command Palette | Pending | Pending | Pending | Pending | N/A | Pending | Pending | Pending |
+| Keymap surface | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| Settings | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| Hosts management / picker | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| Themes / icon themes | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| Notifications dropdown | Pending | Pending | Pending | Pending | N/A | Pending | Pending | Pending |
+| Transfers dropdown | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| Search overlay | Pending | Pending | Pending | N/A | N/A | Pending | N/A | Pending |
+| Updater dialog | Pending | Pending | Pending | N/A | Pending | Pending | N/A | Pending |
+
+## Required evidence procedure
+
+1. Build and run the native application with `cargo run -p labonair`; never use
+   the legacy installed Tauri application.
+2. Inspect the surface at its applicable matrix states, including a narrow
+   window and keyboard focus path.
+3. Record the result with the surface, state, date, and capture or exact
+   reproduction note. Do not mark a state based only on a successful compile.
+4. If a state exposes a layout or ownership defect, create a bounded rework
+   task before changing the matrix to `Verified`.
+
+The matrix is complete only when every applicable state is verified and every
+`Partial` structural row has either a documented removal condition or an
+accepted composition-only rationale.
+
+## Native inspection log
+
+| Date | Native process | Window | Result | Follow-up |
+|---|---|---|---|---|
+| 2026-09-07 | `/Users/niklas/Developer/active/Labonair/Labonair-rust/target/debug/labonair` (PID 54142) | 76849 | The native window was found, but macOS denied `screencapture` because Screen Recording permission is unavailable to the runner. No screenshot was accepted as evidence. | Grant Screen Recording permission to the runner or capture the same matrix manually; keep all visual cells pending until then. |
+| 2026-09-07 | `/Users/niklas/Developer/active/Labonair/Labonair-rust/target/debug/labonair` (PID 75585) | 76852 | The corrected screenshot validator normalized Cargo's relative process path, confirmed the native Rust window, and reached `screencapture`; macOS again denied capture because Screen Recording permission is unavailable. No screenshot was accepted as evidence. | Grant Screen Recording permission to the runner or capture the same matrix manually; keep all visual cells pending until then. |
+| 2026-10-07 | `/Users/niklas/Developer/active/Labonair/Labonair-rust/target/debug/labonair` (via `cargo run -p labonair`) | unavailable to the current CUA session | The native process compiled and launched; CUA reported `apps: []`, and the exact-process screenshot helper found no layer-0 window. No visual evidence was captured or accepted; all Settings matrix cells remain pending. | Re-run the Settings matrix in a session with native-window access and capture permission. |
+| 2026-10-09 | `/home/Snenjih/projekte/Labonair-rust/target/debug/labonair` (PID 967190) under isolated Linux Xvfb | 1200×800 X11 window at `+202+100` | The exact native Rust binary launched and survived the eight-second headless run; a diagnostic root capture was written to `/tmp/labonair-linux-xvfb.png`. GPUI reported that Xvfb exposes no xinput mouse pointers. The Linux image is supplemental diagnosis only and is not accepted for the macOS-supported R07 matrix. | Re-run the complete 63-state matrix on the supported macOS host with exact bundle/PID and Screen Recording permission. |
+
+The same native launch emitted warnings for legacy persisted keys that are no
+longer part of the typed Settings model, including `hosts`, `hostsMigrated`,
+`statusBarItemPlacements`, and several removed workspace/bookmark values. The
+observed file is already marked `schemaVersion: 2` and `sparsified: true`, so
+the V1-to-V2 migration returns early and does not revisit those old root keys.
+R07-003 now classifies this retained compatibility envelope in the Settings
+owner; the migration remains idempotent and genuinely unknown future keys
+remain warnings. The launch record predates that fix and is retained as audit
+history, not as current runtime evidence.
+
+### Historical diagnostic capture — 2026-09-12
+
+The exact Rust release executable
+`/Users/niklas/Developer/active/Labonair/Labonair-rust/target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair`
+was launched as PID `94593`. `scripts/screenshot.sh` validated that PID and
+captured `/tmp/labonair-r07-native.png` (4024×2284 PNG). The capture was a
+useful historical diagnostic showing the native Rust titlebar, normal
+standalone workspace, empty workspace state, empty Snippets dock, and normal
+statusbar. The image is not retained below `artifacts/visual` and has no
+durable registry `capture` record, so it cannot satisfy the current visual
+evidence contract. No keyboard focus path, narrow viewport, loading/error
+state, or overlay anchoring was inspected; all applicable cells therefore
+remain `Pending`.

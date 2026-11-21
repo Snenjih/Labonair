@@ -3,8 +3,8 @@
 * **Status:** Accepted
 * **Date:** 2026-11-05
 * **Deciders:** project owner and implementation team
-* **Supersedes:** [`0004-editor-internal-splits.md`](0004-editor-internal-splits.md)
-* **Related:** [`capabilities.md`](../capabilities.md), [`modules.md`](../modules.md), [`../design-system.md`](../design-system.md)
+* **Supersedes:** `0004-editor-internal-splits.md`
+* **Related:** `capabilities.md`, [`modules.md`](../modules.md), [`../design-system.md`](../design-system.md)
 
 ## Context
 

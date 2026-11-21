@@ -3,7 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-11-13
 * **Deciders:** project owner and implementation team
-* **Related:** [`0008-onboarding-module.md`](0008-onboarding-module.md), [`0010-shared-workspaces-and-multi-client-detached-sessions.md`](0010-shared-workspaces-and-multi-client-detached-sessions.md), [`../capabilities.md`](../capabilities.md), [`../architecture.md`](../architecture.md), [`../security/`](../security/)
+* **Related:** [`0008-onboarding-module.md`](0008-onboarding-module.md), [`0010-shared-workspaces-and-multi-client-detached-sessions.md`](0010-shared-workspaces-and-multi-client-detached-sessions.md), `../capabilities.md`, [`../architecture.md`](../architecture.md), `../security/`
 
 ## Context
 

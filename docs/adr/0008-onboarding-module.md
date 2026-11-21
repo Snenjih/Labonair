@@ -3,7 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-11-13
 * **Deciders:** project owner and implementation team
-* **Related:** [`0005-universal-panes.md`](0005-universal-panes.md), [`0007-hosts-settings-page.md`](0007-hosts-settings-page.md), [`../registries.md`](../registries.md), [`../capabilities.md`](../capabilities.md), [`../../tasks/rework/R11-001-onboarding-module.md`](../../tasks/rework/R11-001-onboarding-module.md)
+* **Related:** [`0005-universal-panes.md`](0005-universal-panes.md), [`0007-hosts-settings-page.md`](0007-hosts-settings-page.md), [`../registries.md`](../registries.md), `../capabilities.md`, [`../../tasks/rework/R11-001-onboarding-module.md`](../../tasks/rework/R11-001-onboarding-module.md)
 
 ## Context
 
