@@ -9,7 +9,7 @@
 //!   its trailing `＋` new-tab button + `NewTabDropdownItems` port (Terminal /
 //!   Editor / Preview / Git Graph · SSH ▸ / SFTP ▸ recent hosts · All hosts…).
 //!   The `＋` button is part of the tab strip, so it does not count as a
-//!   "second button" against the layout contract (`docs/architecture.md` §4).
+//!   "second button" against the layout contract (`docs/architecture.md` §7).
 //! * **right** — exactly one [`IconName::Ellipsis`] button that opens the
 //!   global menu (`Settings`, `Keymap`, `Themes`, `Icon Themes`, `Hosts`).
 //!

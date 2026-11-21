@@ -20,7 +20,7 @@
 //! command-palette action handlers moved to [`crate::actions`]. The concrete
 //! panel + feature entities stay here (grouped in [`ShellPanels`]) because the
 //! `labonair-panel-* → labonair-workspace` dependency edges make relocating
-//! them into `Workspace` a crate cycle — see `docs/architecture.md` §8.4 / §8.9.
+//! them into `Workspace` a crate cycle — see `docs/architecture.md` §2.
 //!
 //! Window geometry is still persisted every render via
 //! [`Self::maybe_persist_geometry`] (throttled) — that is legitimate, not a
@@ -61,7 +61,7 @@ const SAVE_THROTTLE: Duration = Duration::from_millis(1000);
 /// They live in `labonair-shell`, not `Workspace`, because
 /// `labonair-panel-{explorer,scm,snippets}` already depend on
 /// `labonair-workspace` — storing their concrete `Entity<…>` on `Workspace`
-/// would be a dependency cycle (`docs/architecture.md` §8.4). Grouped so
+/// would be a dependency cycle (`docs/architecture.md` §2). Grouped so
 /// `AppShell` stays a thin composition root and the action handlers in
 /// [`crate::actions`] have one field to reach through.
 pub(crate) struct ShellPanels {

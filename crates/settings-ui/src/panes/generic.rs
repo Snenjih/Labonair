@@ -4,7 +4,7 @@
 //! Generic field renderer (T19-004): dropdown layer, `render_field`
 //! (dispatches on `FieldControl` — the renderer registry), the generated-page
 //! renderer (static section headers + trailing "Other" fallback; section
-//! navigation lives in the sidebar per `docs/architecture.md` §8.3), the
+//! navigation lives in the sidebar per `docs/settings.md`), the
 //! top-level `render_body` dispatch.
 //!
 //! Part of `SettingsView` — see `crate::view`.

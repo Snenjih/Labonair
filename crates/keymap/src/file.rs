@@ -4,7 +4,7 @@
 //! `keymap.json` — parsing, layered merging and validation (T19-008).
 //!
 //! Pure data/logic, decoupled from the palette view's `CommandId`
-//! on purpose (see `docs/architecture.md`'s crate-graph rule: this crate must
+//! on purpose (see `docs/architecture.md` §2 dependency rules: this crate must
 //! not depend on the palette UI crate). The module-owned [`crate::adapter`]
 //! supplies the command vocabulary and owner defaults; platform adapters turn
 //! the resulting [`EffectiveBinding`]s into real `gpui::KeyBinding`s.
@@ -674,7 +674,7 @@ pub fn ensure_user_keymap_file() -> Result<PathBuf, String> {
     }
     if !path.exists() {
         let scaffold = "// User keybindings — overrides the built-in default keymap.\n\
-             // See docs/settings-guidelines.md. Example:\n\
+             // See docs/settings.md. Example:\n\
              // [\n\
              //   { \"context\": \"Editor\", \"bindings\": { \"cmd-k cmd-s\": \"search::Toggle\" } }\n\
              // ]\n[]\n";

@@ -96,7 +96,7 @@ impl StatusMenuEntry {
 
 /// Which side of the status bar an item defaults to.
 ///
-/// `statusBarItemPlacements` (`docs/architecture.md` §4 "What is removed") has
+/// `statusBarItemPlacements` (`docs/architecture.md` §7) has
 /// only left/right, so this enum has exactly two variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StatusSide {

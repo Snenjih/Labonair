@@ -12,7 +12,7 @@
 //!   depth of nesting is possible.
 //! * [`PaneGroup`]'s `root` is **optional**: a workspace with no open panes has
 //!   `root == None` and renders nothing (the empty surface is drawn one level
-//!   up, in [`Workspace`](crate::Workspace); see `docs/architecture.md §8.2`).
+//!   up, in [`Workspace`](crate::Workspace); see `docs/architecture.md` §7).
 //!   Removing the last pane collapses `root` to `None` — that is a valid state,
 //!   not an error.
 //!

@@ -28,7 +28,7 @@ use crate::settings_trait::Settings;
 /// folder settings) is the first real producer of `SettingsLayer::Project`
 /// entries; until then the variant exists so the enum's shape (and merge
 /// order) is fixed now, per the task's normative "merge order is defined in
-/// `docs/architecture.md`, do not reorder" warning.
+/// `docs/settings.md`, do not reorder" warning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WorktreeId(pub u64);
 
@@ -42,8 +42,8 @@ pub enum SettingsLayer {
     /// `SettingsContent::defaults()` (`assets/settings/default.json`).
     Default,
     /// `~/.config/labonair/config.json` (the shared settings
-    /// file's top-level `SettingsContent` keys — see `docs/architecture.md`
-    /// §8.3 / `legacy_migrations` for historical `editor`/`mcp` input. Those
+    /// file's top-level `SettingsContent` keys — see `docs/settings.md`
+    /// / `legacy_migrations` for historical `editor`/`mcp` input. Those
     /// keys are converted before the runtime store reads the file.
     User,
     /// No `SettingsContent` field carries this data yet — always empty until

@@ -10,7 +10,7 @@
 //! [`Workspace`]. Each registered item is a self-describing
 //! [`StatusItem`](labonair_panel::StatusItem) view: it names its `id`, its
 //! `default_side` and its `order`, and renders its own content. Left = panel
-//! controls, right = info dropdowns (`docs/architecture.md` §4).
+//! controls, right = info dropdowns (`docs/architecture.md` §7).
 //!
 //! Personalization (T18-005): every item except the structural per-dock panel-
 //! button groups (`not_moveable`, see [`StatusItem::hideable`] /

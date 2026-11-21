@@ -208,7 +208,7 @@ pub struct SettingsView {
     /// Visible field and capability pages composed from the owner registry.
     pub(crate) pages: Vec<SettingsPage>,
     /// Top-level sidebar rows whose sub-section list is expanded
-    /// (`docs/architecture.md` §8.3 deviation). Toggled only by the row's
+    /// (`docs/settings.md`). Toggled only by the row's
     /// disclosure chevron; selecting a category does not expand it.
     pub(crate) expanded_areas: HashSet<usize>,
     /// Stable focus handles for visible category and section rows. These
@@ -651,7 +651,7 @@ impl SettingsView {
     }
 
     /// Toggle a sidebar row's sub-section list without navigating
-    /// (`docs/architecture.md` §8.3).
+    /// (`docs/settings.md`).
     pub(crate) fn toggle_area_expanded(&mut self, i: usize, cx: &mut Context<Self>) {
         if !self.expanded_areas.remove(&i) {
             self.expanded_areas.insert(i);
@@ -742,7 +742,7 @@ impl SettingsView {
     }
 
     /// Navigate to `area` (if needed) and scroll its content to `label`'s
-    /// section (`docs/architecture.md` §8.3 — sub-level sidebar entries are
+    /// section (`docs/settings.md` — sub-level sidebar entries are
     /// scroll anchors, not pages).
     pub(crate) fn go_to_section(
         &mut self,
@@ -1964,7 +1964,7 @@ impl Render for SettingsView {
             .pt(c.space(if self.windowed { 40.0 } else { 10.0 }))
             .pb(c.space(10.0))
             .overflow_hidden()
-            // `docs/settings-guidelines.md`: the nav rail sits on its own
+            // `docs/settings.md`: the nav rail sits on its own
             // `--sidebar` surface, distinct from the `--card` content area.
             .bg(c.sidebar)
             .border_r_1()
@@ -2065,7 +2065,7 @@ impl SettingsView {
     /// Header: back/forward through visited pages, the page title, then the
     /// scope selector and the one JSON action at the right edge. The left edge
     /// is padded clear of the OS traffic lights; there is no in-window close
-    /// button (`docs/architecture.md` §8.3).
+    /// button (`docs/settings.md`).
     pub(crate) fn render_header(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let page = &self.pages[self.active_area];
         let title = match self.active_subpage {

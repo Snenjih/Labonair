@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Snenjih
 
 //! `AREAS` — the single place a new top-level settings category is
-//! registered (`docs/settings-guidelines.md` rule 4). No UI here, only data;
+//! registered (`docs/settings.md` rule 4). No UI here, only data;
 //! `T19-004` (the disclosure-nav renderer) and `T19-007` (search) consume
 //! this list.
 

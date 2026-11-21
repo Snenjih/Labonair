@@ -1,100 +1,52 @@
 # Labonair Product Contract
 
-**Status:** Normative
-**Version:** 4
-**Scope:** Product identity and user-facing behavior
-
 ## Product identity
 
-Labonair is a fast, keyboard-first Dev-Op workspace for local and remote work. It combines terminal, SSH, SFTP, editor, Git, and AI capabilities without forcing the product into the shape of a terminal emulator or a traditional IDE.
+Labonair is a fast, keyboard-first Dev-Op workspace for local and remote work, combining terminal, SSH, SFTP, editor, Git, and AI capabilities without becoming a terminal emulator or a traditional IDE. The primary unit is a workspace: a project, a remote environment, or a temporary collection of tools ([`workspace-model.md`](workspace-model.md)). Every tool also supports standalone use without project context.
 
-The primary unit is a workspace. A workspace may represent a project, a remote environment, or a temporary collection of tools. Every tool must also support standalone use when no project context exists.
-
-## Product goals
+## Goals
 
 1. Make local and remote development tasks fast to start and easy to finish.
-2. Give terminal and remote workflows first-class status, not secondary treatment.
-3. Keep the default interface quiet and intentional while making power features discoverable through keyboard navigation.
-4. Allow features to evolve independently without inconsistent UI or cross-module coupling.
-5. Make the application feel coherent: one interaction model, one visual language, one location for each responsibility.
+2. Give terminal and remote workflows first-class status.
+3. Keep the default interface quiet and intentional; make power features discoverable by keyboard.
+4. Let features evolve independently without inconsistent UI or cross-module coupling.
+5. One interaction model, one visual language, one location per responsibility.
 
 ## Non-goals
 
-- Labonair owns its product scope, interaction model, implementation, and
-  assets. Product behavior is specified by this contract and the owner-backed
-  capability and workflow records.
-- Marketplace, extension, collaboration, and hosted-service workflows require
-  an explicit product decision, capability owner, service contract, and
-  security and distribution review before implementation.
-- Settings keeps typed value ownership; navigation, categories, controls, and
-  behavior follow the Labonair product and design contracts. Capability
-  management remains with its owner and is exposed through its canonical
-  entrypoint.
-- The application must not preserve a feature merely because it existed in the Tauri predecessor.
+- Labonair owns its scope, interaction model, implementation, and assets. Product behavior is specified by this contract, the capability matrix ([`modules.md`](modules.md)), and the design system.
+- Marketplace, extension, collaboration, and hosted-service workflows need an explicit product decision, capability owner, service contract, and security and distribution review first.
+- Settings keeps typed value ownership; capability management stays with its owner and is exposed through its canonical entry point ([`settings.md`](settings.md)).
+- No feature is preserved merely because it existed in the Tauri predecessor.
 
-## Core principles
+## Principles
 
-### Simple by default
-
-Only the active task should occupy permanent UI. Secondary actions use progressive disclosure through the command palette, contextual menus, or focused dialogs.
-
-### Keyboard-first, mouse-complete
-
-Every meaningful action has a command identity and can receive a keybinding. Mouse interaction remains complete, but no important workflow may depend on mouse-only navigation.
-
-Every visible action that can be invoked by a user must expose a stable command
-ID. Frequent navigation and workflow actions should ship with a default
-binding; rare or destructive actions must remain reachable through the command
-palette even when they have no default binding.
-
-### One responsibility, one home
-
-Every feature has one canonical owner and one primary entry point. Alternate entry points are allowed only when they improve discoverability without duplicating business logic.
-
-The owner is a product module with one canonical capability crate. The module
-may expose sibling crates when UI, storage, or platform integration has a real
-boundary, but users must still experience one coherent feature and the code
-must still have one owner.
-
-### Local and remote parity
-
-Local and remote workflows should use the same workspace concepts wherever their capabilities are equivalent. Differences belong in the owning module, not in shell-wide special cases.
-
-### Progressive replacement
-
-Existing implementation may be reused only when it satisfies this contract. Compatibility code is temporary and must have an explicit removal plan.
-
-### Deliberate scope
-
-The capability matrix and workflow catalog define Labonair's feature scope.
-Every retained capability has an owner, canonical entrypoint, contract, and
-acceptance evidence. Deferred or removed work stays outside the release scope
-until a product decision reopens it.
+- **Simple by default.** Only the active task occupies permanent UI; secondary actions use the command palette, contextual menus, or focused dialogs.
+- **Keyboard-first, mouse-complete.** Every user-invokable action exposes a stable command ID; frequent navigation and workflow actions ship with a default binding, rare or destructive ones stay reachable through the palette. No important workflow is mouse-only.
+- **One responsibility, one home.** Each feature has one canonical owner (a module with one canonical capability crate, plus siblings only for real boundaries) and one primary entry point; alternates are allowed only for discoverability without duplicated logic. Users experience one coherent feature.
+- **Local and remote parity.** Equivalent workflows share workspace concepts; differences live in the owning module, not in shell-wide special cases.
+- **Progressive replacement.** Existing implementation is reused only if it satisfies this contract; compatibility code is temporary with a removal plan.
+- **Deliberate scope.** The capability matrix defines feature scope; every retained capability has an owner, entry point, contract, and acceptance evidence. Deferred or removed work stays out of scope until a product decision reopens it.
 
 ## Product surfaces
 
-The permanent application chrome has four zones and one overlay layer:
+The permanent chrome has four zones and one overlay layer:
 
 1. **Titlebar** — tabs and one global menu button.
 2. **Workspace** — active tab content and split panes.
-3. **Docks** — registered panels attached to left, right, or bottom docks.
+3. **Docks** — registered panels on the left, right, or bottom.
 4. **Statusbar** — panel controls on the left; global status and information items on the right.
-5. **Overlay layer** — command palette, dialogs, focused pickers, and other explicitly modal surfaces.
+5. **Overlay layer** — command palette, dialogs, focused pickers, other explicitly modal surfaces.
 
-No feature may add a new permanent global strip, badge row, or shell toolbar without an ADR explaining why the existing surfaces cannot host it.
+No feature adds a new permanent global strip, badge row, or shell toolbar without an ADR showing existing surfaces cannot host it.
 
 ## Product decisions
 
-- One universal tab bar manages all registered tab content, including Editor,
-  Terminal, Source Control, Git Graph, DiffView, Settings, and feature views.
+- One universal tab bar manages all tab content (Editor, Terminal, Source Control, Git Graph, DiffView, Keymap, Onboarding, feature views).
 - Themes and icon themes are selected through command-palette submenus with live preview.
-- Hosts are selected through a command-palette submenu; `Enter` opens SSH and `Shift+Enter` opens SFTP.
-- The titlebar's global menu exposes Keymap, Themes, Icon Themes, and Hosts.
-  Hosts management is the Hosts owner's full-page surface on the Settings
-  `Hosts` page (below Keymap, ADR 0007); host selection remains a
-  command-palette submenu.
+- Hosts are selected through a command-palette submenu; `Enter` opens SSH, `Shift+Enter` opens SFTP.
+- The titlebar global menu exposes Keymap, Themes, Icon Themes, and Hosts. Host management is the Hosts owner's full-page surface on the Settings `Hosts` page (below Keymap, [ADR 0007](adr/0007-hosts-settings-page.md)); host selection stays a palette submenu.
 - Notifications are persistent entries in the statusbar notification dropdown. There is no toast system.
-- Transfers are represented by a statusbar item with progress and history.
-- Jump hosts are part of connection configuration and connection execution, not a standalone primary menu.
-- AI and agent workflows follow the same owner-first design as other
-  capabilities.
+- Transfers are a statusbar item with progress and history.
+- Jump hosts are part of connection configuration and execution, not a standalone menu.
+- AI and agent workflows follow the same owner-first design as other capabilities.

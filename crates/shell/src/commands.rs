@@ -10,7 +10,7 @@
 //! module only assembles those contributions and retains transitional shell
 //! adapters for commands that have not moved yet.
 //!
-//! ## Sanctioned deviation (see `docs/architecture.md` §8)
+//! ## Sanctioned deviation (see `docs/registries.md`, Command registry)
 //!
 //! The UI-free metadata registry lives in `labonair-command-palette-core`.
 //! `labonair-command-palette-runtime` carries GPUI-facing owner handlers

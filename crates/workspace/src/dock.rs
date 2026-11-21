@@ -6,7 +6,7 @@
 //! and its own persistence record.
 //!
 //! Panels live in one ordered list with at most one active entry. Toggle
-//! buttons for them live in the status bar (`docs/architecture.md` §5,
+//! buttons for them live in the status bar (`docs/architecture.md` §7,
 //! T18-003); the shell drives zoom/close and the resize handle from this
 //! state.
 //!

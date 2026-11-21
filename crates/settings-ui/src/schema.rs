@@ -6,7 +6,7 @@
 //! entries chronically drifting against ~170 `Preferences` fields).
 //!
 //! The `SettingField<T>` and `SettingFieldRenderer` registry is scoped to what
-//! Labonair needs (`docs/settings-guidelines.md` rule 3): every entry below is
+//! Labonair needs (`docs/settings.md` rule 3): every entry below is
 //! a single declarative line naming a real `SettingsContent` value field, a widget
 //! kind (`FieldControl`), and copy. `get`/`set` are generated once by the
 //! `field!` macro from the field's own Rust type via `serde_json`
@@ -15,7 +15,7 @@
 //! from its struct definition the way the old string-keyed `Preferences`
 //! table could. Adding a new `bool` setting is exactly one `field!` line; no
 //! bespoke widget code is written for a type this module already covers
-//! (`docs/settings-guidelines.md` rule 3's "no bespoke hand-built toggle").
+//! (`docs/settings.md` rule 3's "no bespoke hand-built toggle").
 //!
 //! `AnyField::get`/`set` are plain `fn` pointers (no captures), matching the
 //! project's warning to keep pick/write as `fn` pointers rather than
@@ -27,7 +27,7 @@ use labonair_ui_kit::{ColorSchemeChoice, InterfaceStyleChoice, PaneLayoutStyle, 
 use serde_json::Value;
 
 /// Extra copy/behaviour a rendered field carries beyond title+description
-/// (`docs/settings-guidelines.md` rule 2: "title, description, and where
+/// (`docs/settings.md` rule 2: "title, description, and where
 /// applicable unit, range, placeholder, requires_restart").
 #[derive(Clone, Copy)]
 pub struct SettingsFieldMetadata {
@@ -38,7 +38,7 @@ pub struct SettingsFieldMetadata {
 }
 
 /// The renderer-registry key: which Rust-type-shaped widget a field gets
-/// (`docs/settings-guidelines.md` rule 3's table). `Select`'s pairs are
+/// (`docs/settings.md` rule 3's table). `Select`'s pairs are
 /// `(serialized token, human label)` — labels are never the raw Rust variant
 /// name (the project's warning).
 #[derive(Clone, Copy)]

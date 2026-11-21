@@ -348,7 +348,7 @@ UserCheck => "user_check",
 UserGroup => "user_group",
 UserRoundPen => "user_round_pen",
 // + Labonair additions: program/host glyphs for tab tiles (own drawings,
-// Lucide style, see docs/architecture.md §8.19)
+// Lucide style, see docs/design-system.md)
 Activity => "activity",
 Container => "container",
 Cpu => "cpu",

@@ -4,7 +4,7 @@
 //! `labonair-hosts-ui` — host and credential management UI.
 //!
 //! This is deliberately **not** a dock panel and has **no** `impl Panel` (see
-//! `docs/architecture.md §2`): the management surface is owned by the Hosts
+//! `docs/modules.md` §1): the management surface is owned by the Hosts
 //! capability and the connect surface is fed to the command palette as data.
 //! The Settings window embeds [`HostManagerView`] as its full-page Hosts
 //! surface (ADR 0007, registered by [`register_settings_surfaces`]); opening

@@ -4,7 +4,7 @@
 //! `labonair-settings-content` — the fully typed settings tree (T19-001).
 //!
 //! It has **no** GPUI, UI, or application-composition dependency
-//! (`docs/architecture.md` §2 settings
+//! (`docs/settings.md`
 //! track) — it is a pure data model that `T19-002`'s `SettingsStore` layers
 //! (default < user < project). Historical flat `Preferences` input is read
 //! only by `labonair_settings::legacy_migrations` and never becomes a runtime

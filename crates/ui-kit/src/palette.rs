@@ -301,7 +301,7 @@ impl Palette {
     /// Primitives use this for every padding / gap / height / fixed layout
     /// dimension instead of a bare `px(..)`. Hairlines (1px borders/dividers),
     /// icon glyph sizes and `text_size` are *typographic*, not spacing, and
-    /// stay as literals (`docs/architecture.md` §8.20).
+    /// stay as literals (`docs/design-system.md`).
     pub fn space(&self, value: f32) -> Pixels {
         px(value * self.density)
     }

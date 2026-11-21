@@ -7,7 +7,7 @@
 //! This crate exists to break the dependency cycle "panels need workspace
 //! types, the workspace needs the panel trait". It holds only trait/enum
 //! declarations and two small registry containers — no rendering, no
-//! persistence, no feature code. Per `docs/architecture.md` §3 it must depend
+//! persistence, no feature code. Per `docs/architecture.md` §2 it must depend
 //! on **no** workspace-track crate (`labonair-workspace`, `labonair-shell`) and
 //! on **no** `labonair-panel-*` crate; its only dependencies are `gpui` and
 //! `labonair-gpui-ext`.

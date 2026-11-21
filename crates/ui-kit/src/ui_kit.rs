@@ -13,7 +13,7 @@
 //!
 //! T20-001 grew it from the four extracted primitives (`button`,
 //! `context_menu`, `icon`, `text_field` + `popover`) into the full set the
-//! views assemble from — see `docs/architecture.md` §"UI-Kit" for the
+//! views assemble from — see `docs/design-system.md` §"UI-kit requirement" for the
 //! inventory that decided which primitives exist.
 //!
 //! ## Conventions

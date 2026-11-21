@@ -5,7 +5,7 @@
 //!
 //! Loads every settings layer (`assets/settings/default.json` < the user's
 //! `config.json` < …), merges them in the fixed order normative in
-//! `docs/architecture.md`, watches the user file live, and hands out
+//! `docs/settings.md`, watches the user file live, and hands out
 //! feature-local typed slices (`ThemeSettings::get(cx)`,
 //! `TerminalSettings::get(cx)`, …) through the [`Settings`] trait. This is
 //! the single settings surface every feature reads from — the legacy

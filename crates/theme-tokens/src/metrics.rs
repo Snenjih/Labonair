@@ -22,7 +22,7 @@ use crate::tokens::{Animation, RadiusScale, Theme, Typography};
 
 /// UI density — a spacing and size multiplier applied around the layout contract.
 ///
-/// The factors are deliberately conservative (`docs/architecture.md` §8.20):
+/// The factors are deliberately conservative (`docs/design-system.md`):
 /// `Compact` ≈ ×0.85, `Default` ×1.0, `Comfortable` ×1.15. They scale *around*
 /// the layout-contract heights (40px titlebar / 32px statusbar stay the
 /// reference), never replace them.

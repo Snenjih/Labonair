@@ -7,7 +7,7 @@
 version = 1
 status = "normative policy source"
 source_of_truth = "docs/architecture.md"
-generated_view = "docs/generated/architecture.md"
+generated_view = "docs/architecture.md"
 
 [policy]
 composition_roots = ["labonair", "labonair-shell"]

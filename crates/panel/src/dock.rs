@@ -46,7 +46,7 @@ impl DockPosition {
 /// This small closed enum avoids pulling `labonair-ui-kit` into the contracts
 /// crate. It defines one variant per Labonair panel; `labonair-shell` maps each
 /// variant to a concrete `IconName` when it renders the toggle
-/// (`docs/architecture.md` §3, §5). If a
+/// (`docs/architecture.md` §2, §7). If a
 /// future panel needs a new icon, add a variant here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelIcon {
@@ -212,7 +212,7 @@ pub struct PanelRegistration {
 
 /// The set of every panel type known to the running app.
 ///
-/// Labonair's architecture (`docs/architecture.md` §1.3, §4) wants one panel
+/// Labonair's architecture (`docs/architecture.md` §7) wants one panel
 /// registry read by both the workspace (which dock renders what) and the
 /// status bar (one toggle per registration). Capability modules build typed
 /// contributions; application composition only inserts them into this list.
