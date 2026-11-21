@@ -70,8 +70,9 @@ scripts/package-macos.sh
 ```
 
 The app bundle also carries `LICENSE`, `ADDITIONAL-TERMS.md`, the GPUI Apache
-license, Lucide ISC license, Material Icon Theme MIT/Apache licenses and
-notice, and the license files for all bundled fonts. They are copied under
+license, Lucide ISC license, the Feather-derived Lucide icons' MIT license,
+Material Icon Theme MIT/Apache licenses and notice, and the license files for
+all bundled fonts. They are copied under
 `Contents/Resources/Licenses/` so they remain readable in the `.app`, DMG, and
 updater archive.
 
