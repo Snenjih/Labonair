@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Priority
 
-**The user's direct instruction in the current session always wins.** The task queue (`tasks/`) and the docs are a default backlog and contract reference, not a gate: do not substitute, reorder, or "first finish" queue tasks, and do not refuse a request because it is not the earliest open task. Scale process to change size — a small fix needs the focused gates, not a full contract write-up.
+**The user's direct instruction in the current session always wins.** The task backlog (`docs/tasks/`) and the docs are a default backlog and contract reference, not a gate: do not substitute, reorder, or "first finish" queue tasks, and do not refuse a request because it is not the earliest open task. Scale process to change size — a small fix needs the focused gates, not a full contract write-up.
 
 ## What this is
 
@@ -57,4 +57,11 @@ Prefer removal/deferral over a new framework when a feature has no current user 
 
 ## Docs and tasks
 
-`docs/README.md` indexes the normative contracts (product, architecture, modules, registries, settings, design system, release). Before changing a feature, identify its owning crate, public contract, settings, persistence, notifications and UI-kit components using the ownership matrix in `docs/modules.md`. Update the relevant doc or ADR when a contract changes. Open work is tracked in `tasks/`; `tasks/archive/` is historical and not instructions.
+`docs/README.md` indexes the normative contracts (product, architecture, modules, registries, settings, design system, release). Before changing a feature, identify its owning crate, public contract, settings, persistence, notifications and UI-kit components using the ownership matrix in `docs/modules.md`. Update the relevant doc or ADR when a contract changes. Open work is tracked in `docs/tasks/rework/`; `docs/tasks/archive/` is historical and not instructions.
+
+## ADRs (mandatory)
+
+Architecture Decision Records live in `docs/adr/` (numbered `NNNN-title.md`, template: Status, Context, Decision, Consequences). They are **required, not optional**:
+- Write a new ADR *before* implementing any decision that changes architecture, crate boundaries/dependencies, permanent shell chrome, persistence/protocol formats, a public contract, or a security boundary.
+- Never edit an Accepted ADR to change its decision: add a new ADR that supersedes it, set the old one to `Superseded by NNNN`, and update links and `docs/README.md`/`docs/architecture.md` references in the same change.
+- Keep ADR status, links and the docs they govern consistent; when code contradicts an ADR, fix whichever is wrong in the same change and say so.

@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+Done (2026-11-21)
 
 > Structural migration landed ahead of formal activation, the same way
 > [`R07-004`](R07-004-explorer-host-contract.md) did for B01. The direct
@@ -134,3 +134,9 @@ record the native background-layer visual states, the same capture effort
 blocked in R07-001. Backlog items B03–B06 are review points, not automatic
 extraction mandates, and are re-evaluated separately (see
 [`../../docs/archive/audits/remaining-boundaries.md`](../../archive/audits/remaining-boundaries.md)).
+
+## Evidence (2026-11-21)
+
+- All structural boxes were ticked earlier; re-verified 2026-11-21: `crates/workspace/Cargo.toml` depends only on `labonair-background-host`, not `labonair-background`; `scripts/check-crate-deps.sh` OK; `cargo test -p labonair-background-host` passes.
+
+**Native visual check pending (user):** visual states are tracked in R07-001's matrix, not here.

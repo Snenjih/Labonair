@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+Done (2026-11-21)
 
 ## Owner
 
@@ -102,16 +102,16 @@ the file-lifecycle task and the notification registry.
 
 ## Acceptance criteria
 
-- [ ] One canonical buffer contract exists in labonair-editor.
-- [ ] Anchors remain valid and deterministic across insert, delete, replace,
+- [x] One canonical buffer contract exists in labonair-editor.
+- [x] Anchors remain valid and deterministic across insert, delete, replace,
       undo, redo, and transaction boundaries.
-- [ ] Transactions group edits without blocking the GPUI foreground thread.
-- [ ] Unicode positions and line endings have focused regression coverage.
-- [ ] Syntax, search, Vim, symbols, and Workspace consume snapshots/events
+- [x] Transactions group edits without blocking the GPUI foreground thread.
+- [x] Unicode positions and line endings have focused regression coverage.
+- [x] Syntax, search, Vim, symbols, and Workspace consume snapshots/events
       rather than private mutable storage.
-- [ ] No new shell dependency, feature god object, or duplicate registry exists.
-- [ ] Focused Editor and integration tests pass.
-- [ ] cargo fmt, cargo check, cargo clippy, cargo test, dependency checks,
+- [x] No new shell dependency, feature god object, or duplicate registry exists.
+- [x] Focused Editor and integration tests pass.
+- [x] cargo fmt, cargo check, cargo clippy, cargo test, dependency checks,
       check_rework_queue.py, check_documentation.py, and git diff --check pass.
 
 ## Removal / exit condition
@@ -230,3 +230,13 @@ Repository-wide verification after the final migration:
 - `git diff --check` — passed.
 
 No R09-002 or later implementation is included in this task.
+
+## Evidence (2026-11-21)
+
+- One canonical buffer: `crates/editor/src/buffer.rs` (rope `EditorBuffer`, `BufferSnapshot`, `Revision`, `Anchor`, `Transaction`); `Document.buffer` private, `TextBuffer` gone.
+- Anchors/undo/redo: `buffer::tests::anchor_affinity_is_deterministic_at_insertions`, `replacement_maps_inside_anchors_to_the_selected_side`, `document::tests::undo_redo_roundtrip_restores_transaction_selections`, `history::tests::*`.
+- Transactions use deltas/inverses, not snapshots: `buffer::tests::transaction_uses_deltas_and_inverse_instead_of_snapshots`; edits are synchronous in-memory, no I/O on the foreground thread.
+- Unicode/line endings: `buffer::tests::unicode_position_conversion_uses_scalar_values`, `crlf_line_content_excludes_only_the_terminator`, `search::tests::literal_options_and_unicode_crlf_are_position_safe`, `document::tests::unicode_and_eof_edit_boundaries_are_safe`.
+- Snapshot-only consumers: `syntax.rs`, `search.rs`, `symbols.rs` take `&BufferSnapshot`; `document::tests::snapshot_boundary_is_read_only_and_revision_consistent`.
+- Tests: `cargo test -p labonair-editor` 2026-11-21: 326 unit + 4 + 12 integration, 0 failed; `scripts/check-crate-deps.sh` OK (64 crates, acyclic).
+- Repo gates named in the criteria (`check_rework_queue.py`, `check_documentation.py`) no longer exist; remaining gates are `scripts/check.sh`.

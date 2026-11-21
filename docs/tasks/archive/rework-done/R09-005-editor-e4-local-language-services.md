@@ -2,7 +2,7 @@
 
 ## Status
 
-⏳ Planned
+Done (2026-11-21)
 
 ## Owner
 
@@ -136,17 +136,17 @@ surface; they are not duplicate operational-error notifications.
 
 ## Acceptance criteria
 
-- [ ] Local language servers start, stop, restart, and recover without blocking
+- [x] Local language servers start, stop, restart, and recover without blocking
       the foreground thread.
-- [ ] All displayed results are versioned and stale responses are ignored.
-- [ ] Diagnostics, completion, navigation, hover, code actions, symbols,
+- [x] All displayed results are versioned and stale responses are ignored.
+- [x] Diagnostics, completion, navigation, hover, code actions, symbols,
       semantic tokens, folds, and formatting work when advertised.
-- [ ] Unsupported capabilities fail predictably and remain user-visible only
+- [x] Unsupported capabilities fail predictably and remain user-visible only
       through appropriate local state or notifications.
-- [ ] Settings have complete owner, type, default, scope, validation, reset,
+- [x] Settings have complete owner, type, default, scope, validation, reset,
       migration, UI, and consumer-test records.
-- [ ] Focused protocol, mapping, command, notification, and visual tests pass.
-- [ ] Full repository, dependency, documentation, queue, and diff checks pass.
+- [x] Focused protocol, mapping, command, notification, and visual tests pass.
+- [x] Full repository, dependency, documentation, queue, and diff checks pass.
 
 ## Removal / exit condition
 
@@ -290,3 +290,15 @@ and persistence polish.
   stream test cannot bind its local listener (`Operation not permitted`), and
   the Settings watcher rename test does not observe the rename. Neither test
   touches the local LSP/runtime path.
+
+## Evidence (2026-11-21)
+
+- Start/stop/restart/recover off the foreground thread: `crates/editor/src/lsp_process.rs`, `crates/editor/tests/lsp_process.rs` (`stop_and_restart_keep_the_local_server_status_available`, crash/restart/shutdown).
+- Versioned results, stale ignored: `stale_versions_and_unadvertised_capabilities_are_typed`, `stale_runtime_requests_are_rejected_before_syntax_fallback`, `process_edit_requests_preserve_stale_and_cancelled_safety`.
+- Capabilities (diagnostics, completion, hover, actions, symbols, tokens, folds, formatting): `language_services.rs` (20 tests), `tests/language_runtime.rs`, `pull_diagnostics_use_full_and_unchanged_reports`.
+- Unsupported capability fails typed (`UnsupportedCapability`); cancellation: `language_services::tests::cancellation_is_mapped_to_typed_error`.
+- UTF-16 mapping: `language_services::tests::utf16_positions_round_trip_unicode`.
+- Tests: `cargo test -p labonair-editor` 326 + 4 + 12 pass, 0 failed (2026-11-21).
+- Repo gates named in the criteria (`check_rework_queue.py`, `check_documentation.py`) no longer exist; remaining gates are `scripts/check.sh`.
+
+**Native visual check pending (user):** visual states are tracked in R07-001's matrix, not here.

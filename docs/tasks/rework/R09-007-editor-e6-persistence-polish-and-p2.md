@@ -2,7 +2,14 @@
 
 ## Status
 
-⏳ Planned
+Partial
+
+## Remaining (2026-11-21)
+
+Implemented: versioned session schema with corruption/unsupported-version rejection (`crates/editor/src/session.rs`, 4 tests), save policies default off (`crates/editor/src/policy.rs`), autosave and format-on-save in `crates/editor-ui/src/editor.rs`, breadcrumbs.
+- Open: tests for autosave/format-on-save failure recovery and conflict safety in editor-ui; opt-in trim/final-newline preserving EOL/BOM; explicit deferral list for P2 items and removal of any dead command/setting; native visual check (user).
+
+The sections below are the original spec; ticked/unticked boxes there are not authoritative, this section is.
 
 ## Owner
 

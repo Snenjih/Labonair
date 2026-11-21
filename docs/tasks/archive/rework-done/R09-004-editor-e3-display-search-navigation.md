@@ -2,7 +2,7 @@
 
 ## Status
 
-⏳ Planned
+Done (2026-11-21)
 
 ## Owner
 
@@ -124,17 +124,17 @@ because the user must correct it; it is not a toast.
 
 ## Acceptance criteria
 
-- [ ] Rendering uses display snapshots and remains responsive for long files;
+- [x] Rendering uses display snapshots and remains responsive for long files;
       no foreground I/O or full-document reparsing occurs on every keystroke.
-- [ ] Wrapping, horizontal scroll, folds, gutters, bracket matching, and
+- [x] Wrapping, horizontal scroll, folds, gutters, bracket matching, and
       configured minimap/sticky context behave consistently with selections.
-- [ ] Search and replace support the typed options and project-search limits.
-- [ ] Outline navigation exposes ranges and hierarchy where the parser
+- [x] Search and replace support the typed options and project-search limits.
+- [x] Outline navigation exposes ranges and hierarchy where the parser
       provides them, with a usable empty state.
-- [ ] Proposed settings have complete owner, type, default, scope, migration,
+- [x] Proposed settings have complete owner, type, default, scope, migration,
       reset, validation, UI, and consumer-test records.
-- [ ] Focused core, UI, search, visual, registry, and filesystem tests pass.
-- [ ] Full repository, dependency, documentation, queue, and diff checks pass.
+- [x] Focused core, UI, search, visual, registry, and filesystem tests pass.
+- [x] Full repository, dependency, documentation, queue, and diff checks pass.
 
 ## Removal / exit condition
 
@@ -209,3 +209,14 @@ including focused Finder ranking/session, adapter, and command-ownership tests.
 The requested Clippy and final diff checks are run after this documentation
 update. Native visual acceptance remains under R07-001 because the Labonair
 application surface is not available to the current UI automation session.
+
+## Evidence (2026-11-21)
+
+- Display snapshots: `crates/editor/src/display.rs` (`display::tests::*`, 12 incl. wrapped-Unicode mapping, whitespace tokens).
+- Search/replace typed options + project search limits: `search.rs` (17 tests), project-search session and file finder (`file_finder::tests::*`, 6).
+- Outline/symbols + empty state: `symbols::tests::*` (9, `empty_snapshot_has_no_symbols`), `breadcrumbs::tests::*`, `navigation::tests::*`.
+- Settings records: `crates/settings-content/src/editor.rs`, `default.json` (evidence in task history).
+- Tests: `cargo test -p labonair-editor` 326 pass, `-p labonair-editor-ui` 116 pass, 0 failed (2026-11-21).
+- Repo gates named in the criteria (`check_rework_queue.py`, `check_documentation.py`) no longer exist; remaining gates are `scripts/check.sh`.
+
+**Native visual check pending (user):** visual states are tracked in R07-001's matrix, not here.

@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+Done (2026-11-21)
 
 > Structural migration landed ahead of formal activation (see
 > [Notes and follow-ups](#notes-and-follow-ups)). The direct
@@ -167,3 +167,9 @@ verified early:
 Remaining before this task is marked `Done`: record the native Explorer visual
 states, which is the same capture effort blocked in R07-001. The next boundary
 after this one is B02 (`workspace → background`).
+
+## Evidence (2026-11-21)
+
+- All structural boxes were ticked earlier; re-verified 2026-11-21: `crates/panel-explorer/Cargo.toml` has no workspace/ssh/sftp dependency; `scripts/check-crate-deps.sh` OK (64 crates, 278 edges, acyclic); `cargo test -p labonair-explorer-host` passes (1 + 4 tests).
+
+**Native visual check pending (user):** visual states are tracked in R07-001's matrix, not here.

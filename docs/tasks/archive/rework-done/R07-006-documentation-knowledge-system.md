@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+Obsolete (2026-11-21): the docs governance system and its checkers were deleted in the docs consolidation; see docs/README.md.
 
 ## Owner
 

@@ -2,7 +2,14 @@
 
 ## Status
 
-⏳ Planned
+Partial
+
+## Remaining (2026-11-21)
+
+Implemented: `crates/editor/src/git.rs` (13 tests: hunks, Unicode/CRLF mapping, stale revisions, typed stage/unstage/discard intents), bridge in `crates/workspace/src/editor_git_bridge.rs`; code goes beyond original scope (inline word diff, hunk menu).
+- Open: confirm gutter stays aligned after reload/external change; stage/discard failures route to notifications; settings records for `editorGit*`; native visual check (user).
+
+The sections below are the original spec; ticked/unticked boxes there are not authoritative, this section is.
 
 ## Implementation evidence (E5 core)
 

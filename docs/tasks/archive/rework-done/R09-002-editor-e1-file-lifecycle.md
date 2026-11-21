@@ -2,7 +2,7 @@
 
 ## Status
 
-⏳ Planned
+Done (2026-11-21)
 
 ## Owner
 
@@ -111,17 +111,17 @@ action. No passive toast or duplicate feature-local error banner is allowed.
 
 ## Acceptance criteria
 
-- [ ] FileState transitions are explicit and impossible transitions return
+- [x] FileState transitions are explicit and impossible transitions return
       descriptive errors.
-- [ ] EOL, BOM, and supported encoding metadata survive load/save/reload.
-- [ ] Read-only, missing, binary, and too-large files are represented without
+- [x] EOL, BOM, and supported encoding metadata survive load/save/reload.
+- [x] Read-only, missing, binary, and too-large files are represented without
       corrupting or replacing user data.
-- [ ] Dirty buffers are never silently overwritten after an external change.
-- [ ] Workspace consumes typed lifecycle events and owns no FileState logic.
-- [ ] Failures use the notification registry; the conflict decision remains
+- [x] Dirty buffers are never silently overwritten after an external change.
+- [x] Workspace consumes typed lifecycle events and owns no FileState logic.
+- [x] Failures use the notification registry; the conflict decision remains
       the only local actionable surface.
-- [ ] Focused lifecycle, filesystem-adapter, migration, and Workspace tests pass.
-- [ ] All repository verification gates, including dependency, documentation,
+- [x] Focused lifecycle, filesystem-adapter, migration, and Workspace tests pass.
+- [x] All repository verification gates, including dependency, documentation,
       queue, and diff checks, pass.
 
 ## Removal / exit condition
@@ -172,3 +172,14 @@ Verification for this adapter slice:
 The remaining E1 gate is the repository-wide verification and the final
 R07-001 native visual acceptance evidence after that queue dependency is
 closed.
+
+## Evidence (2026-11-21)
+
+- Explicit transitions: `lifecycle.rs`, `lifecycle::tests::transition_table_rejects_impossible_edges`, `terminal_error_state_is_never_saveable_even_with_write_permissions`.
+- EOL/BOM/encoding metadata: `lifecycle::Bom`/line-ending types, `lifecycle::tests::detects_and_normalizes_all_line_endings`, `line_ending_changes_are_dirty_and_revert_to_clean`.
+- Read-only/missing/binary/too-large without data loss: `breadcrumbs::tests::binary_and_too_large_states_hide_symbol_context`, `missing_and_error_states_retain_only_truthful_path`, `document::tests::temporary_read_only_cannot_unlock_a_lifecycle_read_only_file`; adapter in `crates/editor-ui/src/editor.rs`.
+- No silent overwrite: `lifecycle::tests::dirty_external_change_requires_explicit_reload_decision`, `normal_save_refuses_changed_identity`.
+- Tests: `cargo test -p labonair-editor` and `-p labonair-editor-ui` (116) pass 2026-11-21.
+- Repo gates named in the criteria (`check_rework_queue.py`, `check_documentation.py`) no longer exist; remaining gates are `scripts/check.sh`.
+
+**Native visual check pending (user):** visual states are tracked in R07-001's matrix, not here.

@@ -2,7 +2,14 @@
 
 ## Status
 
-⏳ Planned
+Partial
+
+## Remaining (2026-11-21)
+
+Implemented and tested in `crates/editor/src/editing.rs` (41 tests: multi-cursor transactional undo, duplicate/move line, indent, brackets, Unicode). Internal splits are obsolete: editor view groups (cbd41bc9, ADR 0005, `crates/editor/src/groups.rs`) replaced them; the split criterion is dropped.
+- Open: confirm all editing commands are owner-registered with working keymap overrides (not audited); multi-selection on folded/wrapped views; native visual check (user).
+
+The sections below are the original spec; ticked/unticked boxes there are not authoritative, this section is.
 
 ## Owner
 
