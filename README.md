@@ -4,47 +4,18 @@ Labonair is a standalone native Rust application built with GPUI. It is a fast, 
 
 The product supports both project workspaces and standalone use. It is an independently implemented native Rust/GPUI Dev-Op workspace with one coherent interaction model across its capabilities.
 
-## Current direction
+## Documentation
 
-The active architecture and rework sequence are documented in [`docs/`](docs/):
+Start at [`docs/README.md`](docs/README.md). Agent/contributor rules are in [`CLAUDE.md`](CLAUDE.md) (`AGENTS.md` is a symlink to it); open work is in [`tasks/rework/`](tasks/rework/README.md) and [`TODO.md`](TODO.md).
 
-- [`docs/product.md`](docs/product.md) — product contract
-- [`docs/architecture.md`](docs/architecture.md) — target architecture
-- [`docs/modules.md`](docs/modules.md) — module and crate rules
-- [`docs/registries.md`](docs/registries.md) — registry contracts
-- [`docs/design-system.md`](docs/design-system.md) — UI consistency rules
-- [`docs/repository-layout.md`](docs/architecture.md) — canonical repository and crate placement
-- [`docs/feature-lifecycle.md`](docs/architecture.md) — required feature change workflow
-- [`docs/documentation-governance.md`](docs/README.md) — documentation ownership and authority rules
-- [`docs/rework-roadmap.md`](docs/archive/rework-roadmap.md) — implementation sequence
-- [`docs/capabilities.md`](docs/modules.md) — ownership and migration matrix
-- [`docs/settings.md`](docs/settings.md) — value-only settings boundary
-- [`docs/workspace-model.md`](docs/workspace-model.md) — project and standalone workflows
-
-The historical task tree and original roadmap are preserved under
-[`tasks/archive/`](tasks/archive/) for traceability. New work must follow the
-rework roadmap and [`tasks/rework/`](tasks/rework/), never the historical queue.
-
-The architectural invariant is simple: one product capability, one owning
-module, and one canonical capability crate. A module may split into sibling
-core, UI, storage, or integration crates only when a real boundary justifies
-it. The shell composes registered capabilities; it does not implement them.
-
-Before adding a feature, update the capability matrix, choose its canonical
-surface, define its typed contract, and check whether an existing registry or
-UI-kit component already provides the needed extension point. User-visible
-messages go to the notification dropdown, and settings contain values only.
+The architectural invariant: one product capability, one owning module, one canonical capability crate. The shell composes registered capabilities; it does not implement them. User-visible messages go to the notification dropdown, and settings contain values only.
 
 ## Build commands
 
 ```text
-cargo check --workspace --all-targets
-cargo build
 cargo run -p labonair
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-python3 scripts/check_rework_queue.py
+cargo build
+scripts/check.sh   # fmt, check, clippy, test, crate-dependency rules
 ```
 
 Platform priority is macOS first, with Linux later. The application contains no WebView, JavaScript frontend, or IPC layer.

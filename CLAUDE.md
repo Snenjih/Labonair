@@ -23,10 +23,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo test -p <crate> <test_name>          # single test / focused crate
 cargo check -p labonair --features gallery # debug Component Gallery (ui-kit)
-scripts/package-macos.sh [--dmg]           # release bundle (see docs/RELEASE.md)
-scripts/check-crate-deps.sh                # dependency-graph verifier (run when deps change)
-python3 scripts/check_documentation.py     # run when docs change
-python3 scripts/verify.py --scope <scope>  # orchestrator; `all` runs everything
+scripts/package-macos.sh [--dmg]           # release bundle (see docs/release.md)
+scripts/check-crate-deps.sh                # crate-graph rules (scripts/crate-graph.toml); run when deps change
+scripts/check.sh                           # full gate: fmt, check, clippy, test, crate-deps
 ```
 
 **Never use `open -a Labonair`** — the legacy Tauri app is installed under the same name at `/Applications/Labonair.app`. Run the Rust build via `cargo run -p labonair` or an explicit `target/**/labonair` path, and never start the Tauri app when testing the Rust one.

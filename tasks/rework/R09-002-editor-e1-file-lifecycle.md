@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: editor
-- Capability-matrix row: [Editor](../../docs/capabilities.md)
+- Capability-matrix row: [Editor](../../docs/modules.md)
 - Composition entry point: labonair-shell injects the filesystem adapter into the Workspace Editor host
 
 ## Dependencies

@@ -15,7 +15,7 @@
 ## Owner
 
 - Module: Explorer with the Workspace composition boundary
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
 - Composition entry point: `labonair-shell` / Workspace construction
 
 ## Goal
@@ -29,7 +29,7 @@ than storing or calling a Workspace entity directly.
 
 - `R07-001-product-surface-acceptance` must be complete.
 - The current edge and its removal condition are recorded in
-  [`../../docs/audits/remaining-boundaries.md`](../../docs/audits/remaining-boundaries.md).
+  [`../../docs/archive/audits/remaining-boundaries.md`](../../docs/archive/audits/remaining-boundaries.md).
 
 ## Scope
 
@@ -160,9 +160,9 @@ verified early:
 - `crates/shell/src/bootstrap.rs`: constructs the Workspace-backed
   `ExplorerHost` and folds an `e.notify_active_file_changed(cx)` call into the
   existing workspace observer;
-- `scripts/check_crate_deps.py`, `docs/audits/architecture-inventory.md`,
-  `docs/audits/remaining-boundaries.md` (B01 → **Done**), `docs/capabilities.md`,
-  and `docs/rework-roadmap.md` updated in the same change.
+- `scripts/check_crate_deps.py`, `docs/archive/audits/architecture-inventory.md`,
+  `docs/archive/audits/remaining-boundaries.md` (B01 → **Done**), `docs/modules.md`,
+  and `docs/archive/rework-roadmap.md` updated in the same change.
 
 Remaining before this task is marked `Done`: record the native Explorer visual
 states, which is the same capture effort blocked in R07-001. The next boundary

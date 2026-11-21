@@ -2,7 +2,7 @@ name: Release
 
 # Builds the macOS .app bundle + dmg on a version tag and attaches them to the
 # GitHub release. Code signing / notarization run only when the corresponding
-# secrets are configured (see docs/RELEASE.md) — they never block the build.
+# secrets are configured (see docs/release.md) — they never block the build.
 
 on:
   push:

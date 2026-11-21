@@ -10,7 +10,7 @@
   settings widgets, floating tabs), `settings` / `settings-ui` (page tree,
   widgets, new keys), `theme` (light+dark requirement), `background`
   (visibility, inline surface)
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
 - Composition entry point: `labonair_workspace::Workspace` (layout),
   `labonair_settings_ui::pages` (Settings tree)
 - Decisions: [ADR 0005](../../docs/adr/0005-universal-panes.md),

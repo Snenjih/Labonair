@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: repository documentation and application composition acceptance
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
 - Composition entry point: `scripts/verify.py` and `docs/README.md`
 
 ## Dependencies
@@ -36,7 +36,7 @@ evidence, and next safe task without relying on chat history.
 ## Contracts and ownership
 
 - Documentation authority: [`../../docs/README.md`](../../docs/README.md) and
-  [`../../docs/documentation-governance.md`](../../docs/documentation-governance.md)
+  [`../../docs/README.md`](../../docs/README.md)
 - Agent routes: [`../../docs/agents/routes.toml`](../../docs/agents/routes.toml)
 - Capability source: [`../../docs/capabilities/coverage.toml`](../../docs/capabilities/coverage.toml)
 - Evidence source: [`../../docs/evidence/scorecard.toml`](../../docs/evidence/scorecard.toml)

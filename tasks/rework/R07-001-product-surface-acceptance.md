@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: application composition with every capability owner
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
 - Composition entry point: application startup and registered surfaces
 
 ## Dependencies
@@ -34,10 +34,10 @@ to introduce new features.
 
 - Normative sources: `docs/product.md`, `docs/architecture.md`,
   `docs/modules.md`, `docs/registries.md`, `docs/design-system.md`,
-  `docs/repository-layout.md`, and `docs/feature-lifecycle.md`.
+  `docs/repository-layout.md`, and `docs/architecture.md`.
 - Evidence sources: capability matrix, architecture inventory, active task
   queue, dependency verifier, focused tests, and visual captures.
-- Working evidence matrix: [`../../docs/audits/product-surface-acceptance.md`](../../docs/audits/product-surface-acceptance.md)
+- Working evidence matrix: [`../../docs/archive/audits/product-surface-acceptance.md`](../../docs/archive/audits/product-surface-acceptance.md)
 - Each discrepancy becomes a bounded follow-up task; it is not silently
   accepted as a target statement.
 
@@ -145,7 +145,7 @@ a separate product decision after the core workflow is stable.
       and focused regression evidence.
 - [ ] A complete visual state matrix is still required for the permanent
       surfaces. The working matrix is recorded in
-      [`../../docs/audits/product-surface-acceptance.md`](../../docs/audits/product-surface-acceptance.md);
+      [`../../docs/archive/audits/product-surface-acceptance.md`](../../docs/archive/audits/product-surface-acceptance.md);
       all applicable visual cells remain pending until native-bundle evidence
       is recorded. This matrix also carries the sole remaining acceptance item
       for [`R07-004`](R07-004-explorer-host-contract.md) (Explorer layer) and

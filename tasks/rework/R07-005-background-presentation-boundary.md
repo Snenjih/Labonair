@@ -15,14 +15,14 @@
 ## Owner
 
 - Module: Backgrounds, with the Workspace/Terminal presentation boundary
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
 - Composition entry point: `labonair-shell` / `bootstrap::bootstrap`
 
 ## Goal
 
 Remove `labonair-workspace`'s direct dependency on `labonair-background`
 (`Entity<BackgroundStore>`), described as B02 in
-[`../../docs/audits/remaining-boundaries.md`](../../docs/audits/remaining-boundaries.md),
+[`../../docs/archive/audits/remaining-boundaries.md`](../../docs/archive/audits/remaining-boundaries.md),
 while keeping all image storage, import/delete behavior, persistence,
 decoding, and rendering policy in the Backgrounds module.
 
@@ -133,4 +133,4 @@ the visual-matrix capture. Remaining before this task is marked `Done`:
 record the native background-layer visual states, the same capture effort
 blocked in R07-001. Backlog items B03–B06 are review points, not automatic
 extraction mandates, and are re-evaluated separately (see
-[`../../docs/audits/remaining-boundaries.md`](../../docs/audits/remaining-boundaries.md)).
+[`../../docs/archive/audits/remaining-boundaries.md`](../../docs/archive/audits/remaining-boundaries.md)).

@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: editor
-- Capability-matrix row: [Editor](../../docs/capabilities.md)
+- Capability-matrix row: [Editor](../../docs/modules.md)
 - Composition entry point: Editor-owned view boundary hosted by the Workspace Editor tab
 
 ## Dependencies

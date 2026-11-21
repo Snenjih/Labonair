@@ -10,7 +10,7 @@
   revisions, leases, persistence, migration, and Workspace UI. Terminal owns
   host-side session attachments, PTYs, input sequencing, resize control,
   output fanout, and Terminal status. Shell only composes both contracts.
-- Capability-matrix rows: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix rows: [`../../docs/modules.md`](../../docs/modules.md)
 - Composition entry point: existing Workspace construction and Terminal
   `SessionHost` registration in `labonair-shell`
 - Architecture decision: [`../../docs/adr/0010-shared-workspaces-and-multi-client-detached-sessions.md`](../../docs/adr/0010-shared-workspaces-and-multi-client-detached-sessions.md)

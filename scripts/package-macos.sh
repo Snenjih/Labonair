@@ -26,7 +26,7 @@
 # The `signature` field is filled from `<tarball>.minisig` when the key is set,
 # and left empty otherwise (the in-app updater then refuses the update — safe).
 #
-# See docs/RELEASE.md for the full release procedure.
+# See docs/release.md for the full release procedure.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

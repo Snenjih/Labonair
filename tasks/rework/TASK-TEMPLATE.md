@@ -11,7 +11,7 @@ machine-checkable project documentation.
 ## Owner
 
 - Module: `[owning module]`
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
 - Composition entry point: `[shell/application registration function]`
 
 ## Goal

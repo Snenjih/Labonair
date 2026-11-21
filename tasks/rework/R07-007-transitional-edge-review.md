@@ -7,7 +7,7 @@
 ## Owner
 
 - Module: architecture and repository governance
-- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Capability-matrix row: [`../../docs/modules.md`](../../docs/modules.md)
 - Composition entry point: `docs/architecture/graph.toml` and
   `scripts/check_architecture.py`
 
@@ -66,7 +66,7 @@ interval. The generated architecture view must expose all fields.
 - [ ] `scripts/check_architecture.py` rejects missing tasks and expired review
       intervals.
 - [ ] The generated architecture view exposes the review/removal metadata.
-- [ ] `docs/audits/remaining-boundaries.md` agrees with the manifest.
+- [ ] `docs/archive/audits/remaining-boundaries.md` agrees with the manifest.
 - [ ] No product dependency edge is added and all repository gates pass.
 
 ## Evidence and handoff
