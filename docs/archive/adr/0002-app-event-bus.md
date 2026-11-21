@@ -4,10 +4,11 @@
 > cross-module communication follow the contracts in `docs/architecture.md`
 > and `docs/registries.md`.
 
-* **Status:** Superseded by ADR 0003 (historical event-bus decision)
+* **Status:** Superseded by [ADR 0003](../../adr/0003-modular-product-architecture.md) (historical event-bus decision)
+* **Superseded by:** [0003](../../adr/0003-modular-product-architecture.md)
 * **Date:** 2026-09-04
 * **Deciders:** project owner (Snenjih)
-* **Related:** `docs/architecture.md §8.11`, roadmap task **T17-008**, ADR 0001
+* **Related:** [`architecture.md`](../../architecture.md), roadmap task **T17-008** (removed; see git history), [ADR 0001](0001-crate-decomposition.md)
 
 ## Context
 

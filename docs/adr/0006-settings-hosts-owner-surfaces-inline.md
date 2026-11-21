@@ -3,11 +3,11 @@
 * **Status:** Accepted
 * **Date:** 2026-11-05
 * **Deciders:** project owner and implementation team
-* **Related:** `../settings-guidelines.md`, `capabilities.md`, [`../design-system.md`](../design-system.md)
+* **Related:** [`0007`](0007-hosts-settings-page.md), [`../settings.md`](../settings.md), [`../modules.md`](../modules.md), [`../design-system.md`](../design-system.md)
 
 ## Context
 
-AGENTS.md rule 9 states that Settings contain values only and that themes,
+`AGENTS.md` rule 9 states that Settings contain values only and that themes,
 icon themes, hosts, and similar concerns belong to their own modules. The
 product now wants one Settings window with a Themes category (colour themes,
 icon themes, background options) instead of pop-ups and palette-only pickers.

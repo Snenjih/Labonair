@@ -1,9 +1,9 @@
 # ADR 0009 — Detached session host: terminals, SSH, and SFTP sessions can outlive the app
 
-* **Status:** Accepted
+* **Status:** Accepted; multi-client exclusion superseded by [ADR 0010](0010-shared-workspaces-and-multi-client-detached-sessions.md)
 * **Date:** 2026-11-13
 * **Deciders:** project owner and implementation team
-* **Related:** [`0008-onboarding-module.md`](0008-onboarding-module.md), [`0010-shared-workspaces-and-multi-client-detached-sessions.md`](0010-shared-workspaces-and-multi-client-detached-sessions.md), `../capabilities.md`, [`../architecture.md`](../architecture.md), `../security/`
+* **Related:** [`0008-onboarding-module.md`](0008-onboarding-module.md), [`0010-shared-workspaces-and-multi-client-detached-sessions.md`](0010-shared-workspaces-and-multi-client-detached-sessions.md), [`../modules.md`](../modules.md), [`../architecture.md`](../architecture.md), [`../security.md`](../security.md) §7
 
 ## Context
 
@@ -115,7 +115,7 @@ daemon, and Windows.
 
 * `labonair-terminal-core` is a new canonical sibling under the terminal owner
   (real dependency boundary: it must stay GPUI-free). `labonair-terminal`
-  depends on it; `docs/architecture/graph.toml` records the edge.
+  depends on it; `scripts/crate-graph.toml` records the edge.
 * Downstream crates keep their `labonair_terminal::{engine, session, ...}`
   paths. One import changed: `TerminalColors::from_theme` / `from_palette`
   now need `labonair_terminal::TerminalColorsExt` in scope (the struct moved,

@@ -81,7 +81,7 @@ Hosts owns saved-host identity and policy; SSH/SFTP own connection and session e
 - Local to one OS user: private data directory (0700), Unix socket, and a peer-UID check (`peer_cred`) are the trust boundary. No TCP, no remote pairing.
 - Workspace leases (`labonair-workspace-storage`) carry a generation that fences stale mutation, renewal, switch and release calls from a prior claim.
 - Detached SSH secrets stay in host memory; they are not written to SQLite or event logs. Workspace persistence stores no credentials.
-- Host-key and transfer decisions are bound to the connection that started the operation; takeover by another client issues a new prompt ID (design in ADR 0010; one-use prompt-ID enforcement not re-verified in code for this revision).
+- Host-key and transfer decisions are bound to the connection that started the operation; takeover by another client issues a new prompt ID (design in [ADR 0010](adr/0010-shared-workspaces-and-multi-client-detached-sessions.md); one-use prompt-ID enforcement not re-verified in code for this revision).
 
 ## 8. Project trust
 

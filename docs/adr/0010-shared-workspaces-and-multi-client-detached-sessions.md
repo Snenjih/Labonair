@@ -3,7 +3,8 @@
 * **Status:** Accepted; implementation in progress
 * **Date:** 2026-11-19
 * **Deciders:** project owner (requested product behavior) and implementation team
-* **Related:** [`0009-detached-session-host.md`](0009-detached-session-host.md), [`../workspace-model.md`](../workspace-model.md), `../capabilities.md`, [`../architecture.md`](../architecture.md), `../security/trust-boundaries.md`
+* **Supersedes:** the multi-client exclusion in [ADR 0009](0009-detached-session-host.md)
+* **Related:** [`0009-detached-session-host.md`](0009-detached-session-host.md), [`../workspace-model.md`](../workspace-model.md), [`../modules.md`](../modules.md), [`../architecture.md`](../architecture.md), [`../security.md`](../security.md) §7
 
 ## Context
 

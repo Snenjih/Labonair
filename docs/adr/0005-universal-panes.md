@@ -3,8 +3,9 @@
 * **Status:** Accepted
 * **Date:** 2026-11-05
 * **Deciders:** project owner and implementation team
-* **Supersedes:** `0004-editor-internal-splits.md`
-* **Related:** `capabilities.md`, [`modules.md`](../modules.md), [`../design-system.md`](../design-system.md)
+* **Supersedes:** [`0004`](../archive/adr/0004-editor-internal-splits.md)
+* **Superseded by:** — (item 7 amended by [0007](0007-hosts-settings-page.md): Hosts is no longer a pane kind)
+* **Related:** [`modules.md`](../modules.md), [`../design-system.md`](../design-system.md)
 
 ## Context
 
@@ -40,7 +41,7 @@ close) shared across kinds.
    hairline dividers).
 6. Zoom is a per-tab overlay of one pane; sibling panes stay laid out so
    terminal sizes do not change. Zoom is not persisted.
-7. Singleton kinds (Git Graph, Keymap, Hosts, Project Diff) cannot be split
+7. Singleton kinds (Git Graph, Keymap, Hosts, Project Diff; *Hosts was removed as a pane kind by ADR 0007*) cannot be split
    but can be moved between panes and tabs; opening one again focuses the
    existing pane.
 8. Session snapshots move to version 3: a leaf is `{kind, state}`. Version 2
@@ -56,7 +57,11 @@ close) shared across kinds.
     a drop without room is rejected and reported. Drops stay inside one Space,
     never merge a pinned tab away, and are disabled while the target tab is
     zoomed. A pane group names itself after its panes and lists them in a hover
-    popover (see `docs/architecture.md`, "Drag and drop" and "Hover list").
+    popover (see [`architecture.md`](../architecture.md), "Drag and drop" and "Hover list").
+
+## Implementation note (2026-11-21)
+
+Verified: `appearance.paneLayout` (default `comfortable`), `SNAPSHOT_VERSION = 3` (`crates/workspace/src/session_v3.rs`), pane bar in `labonair-ui-kit`, and no `EditorSplitTree` remain as described.
 
 ## Consequences
 

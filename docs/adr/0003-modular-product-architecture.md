@@ -3,6 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-09-06
 * **Deciders:** project owner and implementation team
+* **Supersedes:** [`0001`](../archive/adr/0001-crate-decomposition.md), [`0002`](../archive/adr/0002-app-event-bus.md)
 * **Related:** [`product.md`](../product.md), [`architecture.md`](../architecture.md), [`modules.md`](../modules.md)
 
 ## Context

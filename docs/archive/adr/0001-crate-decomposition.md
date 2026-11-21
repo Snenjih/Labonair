@@ -3,18 +3,19 @@
 > **Superseded — historical reference only.** ADR 0003 and the current
 > capability matrix replace this decomposition decision.
 
-* **Status:** Superseded by ADR 0003 (historical decomposition decision)
+* **Status:** Superseded by [ADR 0003](../../adr/0003-modular-product-architecture.md) (historical decomposition decision)
+* **Superseded by:** [0003](../../adr/0003-modular-product-architecture.md)
 * **Date:** 2026-09-03
 * **Deciders:** project owner (Snenjih)
-* **Related:** `docs/architecture.md`, roadmap phases 15–21 (T16-001 … T22-001)
+* **Related:** [`architecture.md`](../../architecture.md) (the section numbers cited below refer to the pre-consolidation document), roadmap phases 15–21 (T16-001 … T22-001, removed; see git history)
 
 > **Amendment (workflow rework, themes 1–3):** `labonair-panel-hosts` is
 > removed from the ~22-crate target — the SSH host manager is neither a tab nor
 > a dock panel. Its view code lives in **`labonair-hosts-ui`** (a plain view
 > crate, no `impl Panel`), consumed by `labonair-settings-ui`. Connecting runs
 > through the command palette; managing runs through **Settings › Hosts**.
-> Details + the two other themes (optional tabs, settings design contract):
-> `docs/architecture.md §8` and `bericht-workflow-rework.md`. The decomposition
+> Later amendments are in [ADR 0007](../../adr/0007-hosts-settings-page.md) and
+> [`architecture.md`](../../architecture.md). The decomposition
 > rationale below is unchanged.
 
 ## Context

@@ -3,7 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-11-06
 * **Deciders:** project owner and implementation team
-* **Related:** [`0006-settings-hosts-owner-surfaces-inline.md`](0006-settings-hosts-owner-surfaces-inline.md), [`../settings.md`](../settings.md), `../settings-guidelines.md`, `../capabilities.md`
+* **Related:** [`0006-settings-hosts-owner-surfaces-inline.md`](0006-settings-hosts-owner-surfaces-inline.md), [`0005-universal-panes.md`](0005-universal-panes.md) (partially amends item 7), [`../settings.md`](../settings.md), [`../modules.md`](../modules.md)
 
 ## Context
 
@@ -40,7 +40,7 @@ embed their views in Settings.
 
 ## Consequences
 
-* AGENTS.md rule 9 and `docs/settings-guidelines.md` rule 3 read: Settings do
+* `AGENTS.md` rule 9 and [`settings.md`](../settings.md) read: Settings do
   not own non-settings state; hosting the Hosts owner surface inline is allowed,
   as with the Themes and Background surfaces. No other module may add a
   parallel Settings category.

@@ -22,3 +22,18 @@ Authority order when sources disagree: the user's current decision → these doc
 | [tasks/](tasks/) | Task queue (`rework/`) and archived historical tasks |
 | [adr/](adr/) | Accepted architecture decision records |
 | [archive/](archive/) | Superseded ADRs, old roadmap and audits — historical only |
+
+## ADR index
+
+| ADR | Title | Status |
+|---|---|---|
+| [0001](archive/adr/0001-crate-decomposition.md) | Decompose the `ui` monolith into ~22 crates | Superseded by 0003 (archived) |
+| [0002](archive/adr/0002-app-event-bus.md) | Keep the `AppEvent` bus; add `BackendEventBridge` | Superseded by 0003 (archived) |
+| [0003](adr/0003-modular-product-architecture.md) | Establish the modular product architecture | Accepted |
+| [0004](archive/adr/0004-editor-internal-splits.md) | Editor-internal splits | Superseded by 0005 (archived) |
+| [0005](adr/0005-universal-panes.md) | Universal panes: every tab is a pane group | Accepted (item 7 amended by 0007) |
+| [0006](adr/0006-settings-hosts-owner-surfaces-inline.md) | Settings may host owner surfaces inline | Accepted |
+| [0007](adr/0007-hosts-settings-page.md) | Hosts management is a full-page Settings surface | Accepted |
+| [0008](adr/0008-onboarding-module.md) | Onboarding module, shown as a workspace tab | Accepted |
+| [0009](adr/0009-detached-session-host.md) | Detached session host | Accepted (multi-client exclusion superseded by 0010) |
+| [0010](adr/0010-shared-workspaces-and-multi-client-detached-sessions.md) | Shared Workspaces and multi-client Detached sessions | Accepted; implementation in progress |
