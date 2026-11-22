@@ -963,7 +963,8 @@ impl HostManagerView {
                 Notification::error(title, "The host operation could not be completed.")
                     .source("hosts")
                     .details(details)
-                    .dedupe_key(dedupe_key.into()),
+                    .dedupe_key(dedupe_key.into())
+                    .toast_for(Duration::from_secs(8)),
                 cx,
             );
         });

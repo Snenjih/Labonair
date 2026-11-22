@@ -828,14 +828,37 @@ impl SftpView {
         dedupe_key: impl Into<String>,
         cx: &mut Context<Self>,
     ) {
+        self.publish_error(title, details, dedupe_key, false, cx);
+    }
+
+    fn notify_operation_error(
+        &self,
+        title: &'static str,
+        details: String,
+        dedupe_key: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.publish_error(title, details, dedupe_key, true, cx);
+    }
+
+    fn publish_error(
+        &self,
+        title: &'static str,
+        details: String,
+        dedupe_key: impl Into<String>,
+        toast: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let mut notification =
+            Notification::error(title, "The SFTP operation could not be completed.")
+                .source("sftp")
+                .details(details)
+                .dedupe_key(dedupe_key.into());
+        if toast {
+            notification = notification.toast_for(std::time::Duration::from_secs(8));
+        }
         notification_center(cx).update(cx, |center, cx| {
-            center.push(
-                Notification::error(title, "The SFTP operation could not be completed.")
-                    .source("sftp")
-                    .details(details)
-                    .dedupe_key(dedupe_key.into()),
-                cx,
-            );
+            center.push(notification, cx);
         });
     }
 
@@ -920,7 +943,7 @@ impl SftpView {
                     }
                     Err(e) => {
                         this.conn = Conn::Error(e.clone());
-                        this.notify_error(
+                        this.notify_operation_error(
                             "SFTP connection failed",
                             e.clone(),
                             format!("sftp:connect:{}", this.session_id),
@@ -1446,7 +1469,7 @@ impl SftpView {
                         .await;
                     let _ = this.update(cx, |this, cx| {
                         if let Err(e) = res {
-                            this.notify_error(
+                            this.notify_operation_error(
                                 "Local file operation failed",
                                 e,
                                 format!("sftp:local-operation:{}", this.local.path),
@@ -1471,7 +1494,7 @@ impl SftpView {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
                 if let Err(e) = res {
-                    this.notify_error(
+                    this.notify_operation_error(
                         "Remote file operation failed",
                         e,
                         format!("sftp:remote-operation:{side:?}"),
@@ -1508,7 +1531,7 @@ impl SftpView {
                         .await;
                     let _ = this.update(cx, |this, cx| {
                         if let Err(e) = res {
-                            this.notify_error(
+                            this.notify_operation_error(
                                 "Local delete failed",
                                 e,
                                 format!("sftp:local-delete:{}", this.local.path),
@@ -1625,7 +1648,7 @@ impl SftpView {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
                 if let Err(e) = res {
-                    this.notify_error(
+                    this.notify_operation_error(
                         "Permission update failed",
                         e,
                         format!("sftp:permissions:{}", this.session_id),
@@ -1683,7 +1706,7 @@ impl SftpView {
                             .as_ref()
                             .map(|dialog| dialog.entry.path.clone())
                             .unwrap_or_default();
-                        this.notify_error(
+                        this.notify_operation_error(
                             "Remote size calculation failed",
                             e,
                             format!("sftp:size:{path}"),

@@ -45,9 +45,10 @@ use std::time::Duration;
 
 use gpui::{
     canvas, div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
-    ExternalPaths, FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollStrategy,
-    SharedString, StatefulInteractiveElement, Styled, Task, UniformListScrollHandle, Window,
+    EventEmitter, ExternalPaths, FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    ScrollStrategy, SharedString, StatefulInteractiveElement, Styled, Task,
+    UniformListScrollHandle, Window,
 };
 
 use labonair_settings::{ExplorerSettings, Settings as _};
@@ -60,13 +61,20 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::theme::ThemeStore;
 use labonair_activity_ui::{try_activity_center, ActivityCenter, ActivityDraft, ActivityKind};
 use labonair_explorer_host::ExplorerHost;
-use labonair_notifications::{notification_center, Notification};
+use labonair_notifications::{notification_center, Notification, NotificationActionEvent};
 use labonair_ui_kit::{
     button, chevron_icon_path, context_menu, dialog_surface, icon_button_builder, icon_for_path,
     modal_overlay_with_exit, search_clear_button, search_field, search_input, svg_path,
     text_field_surface, text_input, tree_row, ButtonSize, ButtonVariant, IconName, InputEvent,
     InputState, MenuClick, MenuItem, Palette, PresenceSlot, TextFieldState, TreeRowState,
 };
+
+const OPEN_DESTINATION_ACTION: &str = "explorer.open-destination";
+
+#[derive(Clone, Debug)]
+pub enum ExplorerEvent {
+    OpenDestination,
+}
 
 /// A menu action expressed against the view + window (wrapped into a
 /// [`MenuClick`] by `render_context_menu`).
@@ -787,6 +795,7 @@ pub struct ExplorerView {
     scroll: UniformListScrollHandle,
     /// The file open in the active editor (Phase 3.5 auto-reveal).
     active_file: Option<PathBuf>,
+    notification_destinations: HashMap<u64, PathBuf>,
     /// A pending "scroll the tree to this path" request, serviced in `render`.
     pending_reveal: Option<PathBuf>,
     /// `absolute path → git status char` (Phase 3.7), local roots only.
@@ -806,6 +815,8 @@ pub struct ExplorerView {
     debouncer: Option<Debouncer<RecommendedWatcher>>,
     _drain: Task<()>,
 }
+
+impl EventEmitter<ExplorerEvent> for ExplorerView {}
 
 impl ExplorerView {
     pub fn new(
@@ -829,7 +840,7 @@ impl ExplorerView {
             }
         });
 
-        Self {
+        let this = Self {
             theme,
             host,
             tokio,
@@ -848,6 +859,7 @@ impl ExplorerView {
             focus: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
             active_file: None,
+            notification_destinations: HashMap::new(),
             pending_reveal: None,
             git_status: HashMap::new(),
             diagnostics: HashMap::new(),
@@ -858,7 +870,21 @@ impl ExplorerView {
             watched: HashSet::new(),
             debouncer: None,
             _drain: drain,
-        }
+        };
+        let center = notification_center(cx);
+        cx.subscribe(&center, |this, _, event: &NotificationActionEvent, cx| {
+            if event.action_id == OPEN_DESTINATION_ACTION {
+                if let Some(path) = this
+                    .notification_destinations
+                    .remove(&event.notification_id)
+                {
+                    this.load_dir(path, true, cx);
+                    cx.emit(ExplorerEvent::OpenDestination);
+                }
+            }
+        })
+        .detach();
+        this
     }
 
     /// Point the explorer at a new working directory (driven by the active
@@ -1085,6 +1111,36 @@ impl ExplorerView {
                 cx,
             );
         });
+    }
+
+    fn notify_file_operation_success(
+        &mut self,
+        title: &'static str,
+        summary: String,
+        destination: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        let center = notification_center(cx);
+        let id = center.update(cx, |center, cx| {
+            center.push(
+                Notification::success(title, summary)
+                    .source("explorer")
+                    .action(OPEN_DESTINATION_ACTION, "Open destination")
+                    .toast_for(Duration::from_secs(8)),
+                cx,
+            )
+        });
+        let retained_ids: HashSet<_> = center
+            .read(cx)
+            .snapshots()
+            .into_iter()
+            .map(|notification| notification.id)
+            .collect();
+        self.notification_destinations
+            .retain(|notification_id, _| retained_ids.contains(notification_id));
+        if let Some(id) = id {
+            self.notification_destinations.insert(id, destination);
+        }
     }
 
     /// Announce a remote Explorer job. Hidden for the first 300ms so quick
@@ -1353,7 +1409,9 @@ impl ExplorerView {
         }) {
             notification_center(cx).update(cx, |c, cx| {
                 c.push(
-                    Notification::error("Paste failed", "Invalid destination".to_string()),
+                    Notification::error("Paste failed", "Invalid destination".to_string())
+                        .source("explorer")
+                        .toast_for(Duration::from_secs(8)),
                     cx,
                 );
             });
@@ -1366,6 +1424,12 @@ impl ExplorerView {
             .iter()
             .map(|p| p.to_string_lossy().to_string())
             .collect();
+        let count = paths.len();
+        let (title, verb) = match op {
+            ClipOp::Copy => ("Files copied", "copied"),
+            ClipOp::Cut => ("Files moved", "moved"),
+        };
+        let action_destination = dir.clone();
         if op == ClipOp::Cut {
             for p in &clip.paths {
                 if let Some(parent) = p.parent() {
@@ -1396,10 +1460,21 @@ impl ExplorerView {
                     for d in reload {
                         this.load_dir(d, true, cx);
                     }
+                    this.notify_file_operation_success(
+                        title,
+                        format!("{count} item{} {verb}.", if count == 1 { "" } else { "s" }),
+                        action_destination,
+                        cx,
+                    );
                 }
                 Err(message) => {
                     notification_center(cx).update(cx, |c, cx| {
-                        c.push(Notification::error("Paste failed", message), cx);
+                        c.push(
+                            Notification::error("Paste failed", message)
+                                .source("explorer")
+                                .toast_for(Duration::from_secs(8)),
+                            cx,
+                        );
                     });
                 }
             });
@@ -1432,6 +1507,8 @@ impl ExplorerView {
             paths.push(s.to_string_lossy().to_string());
         }
         self.selection.clear();
+        let count = paths.len();
+        let action_destination = dest_dir.clone();
         let dir_s = dest_dir.to_string_lossy().to_string();
         cx.spawn(async move |view, cx| {
             let result = cx
@@ -1448,10 +1525,21 @@ impl ExplorerView {
                     for d in reload {
                         this.load_dir(d, true, cx);
                     }
+                    this.notify_file_operation_success(
+                        "Files moved",
+                        format!("{count} item{} moved.", if count == 1 { "" } else { "s" }),
+                        action_destination,
+                        cx,
+                    );
                 }
                 Err(message) => {
                     notification_center(cx).update(cx, |c, cx| {
-                        c.push(Notification::error("Move failed", message), cx);
+                        c.push(
+                            Notification::error("Move failed", message)
+                                .source("explorer")
+                                .toast_for(Duration::from_secs(8)),
+                            cx,
+                        );
                     });
                 }
             });
@@ -1482,20 +1570,23 @@ impl ExplorerView {
                 .await;
             let _ = view.update(cx, |this, cx| match result {
                 Ok(n) => {
+                    let action_destination = dest_dir.clone();
                     this.load_dir(dest_dir, true, cx);
-                    notification_center(cx).update(cx, |c, cx| {
-                        c.push(
-                            Notification::success(
-                                "Files copied",
-                                format!("{n} item{} copied", if n == 1 { "" } else { "s" }),
-                            ),
-                            cx,
-                        );
-                    });
+                    this.notify_file_operation_success(
+                        "Files copied",
+                        format!("{n} item{} copied.", if n == 1 { "" } else { "s" }),
+                        action_destination,
+                        cx,
+                    );
                 }
                 Err(message) => {
                     notification_center(cx).update(cx, |c, cx| {
-                        c.push(Notification::error("Copy failed", message), cx);
+                        c.push(
+                            Notification::error("Copy failed", message)
+                                .source("explorer")
+                                .toast_for(Duration::from_secs(8)),
+                            cx,
+                        );
                     });
                 }
             });
@@ -1706,7 +1797,12 @@ impl ExplorerView {
                 Ok(()) => this.load_dir(reload, true, cx),
                 Err(message) => {
                     notification_center(cx).update(cx, |c, cx| {
-                        c.push(Notification::error("File operation failed", message), cx);
+                        c.push(
+                            Notification::error("File operation failed", message)
+                                .source("explorer")
+                                .toast_for(Duration::from_secs(8)),
+                            cx,
+                        );
                     });
                 }
             });
@@ -1739,7 +1835,8 @@ impl ExplorerView {
                                 "The remote file operation failed.",
                             )
                             .source("explorer")
-                            .details(message),
+                            .details(message)
+                            .toast_for(Duration::from_secs(8)),
                             cx,
                         );
                     });

@@ -4988,6 +4988,7 @@ name = "labonair-transfers-ui"
 version = "1.0.0"
 dependencies = [
  "gpui",
+ "labonair-notifications",
  "labonair-panel",
  "labonair-theme",
  "labonair-transfers",

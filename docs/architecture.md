@@ -112,11 +112,11 @@ The workspace has the crates below (verify with `ls crates/` and `scripts/crate-
 | SFTP | `labonair-sftp` | `-sftp-ssh` | Authenticated session handle and remote-browser contracts; sibling owns concrete session setup and service adapters. |
 | Hosts | `labonair-hosts` | `-hosts-ui`, `-hosts-host` | Saved hosts, recent hosts, import/export, management UI. |
 | Credentials | `labonair-credentials` | — | Credential metadata, secret references, generated SSH key material. |
-| Transfers | `labonair-transfers` | `-transfers-ui`, `-transfers-ssh` | UI-free job values, worker contracts, event translation, lifecycle registry; UI owns queue dropdown and resolution dialogs; sibling owns the concrete SFTP worker. |
+| Transfers | `labonair-transfers` | `-transfers-ui`, `-transfers-ssh` | UI-free job values, worker contracts, event translation, lifecycle registry; UI owns queue dropdown, resolution dialogs, and terminal-state notifications ([ADR 0012](adr/0012-transfer-notifications.md)); sibling owns the concrete SFTP worker. |
 | Git | `labonair-git` | `-git-transport`, `-panel-scm`, `-panel-git-graph` | Git contracts and source-control behavior; transport sibling runs local/remote CLI; panels are the views. |
 | Explorer | `labonair-panel-explorer` | `-explorer-host` | Local file navigation over filesystem contracts plus injected `RemoteExplorerService` for SSH-backed roots. Does not depend on SSH or SFTP. |
 | Snippets | `labonair-snippets` | `-panel-snippets`, `-snippets-host`, `-snippets-ssh` | Storage, execution contracts; panel is the view; sibling runs snippets over SSH. |
-| Updates | `labonair-updater` | `-updater-ui` | Manifest, signed-artifact verification, macOS install; dialog/status item in the UI sibling. |
+| Updates | `labonair-updater` | `-updater-ui` | Manifest, signed-artifact verification, macOS install; successful install offers an actionable restart toast, and the dialog/status item remain in the UI sibling. |
 | Onboarding | `labonair-onboarding` | — | Step registry, progress, page view, command ([ADR 0008](adr/0008-onboarding-module.md)). |
 | AI | `labonair-ai` | `-mcp-server` | Providers, sessions, context, tools. MCP host contracts live in `-mcp-core`; the concrete HTTP bridge in `-mcp-server`. |
 

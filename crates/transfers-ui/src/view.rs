@@ -31,6 +31,7 @@ use gpui::{
 };
 use tokio::runtime::Handle as TokioHandle;
 
+use labonair_notifications::{notification_center, Notification, NotificationActionEvent};
 use labonair_theme::store::ThemeStore;
 use labonair_transfers::{
     RegistryUpdate, ResolveRequest, TransferDirection, TransferEvent, TransferEventError,
@@ -41,6 +42,8 @@ use labonair_ui_kit::{
     button, caret, dialog_surface, indicator, BlinkCursor, ButtonSize, ButtonVariant,
     IndicatorSize, ListItem, Palette,
 };
+
+const SHOW_QUEUE_ACTION: &str = "transfers.show-queue";
 
 // ── pure helpers (unit-tested) ─────────────────────────────────────────────
 
@@ -197,6 +200,13 @@ impl TransfersView {
             _blink_focus_subs: Vec::new(),
             dialog_focused: false,
         };
+        let center = notification_center(cx);
+        cx.subscribe(&center, |this, _, event: &NotificationActionEvent, cx| {
+            if event.action_id == SHOW_QUEUE_ACTION {
+                this.reveal(cx);
+            }
+        })
+        .detach();
         let view = cx.entity().downgrade();
         let service = this.service.clone();
         let tokio = this.tokio.clone();
@@ -236,6 +246,66 @@ impl TransfersView {
     // ── event intake ───────────────────────────────────────────────────────
 
     pub fn apply(&mut self, event: TransferEvent, cx: &mut Context<Self>) -> RegistryUpdate {
+        let was_empty = self.registry.snapshot().is_empty();
+        let terminal_notification = match &event {
+            TransferEvent::Progress(job) if !self.open && !was_empty => {
+                let was_terminal = self
+                    .registry
+                    .snapshot()
+                    .iter()
+                    .find(|record| record.job.id == job.id)
+                    .is_some_and(|record| {
+                        matches!(
+                            &record.job.status,
+                            TransferStatus::Completed
+                                | TransferStatus::Cancelled
+                                | TransferStatus::Failed(_)
+                        )
+                    });
+                if was_terminal {
+                    None
+                } else {
+                    let label = job
+                        .dest_path
+                        .rsplit(['/', '\\'])
+                        .next()
+                        .filter(|label| !label.is_empty())
+                        .unwrap_or("File");
+                    let direction = match job.direction {
+                        TransferDirection::Upload => "Upload",
+                        TransferDirection::Download => "Download",
+                    };
+                    match &job.status {
+                        TransferStatus::Completed => Some(
+                            Notification::success(
+                                format!("{direction} complete"),
+                                format!("{label} is ready."),
+                            )
+                            .source("transfers")
+                            .dedupe_key(format!("transfer:complete:{}", job.id))
+                            .action(SHOW_QUEUE_ACTION, "Show transfers")
+                            .toast_for(std::time::Duration::from_secs(8)),
+                        ),
+                        TransferStatus::Failed(error) => Some(
+                            Notification::error(
+                                "Transfer failed",
+                                format!("Could not transfer {label}."),
+                            )
+                            .source("transfers")
+                            .details(error.clone())
+                            .dedupe_key(format!("transfer:failed:{}", job.id))
+                            .action(SHOW_QUEUE_ACTION, "Show transfers")
+                            .toast_for(std::time::Duration::from_secs(8)),
+                        ),
+                        TransferStatus::Queued
+                        | TransferStatus::Running
+                        | TransferStatus::Paused
+                        | TransferStatus::Cancelled => None,
+                    }
+                }
+            }
+            _ => None,
+        };
         let modal = match &event {
             TransferEvent::Conflict {
                 job_id,
@@ -276,8 +346,12 @@ impl TransfersView {
             }
             _ => None,
         };
-        let was_empty = self.registry.snapshot().is_empty();
         let update = self.registry.apply(event);
+        if let Some(notification) = terminal_notification {
+            notification_center(cx).update(cx, |center, cx| {
+                center.push(notification, cx);
+            });
+        }
         if was_empty && !self.registry.snapshot().is_empty() {
             // A newly queued transfer should be visible immediately. The
             // transfer module owns this presentation policy; Workspace only

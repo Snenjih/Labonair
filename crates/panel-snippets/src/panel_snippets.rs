@@ -1087,7 +1087,12 @@ impl SnippetsView {
     fn notify_error(&self, title: &'static str, message: &'static str, cx: &mut Context<Self>) {
         let center = notification_center(cx);
         center.update(cx, |c, cx| {
-            c.push(Notification::error(title, message), cx);
+            c.push(
+                Notification::error(title, message)
+                    .source("snippets")
+                    .toast_for(std::time::Duration::from_secs(8)),
+                cx,
+            );
         });
     }
 

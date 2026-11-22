@@ -12356,7 +12356,8 @@ fn notify(cx: &mut App, title: &str, body: &str) {
             Notification::error(title.clone(), "The editor operation failed.")
                 .source("editor")
                 .details(body.clone())
-                .dedupe_key(format!("editor:{title}:{body}")),
+                .dedupe_key(format!("editor:{title}:{body}"))
+                .toast_for(std::time::Duration::from_secs(8)),
             cx,
         );
     });

@@ -131,7 +131,8 @@ pub(crate) fn routed_services(composition: &AppComposition, cx: &mut App) -> Rou
                         )
                         .source("ssh")
                         .details(error)
-                        .dedupe_key("terminal:session-host-unavailable"),
+                        .dedupe_key("terminal:session-host-unavailable")
+                        .toast_for(std::time::Duration::from_secs(8)),
                         cx,
                     );
                 });

@@ -5,7 +5,7 @@
 //! badge, and the "agent finished" notification. Recognition/heuristics are
 //! the pure `labonair_terminal::agent` module.
 
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 use gpui::{
     percentage, Animation, AnimationExt, AnyElement, Context, IntoElement, Styled, Transformation,
@@ -16,6 +16,8 @@ use labonair_ui_kit::{indicator, IconName, IndicatorSize, Palette};
 use labonair_settings::Settings as _;
 
 use crate::Workspace;
+
+pub(crate) const OPEN_RESULT_ACTION: &str = "agent.open-result";
 
 /// Live agent state of one terminal pane.
 pub(crate) struct AgentPane {
@@ -136,19 +138,38 @@ impl Workspace {
             changed |= entry.status != status;
             entry.status = status;
             if done {
-                finished.push(agent);
+                finished.push((id, agent));
             }
         }
-        for agent in finished {
+        for (pane_id, agent) in finished {
             if notify {
                 let (title, body) = (agent.label(), "Finished its work");
-                labonair_notifications::notify_os(title, body);
-                labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+                if cx.active_window().is_none() {
+                    labonair_notifications::notify_os(title, body);
+                }
+                let center = labonair_notifications::notification_center(cx);
+                let notification_id = center.update(cx, |center, cx| {
                     center.push(
-                        labonair_notifications::Notification::success(title, body),
+                        labonair_notifications::Notification::success(title, body)
+                            .source("agent")
+                            .dedupe_key(format!("agent:finished:{pane_id:?}"))
+                            .action(OPEN_RESULT_ACTION, "Open result")
+                            .toast_for(Duration::from_secs(8)),
                         cx,
-                    );
+                    )
                 });
+                let retained_ids: HashSet<_> = center
+                    .read(cx)
+                    .snapshots()
+                    .into_iter()
+                    .map(|notification| notification.id)
+                    .collect();
+                self.agent_notification_targets
+                    .retain(|id, _| retained_ids.contains(id));
+                if let Some(notification_id) = notification_id {
+                    self.agent_notification_targets
+                        .insert(notification_id, pane_id);
+                }
             }
         }
         if changed {

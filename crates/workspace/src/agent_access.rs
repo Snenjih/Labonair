@@ -173,7 +173,9 @@ impl AgentAccessStore {
                                     "Failed to revoke AI agent access"
                                 },
                                 err,
-                            ),
+                            )
+                            .source("agent")
+                            .toast_for(std::time::Duration::from_secs(8)),
                             cx,
                         );
                     });

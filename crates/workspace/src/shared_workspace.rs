@@ -184,6 +184,7 @@ impl crate::Workspace {
                     "The local Workspace could not connect to its shared state store.",
                 )
                 .source("workspace")
+                .toast_for(Duration::from_secs(8))
                 .details(message),
                 cx,
             );
@@ -251,7 +252,8 @@ impl crate::Workspace {
                         "Some shared tabs could not be opened",
                         "Their saved state is preserved in the shared Space. Check that the required project files and SSH hosts are available, then rejoin the Space.",
                     )
-                    .source("workspace"),
+                    .source("workspace")
+                    .toast_for(Duration::from_secs(8)),
                     cx,
                 );
             });
@@ -715,7 +717,8 @@ impl crate::Workspace {
                         "Workspace changed elsewhere",
                         "A concurrent edit touched the same tab or ordering. The latest shared state was loaded; repeat the local change if needed.",
                     )
-                    .source("workspace"),
+                    .source("workspace")
+                    .toast_for(Duration::from_secs(8)),
                     cx,
                 );
             });
@@ -788,7 +791,8 @@ impl crate::Workspace {
                         "Workspace changed elsewhere",
                         "A concurrent edit touched the same tab or ordering. The latest shared state was loaded; repeat the local change if needed.",
                     )
-                    .source("workspace"),
+                    .source("workspace")
+                    .toast_for(Duration::from_secs(8)),
                     cx,
                 );
             });

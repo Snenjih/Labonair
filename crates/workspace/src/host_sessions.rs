@@ -9,6 +9,7 @@ use gpui::{App, Context, Window};
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings::content::terminal::SessionHostMode;
 use labonair_terminal::{BackgroundSession, DaemonHost};
+use std::time::Duration;
 
 use crate::host_restore;
 use crate::pane::WorkspaceLayout;
@@ -97,7 +98,8 @@ impl Workspace {
                 center.push(
                     Notification::info("Terminal is gone", "It ended in the background host.")
                         .source("terminal")
-                        .dedupe_key("terminal:background-terminal-gone"),
+                        .dedupe_key("terminal:background-terminal-gone")
+                        .toast_for(Duration::from_secs(8)),
                     cx,
                 );
             }),
@@ -158,7 +160,8 @@ impl Workspace {
                 )
                 .source("terminal")
                 .action(RECOVER_ACTION, "Open as tabs")
-                .dedupe_key("terminal:background-sessions-found"),
+                .dedupe_key("terminal:background-sessions-found")
+                .toast_for(Duration::from_secs(8)),
                 cx,
             );
         });
@@ -204,7 +207,8 @@ impl Workspace {
                             "The session could not be attached.",
                         )
                         .source("terminal")
-                        .details(err),
+                        .details(err)
+                        .toast_for(Duration::from_secs(8)),
                         cx,
                     );
                 });
@@ -254,13 +258,19 @@ impl Workspace {
             .spawn(async move { restart_daemon_host(lines) });
         cx.spawn(async move |_this, cx| {
             let note = match task.await {
-                Ok(()) => Notification::info("Background host restarted", "Started a fresh host."),
-                Err(error) => Notification::info("Restarting the host failed", error),
-            };
-            cx.update(|cx| {
-                notification_center(cx).update(cx, |center, cx| center.push(note, cx))
-            })
-            .ok();
+                Ok(()) => {
+                    Notification::success("Background host restarted", "Started a fresh host.")
+                }
+                Err(error) => Notification::error(
+                    "Background host restart failed",
+                    "Could not start a fresh host.",
+                )
+                .details(error),
+            }
+            .source("terminal")
+            .toast_for(Duration::from_secs(8));
+            cx.update(|cx| notification_center(cx).update(cx, |center, cx| center.push(note, cx)))
+                .ok();
         })
         .detach();
     }

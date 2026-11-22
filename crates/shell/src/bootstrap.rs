@@ -38,7 +38,7 @@ use labonair_transfers_ui::{TransferUiEvent, TransfersView};
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_command_palette::{CommandPalette, Page as PalettePage, PaletteEvent};
-use labonair_panel_explorer::ExplorerView;
+use labonair_panel_explorer::{ExplorerEvent, ExplorerView};
 use labonair_panel_git_graph::GitGraphView;
 use labonair_panel_scm::{GitPanelView, ScmEvent};
 use labonair_panel_snippets::SnippetsView;
@@ -761,6 +761,17 @@ pub(crate) fn bootstrap(
         )
     };
     let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), explorer_host, tokio.clone(), cx));
+    cx.subscribe_in(
+        &explorer,
+        window,
+        |this, _, event: &ExplorerEvent, _window, cx| match event {
+            ExplorerEvent::OpenDestination => {
+                this.workspace
+                    .update(cx, |workspace, cx| workspace.open_panel("explorer", cx));
+            }
+        },
+    )
+    .detach();
 
     // Project identity is authoritative; standalone falls back to the active
     // terminal's cwd and then $HOME. When the active tab is a connected SSH

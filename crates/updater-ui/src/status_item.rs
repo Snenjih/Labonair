@@ -71,12 +71,17 @@ impl StatusItem for UpdaterStatusItem {
         if !ready {
             return div().into_any_element();
         }
+        let tooltip = if matches!(self.updater.read(cx).status(), UpdaterStatus::Ready) {
+            "Restart to finish updating"
+        } else {
+            "Update available"
+        };
         let palette = Palette::from_theme(self.theme.read(cx));
         icon_button_builder("bar-updater", palette, IconName::Download)
             .size(ButtonSize::IconXxs)
             .icon_color(palette.fg)
             .indicator(IndicatorSize::Xs, palette.primary)
-            .tooltip("Update available")
+            .tooltip(tooltip)
             .render()
             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                 this.updater

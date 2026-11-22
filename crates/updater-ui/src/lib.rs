@@ -11,7 +11,7 @@
 //! * check — fetch `latest.json`, compare versions (6 h auto-cadence, or
 //!   forced from the menu / settings);
 //! * install — download the artifact with a progress bar, verify its minisign
-//!   signature, swap the `.app` bundle and relaunch;
+//!   signature, swap the `.app` bundle, then offer an explicit restart;
 //! * every failure is surfaced through the notification system (T04-004).
 //!
 //! The dialog markup mirrors the reference `UpdaterDialog` states
@@ -33,11 +33,11 @@ use labonair_updater::AvailableUpdate;
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
-use labonair_notifications::{notification_center, Notification};
+use labonair_notifications::{notification_center, Notification, NotificationActionEvent};
 use labonair_theme::{modal_scrim, store::ThemeStore};
 use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
 
-const RESTART_DELAY: Duration = Duration::from_millis(700);
+const RESTART_ACTION: &str = "updater.restart";
 
 /// Mirrors the reference `UpdaterStatus` union.
 #[derive(Debug, Clone)]
@@ -77,7 +77,14 @@ pub struct UpdaterView {
 }
 
 impl UpdaterView {
-    pub fn new(tokio: TokioHandle, theme: Entity<ThemeStore>, _cx: &mut Context<Self>) -> Self {
+    pub fn new(tokio: TokioHandle, theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
+        let center = notification_center(cx);
+        cx.subscribe(&center, |this, _, event: &NotificationActionEvent, cx| {
+            if event.action_id == RESTART_ACTION {
+                this.restart(cx);
+            }
+        })
+        .detach();
         Self {
             tokio,
             theme,
@@ -133,6 +140,26 @@ impl UpdaterView {
     pub fn close_dialog(&mut self, cx: &mut Context<Self>) {
         self.dialog_open = false;
         cx.notify();
+    }
+
+    pub fn restart(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.status, UpdaterStatus::Ready) {
+            return;
+        }
+        if let Some(bundle) = updater::current_app_bundle() {
+            updater::relaunch(&bundle);
+        }
+        notification_center(cx).update(cx, |center, cx| {
+            center.push(
+                Notification::error(
+                    "Could not restart Labonair",
+                    "The installed app bundle could not be found.",
+                )
+                .source("updater")
+                .toast_for(Duration::from_secs(8)),
+                cx,
+            );
+        });
     }
 
     /// Whether the "update available / downloading / ready" dialog should be
@@ -229,7 +256,12 @@ impl UpdaterView {
                         this.set_status(UpdaterStatus::Error(err.clone()), cx);
                         if manual {
                             notification_center(cx).update(cx, |c, cx| {
-                                c.push(Notification::error("Update check failed", err), cx);
+                                c.push(
+                                    Notification::error("Update check failed", err)
+                                        .source("updater")
+                                        .toast_for(Duration::from_secs(8)),
+                                    cx,
+                                );
                             });
                         }
                     }
@@ -280,24 +312,19 @@ impl UpdaterView {
                     InstallMsg::Done(Ok(())) => {
                         let _ = this.update(cx, |this, cx| {
                             this.set_status(UpdaterStatus::Ready, cx);
-                            cx.notify();
-                        });
-                        cx.background_executor().timer(RESTART_DELAY).await;
-                        if let Some(bundle) = updater::current_app_bundle() {
-                            updater::relaunch(&bundle);
-                        }
-                        // No bundle (dev / non-.app run) — just report.
-                        let _ = this.update(cx, |this, cx| {
-                            notification_center(cx).update(cx, |c, cx| {
-                                c.push(
+                            this.dialog_open = false;
+                            notification_center(cx).update(cx, |center, cx| {
+                                center.push(
                                     Notification::success(
                                         "Update installed",
                                         "Restart Labonair to finish updating.",
-                                    ),
+                                    )
+                                    .source("updater")
+                                    .action(RESTART_ACTION, "Restart now")
+                                    .toast_for(Duration::from_secs(8)),
                                     cx,
                                 );
                             });
-                            this.dialog_open = false;
                             cx.notify();
                         });
                         break;
@@ -307,7 +334,12 @@ impl UpdaterView {
                             this.set_status(UpdaterStatus::Error(err.clone()), cx);
                             this.dialog_open = false;
                             notification_center(cx).update(cx, |c, cx| {
-                                c.push(Notification::error("Update failed", err), cx);
+                                c.push(
+                                    Notification::error("Update failed", err)
+                                        .source("updater")
+                                        .toast_for(Duration::from_secs(8)),
+                                    cx,
+                                );
                             });
                             cx.notify();
                         });
@@ -389,8 +421,8 @@ impl Render for UpdaterView {
 
         let (title, subtitle): (SharedString, SharedString) = match &self.status {
             UpdaterStatus::Ready => (
-                "Update ready to install".into(),
-                "Labonair will restart to finish installing.".into(),
+                "Update installed".into(),
+                "Restart Labonair when you're ready.".into(),
             ),
             UpdaterStatus::Downloading { downloaded, total } => {
                 let sub = match total {
@@ -502,9 +534,14 @@ impl Render for UpdaterView {
                     vec![self.btn("updater-installing", "Installing…", false, cx, |_, _| {})]
                 }
                 UpdaterStatus::Ready => {
-                    vec![self.btn("updater-close", "Close", false, cx, |this, cx| {
-                        this.close_dialog(cx)
-                    })]
+                    vec![
+                        self.btn("updater-later", "Later", false, cx, |this, cx| {
+                            this.close_dialog(cx)
+                        }),
+                        self.btn("updater-restart", "Restart now", true, cx, |this, cx| {
+                            this.restart(cx)
+                        }),
+                    ]
                 }
                 _ => vec![],
             });

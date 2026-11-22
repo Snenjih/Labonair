@@ -768,6 +768,7 @@ pub struct Workspace {
     pub(crate) panes: HashMap<PaneId, PaneEntry>,
     /// Coding agent currently in the foreground of a terminal pane.
     pub(crate) agents: HashMap<PaneId, agent_integration::AgentPane>,
+    pub(crate) agent_notification_targets: HashMap<u64, PaneId>,
     /// Foreground-program tile per terminal pane (no entry = idle shell).
     pub(crate) programs: HashMap<PaneId, labonair_ui_kit::TabTileSpec>,
     /// Kind / title / dirty metadata of every pane (the pure half of the
@@ -1191,6 +1192,7 @@ impl Workspace {
             layouts: HashMap::new(),
             panes: HashMap::new(),
             agents: HashMap::new(),
+            agent_notification_targets: HashMap::new(),
             programs: HashMap::new(),
             editors: HashMap::new(),
             project_search_owner: None,
@@ -1356,11 +1358,38 @@ impl Workspace {
             |this, _, event: &labonair_notifications::NotificationActionEvent, window, cx| {
                 if event.action_id == host_sessions::RECOVER_ACTION {
                     this.recover_background_sessions(window, cx);
+                } else if event.action_id == agent_integration::OPEN_RESULT_ACTION {
+                    this.open_agent_result(event.notification_id, window, cx);
                 }
             },
         )
         .detach();
         this
+    }
+
+    fn open_agent_result(
+        &mut self,
+        notification_id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pane_id) = self.agent_notification_targets.remove(&notification_id) else {
+            return;
+        };
+        let Some(tab_id) = self
+            .layouts
+            .iter()
+            .find_map(|(tab_id, layout)| layout.leaves().contains(&pane_id).then_some(*tab_id))
+        else {
+            return;
+        };
+        let Some(tab) = self.tabs.read(cx).get(tab_id).cloned() else {
+            return;
+        };
+        if self.spaces.read(cx).active_id() != tab.space_id {
+            self.switch_space(tab.space_id, cx);
+        }
+        self.select_tab(tab_id, window, cx);
     }
 
     // ── Session persistence (T14-001) ─────────────────────────────────────

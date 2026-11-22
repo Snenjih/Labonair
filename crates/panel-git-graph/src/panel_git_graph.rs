@@ -742,7 +742,8 @@ impl GitGraphView {
                                         )
                                         .source("git-graph")
                                         .details(e.clone())
-                                        .dedupe_key(format!("git-graph:load:{root}:{session}")),
+                                        .dedupe_key(format!("git-graph:load:{root}:{session}"))
+                                        .toast_for(Duration::from_secs(8)),
                                         cx,
                                     );
                                 },
@@ -808,7 +809,8 @@ impl GitGraphView {
                                 .dedupe_key(format!(
                                     "git-graph:numstat:{}",
                                     this.commit_hash(idx).unwrap_or_default()
-                                )),
+                                ))
+                                .toast_for(Duration::from_secs(8)),
                                 cx,
                             );
                         });
@@ -1370,7 +1372,8 @@ impl GitGraphView {
                                 )
                                 .source("git-graph")
                                 .details(e.clone())
-                                .dedupe_key(format!("git-graph:op:{label}:{e}")),
+                                .dedupe_key(format!("git-graph:op:{label}:{e}"))
+                                .toast_for(Duration::from_secs(8)),
                                 cx,
                             );
                         })

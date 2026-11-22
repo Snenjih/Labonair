@@ -443,7 +443,10 @@ impl SettingsView {
     }
 
     pub(crate) fn notify_error(&self, cx: &mut Context<Self>, title: &'static str, body: String) {
-        self.notify(cx, Notification::error(title, body));
+        self.notify(
+            cx,
+            Notification::error(title, body).toast_for(std::time::Duration::from_secs(8)),
+        );
     }
 
     /// Publish settings-file diagnostics through the app-wide notification

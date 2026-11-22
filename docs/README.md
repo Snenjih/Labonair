@@ -38,3 +38,5 @@ Authority order when sources disagree: the user's current decision → these doc
 | [0009](adr/0009-detached-session-host.md) | Detached session host | Accepted (multi-client exclusion superseded by 0010) |
 | [0010](adr/0010-shared-workspaces-and-multi-client-detached-sessions.md) | Shared Workspaces and multi-client Detached sessions | Accepted; implementation in progress |
 | [0011](adr/0011-actionable-notification-presentations.md) | Actionable notification presentations | Accepted |
+| [0012](adr/0012-transfer-notifications.md) | Transfer terminal notifications | Accepted |
+| [0013](adr/0013-explorer-notification-navigation.md) | Explorer notification navigation | Accepted |

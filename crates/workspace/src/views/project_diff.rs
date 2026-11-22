@@ -597,7 +597,8 @@ impl ProjectDiffView {
                                 )
                                 .source("project-diff")
                                 .details(e)
-                                .dedupe_key("project-diff:load".to_string()),
+                                .dedupe_key("project-diff:load".to_string())
+                                .toast_for(Duration::from_secs(8)),
                                 cx,
                             );
                         });

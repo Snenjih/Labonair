@@ -65,6 +65,10 @@ The dropdown groups warnings and errors as Problems and other entries as Activit
 
 This is a direct notification builder and center contract, not a separate toast-provider registry: there is one registry owner and no discovery or multi-provider lifecycle to manage. See [ADR 0011](adr/0011-actionable-notification-presentations.md).
 
+Transfer UI publishes a retained terminal-state notification with a toast and a `Show transfers` action only while its queue is closed. It owns the action and opens its existing queue; progress and recovery state remain in the transfer registry ([ADR 0012](adr/0012-transfer-notifications.md)).
+
+Explorer file-operation notifications may offer `Open destination`. Explorer retains the destination by notification ID, loads it when the action is activated, and emits `ExplorerEvent::OpenDestination`; the shell forwards this typed event to Workspace solely to open the Explorer dock ([ADR 0013](adr/0013-explorer-notification-navigation.md)).
+
 ## Transfer registry
 
 `labonair-transfers::TransferRegistry` is the sole owner of transfer lifecycle state. It lives for the application session and retains queued, active, paused, failed, cancelled, and completed records until the user clears terminal history. It consumes typed `TransferEvent`s and exposes immutable `TransferSnapshot`s. `TransferService` is the action contract (enqueue, cancel, conflict/file-error resolution); `TransferEventSource` is the read-only event boundary. `labonair-transfers-ssh` translates the raw adapter event bus once; no workspace or statusbar code decodes raw event names. The statusbar-hosted `labonair-transfers-ui` view is the canonical presentation and emits only a typed completion signal for the SFTP pane refresh. History is in-memory; durable history needs a separate persistence decision and schema.

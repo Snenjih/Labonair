@@ -48,7 +48,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::git_change_row::{git_change_row, StageState};
 use crate::theme::ThemeStore;
 use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
-use labonair_notifications::{notification_center, notify_err, Notification};
+use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
     button_disabled, checkbox, context_menu, disclosure, file_icon_path, h_stack,
     icon_button_builder, segmented_control, text_area_surface, text_field,
@@ -108,6 +108,42 @@ type GitFileAct = Box<dyn Fn(&mut GitPanelView, &mut Context<GitPanelView>)>;
 /// [`GitPanelView::poll_interval`]).
 const POLL_INTERVAL: Duration = Duration::from_millis(2000);
 const REMOTE_POLL_MULTIPLIER: u32 = 3;
+
+fn notify_git_success(title: impl Into<SharedString>, body: impl Into<SharedString>, cx: &mut App) {
+    notification_center(cx).update(cx, |center, cx| {
+        center.push(
+            Notification::success(title, body)
+                .source("git")
+                .toast_for(Duration::from_secs(8)),
+            cx,
+        );
+    });
+}
+
+fn notify_git_err<T>(
+    title: impl Into<SharedString>,
+    result: Result<T, String>,
+    cx: &mut App,
+) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(message) => {
+            let title = title.into();
+            let dedupe_key = format!("{}:{message}", title);
+            notification_center(cx).update(cx, |center, cx| {
+                center.push(
+                    Notification::error(title, "Operation failed")
+                        .source("git")
+                        .details(message)
+                        .dedupe_key(dedupe_key)
+                        .toast_for(Duration::from_secs(8)),
+                    cx,
+                );
+            });
+            None
+        }
+    }
+}
 
 /// Current `scmFileTree` setting (`false` when settings are not yet loaded, e.g.
 /// in headless tests).
@@ -1511,7 +1547,7 @@ impl GitPanelView {
                     }
                     Err(e) => {
                         this.history_error = Some(e.clone());
-                        notify_err::<()>("Load history failed", Err(e), cx);
+                        notify_git_err::<()>("Load history failed", Err(e), cx);
                     }
                 }
                 cx.notify();
@@ -1572,7 +1608,7 @@ impl GitPanelView {
             kind,
             op,
             move |_this, result, cx| {
-                notify_err(title, result, cx);
+                notify_git_err(title, result, cx);
             },
             cx,
         );
@@ -1834,13 +1870,19 @@ impl GitPanelView {
             input.update(cx, |s, cx| s.set_value("", window, cx));
         }
         self.amend = false;
-        self.run_op(
-            "Commit failed",
+        self.run_op_kind_with_done(
+            RepoOperation::Mutating,
             async move {
                 if stage_tracked {
                     git.stage_all(root.clone(), sid.clone()).await?;
                 }
                 git.commit(root, msg, amend, sid).await.map(|_| ())
+            },
+            |_this, result, cx| match result {
+                Ok(()) => notify_git_success("Commit created", "The commit was created.", cx),
+                Err(error) => {
+                    notify_git_err("Commit failed", Err::<(), _>(error), cx);
+                }
             },
             cx,
         );
@@ -1850,10 +1892,17 @@ impl GitPanelView {
         let Some((root, sid, git)) = self.ctx() else {
             return;
         };
-        self.run_op_kind(
+        self.run_op_kind_with_done(
             RepoOperation::Pulling,
-            "Pull failed",
             async move { git.pull(root, sid).await.map(|_| ()) },
+            |_this, result, cx| match result {
+                Ok(()) => {
+                    notify_git_success("Pull complete", "Repository updated from remote.", cx)
+                }
+                Err(error) => {
+                    notify_git_err("Pull failed", Err::<(), _>(error), cx);
+                }
+            },
             cx,
         );
     }
@@ -1869,10 +1918,15 @@ impl GitPanelView {
             .map(|s| s.current_branch.clone())
             .unwrap_or_default();
         if has_upstream {
-            self.run_op_kind(
+            self.run_op_kind_with_done(
                 RepoOperation::Pushing,
-                "Push failed",
                 async move { git.push(root, None, None, sid).await.map(|_| ()) },
+                |_this, result, cx| match result {
+                    Ok(()) => notify_git_success("Push complete", "Changes pushed to remote.", cx),
+                    Err(error) => {
+                        notify_git_err("Push failed", Err::<(), _>(error), cx);
+                    }
+                },
                 cx,
             );
         } else {
@@ -1910,7 +1964,7 @@ impl GitPanelView {
                         });
                     }
                     Err(error) => {
-                        notify_err("Publish failed", Err::<(), _>(error), cx);
+                        notify_git_err("Publish failed", Err::<(), _>(error), cx);
                     }
                 },
                 cx,
@@ -1929,13 +1983,20 @@ impl GitPanelView {
             .as_ref()
             .map(|s| s.current_branch.clone())
             .unwrap_or_default();
-        self.run_op_kind(
+        self.run_op_kind_with_done(
             RepoOperation::Pushing,
-            "Force push failed",
             async move {
                 git.push(root, Some("origin".to_string()), Some(branch), sid)
                     .await
                     .map(|_| ())
+            },
+            |_this, result, cx| match result {
+                Ok(()) => {
+                    notify_git_success("Force push complete", "Branch updated on origin.", cx)
+                }
+                Err(error) => {
+                    notify_git_err("Force push failed", Err::<(), _>(error), cx);
+                }
             },
             cx,
         );
@@ -1945,10 +2006,15 @@ impl GitPanelView {
         let Some((root, sid, git)) = self.ctx() else {
             return;
         };
-        self.run_op_kind(
+        self.run_op_kind_with_done(
             RepoOperation::Fetching,
-            "Fetch failed",
             async move { git.fetch(root, sid).await.map(|_| ()) },
+            |_this, result, cx| match result {
+                Ok(()) => notify_git_success("Fetch complete", "Remote refs updated.", cx),
+                Err(error) => {
+                    notify_git_err("Fetch failed", Err::<(), _>(error), cx);
+                }
+            },
             cx,
         );
     }
@@ -2049,7 +2115,7 @@ impl GitPanelView {
                 Err(e) => {
                     let msg = map_checkout_error(&e);
                     this.checkout_error = Some(msg.clone());
-                    notify_err::<()>("Checkout failed", Err(msg), cx);
+                    notify_git_err::<()>("Checkout failed", Err(msg), cx);
                 }
             },
             cx,
@@ -2127,7 +2193,7 @@ impl GitPanelView {
                     this.delete_confirm_branch = None;
                     this.force_delete_branch = None;
                     this.checkout_error = Some(format!("Could not delete branch: {e}"));
-                    notify_err::<()>("Delete branch failed", Err(e), cx);
+                    notify_git_err::<()>("Delete branch failed", Err(e), cx);
                 }
             },
             cx,
@@ -2153,7 +2219,7 @@ impl GitPanelView {
             move |this, res, cx| {
                 this.rename_target = None;
                 this.active_field = None;
-                notify_err("Rename branch failed", res, cx);
+                notify_git_err("Rename branch failed", res, cx);
                 this.refresh_soon(cx);
             },
             cx,
@@ -2216,7 +2282,7 @@ impl GitPanelView {
                 if let Err(e) = &res {
                     this.tag_error = Some(e.clone());
                 }
-                notify_err("Delete tag failed", res, cx);
+                notify_git_err("Delete tag failed", res, cx);
                 this.refresh_soon(cx);
             },
             cx,
@@ -2233,7 +2299,7 @@ impl GitPanelView {
                 if let Err(e) = &res {
                     this.tag_error = Some(e.clone());
                 }
-                notify_err("Push tag failed", res, cx);
+                notify_git_err("Push tag failed", res, cx);
                 this.refresh_soon(cx);
             },
             cx,
@@ -2254,7 +2320,7 @@ impl GitPanelView {
                 this.stash_form_open = false;
                 this.stash_msg.clear();
                 this.active_field = None;
-                notify_err("Stash failed", res, cx);
+                notify_git_err("Stash failed", res, cx);
                 this.refresh_soon(cx);
             },
             cx,
@@ -2276,7 +2342,7 @@ impl GitPanelView {
             },
             move |this, res, cx| {
                 if let Err(e) = res {
-                    notify_err::<()>(
+                    notify_git_err::<()>(
                         if pop {
                             "Stash pop failed"
                         } else {
@@ -2324,7 +2390,7 @@ impl GitPanelView {
             async move { git.stash_drop(root, hash, sid).await },
             move |this, res, cx| {
                 this.drop_confirm_stash = None;
-                notify_err("Stash drop failed", res, cx);
+                notify_git_err("Stash drop failed", res, cx);
                 this.refresh_soon(cx);
             },
             cx,
