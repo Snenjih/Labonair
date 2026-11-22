@@ -57,9 +57,13 @@ Panels register identity, title, icon, supported docks, and a view factory. Stat
 
 ## Notification center
 
-`labonair-notifications-core` is the single user-message registry. It accepts structured notifications (kind, title, summary, optional details, source, timestamp, actions, deduplication metadata), keeps records until dismissed or cleared, and exposes read state for the statusbar badge. It renders no toasts, runs no timers, and has no feature-specific error handling. The GPUI adapter stores no closures (the callback-action path was removed because no feature used it); an actionable notification returns later as a stable action id plus typed payload dispatched through the owner or command registry.
+`labonair-notifications-core` is the single user-message registry. It accepts structured notifications (kind, title, summary, optional details, source, timestamp, actions, optional toast presentation, deduplication metadata), keeps records until dismissed or cleared, and exposes read state for the statusbar badge. It renders no UI and runs no timers. The GPUI adapter stores no closures: owner actions return later as stable action IDs, while typed external-URL targets are handled by the notifications adapter.
 
-Publishing a notification is the complete user-message path: no extra toast, inline banner, or feature-local message for the same event. A feature may keep internal error state for retry logic but renders no second banner for the same user-facing failure. The statusbar dropdown is the sole global presentation surface.
+Publishing a notification is the complete user-message path: no feature-local duplicate banner for the same event. A notification may opt into a short-lived toast presentation; its retained record remains available in the dropdown after the toast expires or is closed. The notifications module owns both presentations, and the shell only composes its toast overlay. Toast timers affect transient visibility only. Producers without an explicit toast policy continue to appear only in the dropdown.
+
+The dropdown groups warnings and errors as Problems and other entries as Activity. Search, clear-all, severity cues, and notification actions are owned by the notifications UI. Actions remain data-only: owner actions emit a stable action ID, while a typed external-URL target is opened by the notifications adapter.
+
+This is a direct notification builder and center contract, not a separate toast-provider registry: there is one registry owner and no discovery or multi-provider lifecycle to manage. See [ADR 0011](adr/0011-actionable-notification-presentations.md).
 
 ## Transfer registry
 

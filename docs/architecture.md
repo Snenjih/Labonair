@@ -101,7 +101,7 @@ The workspace has the crates below (verify with `ls crates/` and `scripts/crate-
 | Settings | `labonair-settings` | `-settings-content`, `-settings-json`, `-settings-macros`, `-settings-ui` | Typed values, layered persistence, the Settings surface registry contract, value-only settings UI. |
 | Keymap | `labonair-keymap` | `-keymap-ui` | Binding descriptors, file data, resolution, conflicts, presentation adapter; no feature behavior. |
 | Command palette | `labonair-command-palette-core` | `-command-palette`, `-command-palette-runtime` | UI-free command registry; UI sibling owns search/navigation/submenu presentation; runtime sibling carries owner GPUI handlers. |
-| Notifications | `labonair-notifications-core` | `-notifications` | Notification registry/state and its GPUI statusbar presentation. |
+| Notifications | `labonair-notifications-core` | `-notifications` | Notification registry/state, grouped statusbar dropdown, and opt-in toast presentation ([ADR 0011](adr/0011-actionable-notification-presentations.md)). |
 | Activity | `labonair-activity` | `-activity-ui` | Running-work registry and statusbar activity item. |
 | Themes | `labonair-theme` | `-theme-ui` | Built-in color and icon-theme registries, preview, selection. `-theme-ui` owns settings→`ThemeStore` policy, Settings-link registration, and the palette preview/activate handler, so `labonair-theme` has no `labonair-settings` dependency. |
 | Workspace | `labonair-workspace` | `-workspace-storage` | Identity, durable Space/Tab/Pane IDs, leases, revisioned shared structure, layout, session orchestration. The storage sibling is GPUI-free and owns `workspace.db` transactions and migrations. |

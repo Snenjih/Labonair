@@ -12,16 +12,17 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, AnyElement, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle,
     Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
 use labonair_theme::store::ThemeStore;
 use labonair_ui_kit::{
-    icon_button_builder, popover_with_exit, ButtonSize, ButtonVariant, IconName, ListItem, Palette,
-    Presence,
+    empty_state, icon_button_builder, list_header, list_separator, popover_with_exit,
+    search_clear_button, search_field, search_input, text_field, ButtonSize, ButtonVariant,
+    IconName, InputEvent, InputState, ListItem, Palette, Presence,
 };
 
-use crate::NotificationCenter;
+use crate::{NotificationCenter, NotificationSnapshot, Severity};
 
 /// The notifications status item and its statusbar dropdown.
 pub struct NotificationsStatusItem {
@@ -38,6 +39,11 @@ pub struct NotificationsStatusItem {
     /// the first paint records `trigger_bounds`.
     fallback_anchor: Point<Pixels>,
     expanded: HashSet<u64>,
+    search_open: bool,
+    search: String,
+    search_focused: bool,
+    search_input: Option<Entity<InputState>>,
+    _search_subscription: Option<Subscription>,
     focus: FocusHandle,
 }
 
@@ -56,9 +62,109 @@ impl NotificationsStatusItem {
             trigger_bounds: None,
             fallback_anchor: Point::default(),
             expanded: HashSet::new(),
+            search_open: false,
+            search: String::new(),
+            search_focused: false,
+            search_input: None,
+            _search_subscription: None,
             focus: cx.focus_handle(),
         }
     }
+}
+
+fn notification_row(
+    snapshot: NotificationSnapshot,
+    expanded: bool,
+    center: Entity<NotificationCenter>,
+    view: Entity<NotificationsStatusItem>,
+    palette: Palette,
+    border: gpui::Hsla,
+) -> AnyElement {
+    let id = snapshot.id;
+    let (icon, icon_color) = match snapshot.severity {
+        Severity::Message | Severity::Info => (IconName::Info, palette.info),
+        Severity::Success => (IconName::CircleCheck, palette.success),
+        Severity::Warning => (IconName::TriangleAlert, palette.warning),
+        Severity::Error => (IconName::CircleX, palette.error),
+    };
+    let leading = div()
+        .size(px(24.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(icon.svg(icon_color).size(px(15.0)));
+    let mut message = div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .min_w_0()
+        .gap_0p5()
+        .child(
+            div()
+                .text_size(px(12.0))
+                .text_color(palette.fg)
+                .when(!snapshot.read, |d| {
+                    d.font_weight(gpui::FontWeight::SEMIBOLD)
+                })
+                .child(snapshot.title),
+        )
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(palette.muted)
+                .child(snapshot.body),
+        );
+    if expanded {
+        if let Some(details) = snapshot.details.clone() {
+            message = message.child(
+                div()
+                    .pt_1()
+                    .text_size(px(11.0))
+                    .text_color(palette.muted)
+                    .child(details),
+            );
+        }
+    }
+    if !snapshot.actions.is_empty() {
+        message = message.child(div().flex().flex_wrap().gap_2().pt_1().children(
+            snapshot.actions.iter().map(|action| {
+                let action_id = action.id.clone();
+                let action_center = center.clone();
+                labonair_ui_kit::button(
+                    SharedString::from(format!("bar-notification-{id}-{}", action.id)),
+                    palette,
+                    ButtonVariant::OutlinedGhost,
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(action.label.clone()))
+                .on_click(move |_: &ClickEvent, _window, cx| {
+                    action_center.update(cx, |center, cx| {
+                        center.activate_action(id, action_id.clone(), cx)
+                    });
+                    cx.stop_propagation();
+                })
+            }),
+        ));
+    }
+
+    ListItem::new(
+        SharedString::from(format!("bar-notification-{id}")),
+        palette,
+    )
+    .leading(leading)
+    .on_click(move |_: &ClickEvent, _window, cx| {
+        view.update(cx, |item, cx| {
+            if !item.expanded.insert(id) {
+                item.expanded.remove(&id);
+            }
+            item.center
+                .update(cx, |center, cx| center.mark_read(id, cx));
+            cx.notify();
+        });
+    })
+    .extra(move |row| row.border_b_1().border_color(border))
+    .child(message)
+    .into_any_element()
 }
 
 impl NotificationsStatusItem {
@@ -71,6 +177,37 @@ impl NotificationsStatusItem {
     fn close(&mut self, cx: &mut Context<Self>) {
         let motion = Palette::from_theme(self.theme.read(cx)).motion;
         self.presence.request_close(Instant::now(), &motion);
+        self.reset_search();
+        cx.notify();
+    }
+
+    fn reset_search(&mut self) {
+        self.search_open = false;
+        self.search.clear();
+        self.search_focused = false;
+        self.search_input = None;
+        self._search_subscription = None;
+    }
+
+    fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_open {
+            self.reset_search();
+        } else {
+            self.search_open = true;
+            let input = cx.new(|cx| text_field(window, cx).placeholder("Search notifications"));
+            let subscription = cx.subscribe(&input, |this, input, event: &InputEvent, cx| {
+                match event {
+                    InputEvent::Change => this.search = input.read(cx).value().to_string(),
+                    InputEvent::Focus => this.search_focused = true,
+                    InputEvent::Blur => this.search_focused = false,
+                    _ => {}
+                }
+                cx.notify();
+            });
+            input.update(cx, |input, cx| input.focus(window, cx));
+            self.search_input = Some(input);
+            self._search_subscription = Some(subscription);
+        }
         cx.notify();
     }
 }
@@ -108,16 +245,9 @@ impl StatusItem for NotificationsStatusItem {
         let count = self.center.read(cx).unread_count();
         let motion = Palette::from_theme(self.theme.read(cx)).motion;
         self.presence.tick(Instant::now(), &motion);
-        let (fg, muted, accent, border) = {
-            let theme = self.theme.read(cx);
-            (
-                theme.foreground(),
-                theme.muted_foreground(),
-                theme.accent(),
-                theme.border(),
-            )
-        };
         let palette = Palette::from_theme(self.theme.read(cx));
+        let accent = palette.primary;
+        let border = palette.border;
         let bell = icon_button_builder("bar-notifications", palette, IconName::Bell)
             .size(ButtonSize::IconXxs)
             .selected(self.is_open())
@@ -155,7 +285,7 @@ impl StatusItem for NotificationsStatusItem {
                         .justify_center()
                         .rounded_full()
                         .bg(accent)
-                        .text_color(fg)
+                        .text_color(palette.primary_fg)
                         .text_size(px(8.0))
                         .child(SharedString::from(count.to_string())),
                 )
@@ -186,6 +316,37 @@ impl StatusItem for NotificationsStatusItem {
             .unwrap_or(self.fallback_anchor);
 
         let snapshots = self.center.read(cx).snapshots();
+        let query = self.search.to_lowercase();
+        let mut problems = Vec::new();
+        let mut activity = Vec::new();
+        for snapshot in snapshots {
+            let matches_query = query.is_empty()
+                || format!(
+                    "{} {} {} {}",
+                    snapshot.title,
+                    snapshot.body,
+                    snapshot
+                        .details
+                        .as_ref()
+                        .map(|value| value.to_string())
+                        .unwrap_or_default(),
+                    snapshot
+                        .source
+                        .as_ref()
+                        .map(|value| value.to_string())
+                        .unwrap_or_default()
+                )
+                .to_lowercase()
+                .contains(&query);
+            if !matches_query {
+                continue;
+            }
+            if matches!(snapshot.severity, Severity::Warning | Severity::Error) {
+                problems.push(snapshot);
+            } else {
+                activity.push(snapshot);
+            }
+        }
         let view = cx.entity();
         let dismiss = {
             let view = view.clone();
@@ -193,129 +354,144 @@ impl StatusItem for NotificationsStatusItem {
                 view.update(cx, |item, cx| item.close(cx));
             }
         };
-        let content = div()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_4()
-                    .py_3()
-                    .border_b_1()
-                    .border_color(border)
-                    .child(
+        let mut content = div().flex().flex_col().child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_3()
+                .py(palette.space(10.0))
+                .border_b_1()
+                .border_color(border)
+                .child(
+                    div().flex().items_center().gap_2().child(
                         div()
-                            .text_size(px(16.0))
+                            .text_size(px(15.0))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(fg)
+                            .text_color(palette.fg)
                             .child("Notifications"),
-                    )
-                    .child(
-                        labonair_ui_kit::button(
-                            "bar-notif-clear",
-                            palette,
-                            ButtonVariant::Transparent,
-                            ButtonSize::Xs,
-                        )
-                        .child("Clear all")
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _window, cx| {
+                    ),
+                )
+                .child(
+                    div().flex().items_center().gap_1().children([
+                        icon_button_builder("bar-notif-search", palette, IconName::Search)
+                            .size(ButtonSize::IconXs)
+                            .selected(self.search_open)
+                            .tooltip("Search notifications")
+                            .render()
+                            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                                this.toggle_search(window, cx);
+                            }))
+                            .into_any_element(),
+                        icon_button_builder("bar-notif-clear", palette, IconName::Trash)
+                            .size(ButtonSize::IconXs)
+                            .disabled(self.center.read(cx).is_empty())
+                            .tooltip("Clear all notifications")
+                            .render()
+                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.center.update(cx, |center, cx| center.clear_all(cx));
                                 this.close(cx);
-                            },
-                        )),
-                    ),
-            )
-            .child(if snapshots.is_empty() {
-                labonair_ui_kit::empty_state("No notifications", palette)
-                    .h(px(120.0))
-                    .text_size(px(16.0))
-                    .into_any_element()
-            } else {
-                div()
-                    .id("bar-notifications-list")
-                    .max_h(px(360.0))
-                    .overflow_y_scroll()
-                    .children(snapshots.into_iter().map(|snapshot| {
-                        let id = snapshot.id;
-                        let expanded = self.expanded.contains(&id);
-                        let row_view = view.clone();
-                        let mut message = div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .gap_0p5()
-                            .child(div().text_xs().text_color(fg).child(snapshot.title))
-                            .child(
-                                div()
-                                    .text_size(px(11.0))
-                                    .text_color(muted)
-                                    .child(snapshot.body),
-                            );
-                        if expanded {
-                            if let Some(details) = snapshot.details.clone() {
-                                message = message.child(
-                                    div()
-                                        .pt_1()
-                                        .text_size(px(11.0))
-                                        .text_color(muted)
-                                        .child(details),
-                                );
-                            }
-                        }
-                        if !snapshot.actions.is_empty() {
-                            message = message.child(div().flex().gap_2().pt_1().children(
-                                snapshot.actions.iter().map(|action| {
-                                    let action_id = action.id.clone();
-                                    let action_view = view.clone();
-                                    labonair_ui_kit::button(
-                                        SharedString::from(format!(
-                                            "bar-notification-{id}-{}",
-                                            action.id
-                                        )),
-                                        palette,
-                                        ButtonVariant::OutlinedGhost,
-                                        ButtonSize::Xs,
-                                    )
-                                    .child(SharedString::from(action.label.clone()))
-                                    .on_click(
-                                        move |_: &ClickEvent, _window, cx| {
-                                            let action_id = action_id.clone();
-                                            action_view.update(cx, |item, cx| {
-                                                item.center.update(cx, |center, cx| {
-                                                    center.activate_action(id, action_id, cx)
-                                                });
-                                                cx.notify();
-                                            });
-                                            cx.stop_propagation();
-                                        },
-                                    )
-                                }),
-                            ));
-                        }
-                        let row = ListItem::new(
-                            SharedString::from(format!("bar-notification-{id}")),
+                            }))
+                            .into_any_element(),
+                    ]),
+                ),
+        );
+
+        if self.search_open {
+            if let Some(input) = self.search_input.clone() {
+                let clear = if self.search.is_empty() {
+                    None
+                } else {
+                    let clear_input = input.clone();
+                    Some(
+                        search_clear_button(
+                            "bar-notif-search-clear",
                             palette,
+                            move |_: &ClickEvent, window, cx| {
+                                clear_input.update(cx, |input, cx| input.set_value("", window, cx));
+                                cx.stop_propagation();
+                            },
                         )
-                        .on_click(move |_: &ClickEvent, _window, cx| {
-                            row_view.update(cx, |item, cx| {
-                                if !item.expanded.insert(id) {
-                                    item.expanded.remove(&id);
-                                }
-                                item.center
-                                    .update(cx, |center, cx| center.mark_read(id, cx));
-                                cx.notify();
-                            });
-                        })
-                        .extra(move |row| row.border_b_1().border_color(border))
-                        .child(message);
-                        row
-                    }))
-                    .into_any_element()
-            })
-            .into_any_element();
+                        .into_any_element(),
+                    )
+                };
+                content = content.child(div().px_3().py_2().child(search_field(
+                    "bar-notif-search-field",
+                    palette,
+                    self.search_focused,
+                    search_input(&input, palette),
+                    clear,
+                )));
+            }
+        }
+
+        let empty_message = if self.center.read(cx).is_empty() {
+            "You're all caught up"
+        } else {
+            "No notifications match this search"
+        };
+        let rows = if problems.is_empty() && activity.is_empty() {
+            empty_state(empty_message, palette)
+                .h(px(112.0))
+                .into_any_element()
+        } else {
+            let has_problems = !problems.is_empty();
+            let mut groups = div().flex().flex_col().gap_1();
+            if !problems.is_empty() {
+                let problem_count = problems.len();
+                groups = groups.child(
+                    div()
+                        .child(list_header(
+                            SharedString::from(format!("Problems · {problem_count}")),
+                            palette.muted,
+                        ))
+                        .children(problems.into_iter().map(|snapshot| {
+                            let expanded = self.expanded.contains(&snapshot.id);
+                            notification_row(
+                                snapshot,
+                                expanded,
+                                self.center.clone(),
+                                view.clone(),
+                                palette,
+                                border,
+                            )
+                        })),
+                );
+            }
+            if !activity.is_empty() {
+                if has_problems {
+                    groups = groups.child(list_separator(border));
+                }
+                let activity_count = activity.len();
+                groups = groups.child(
+                    div()
+                        .child(list_header(
+                            SharedString::from(format!("Activity · {activity_count}")),
+                            palette.muted,
+                        ))
+                        .children(activity.into_iter().map(|snapshot| {
+                            let expanded = self.expanded.contains(&snapshot.id);
+                            notification_row(
+                                snapshot,
+                                expanded,
+                                self.center.clone(),
+                                view.clone(),
+                                palette,
+                                border,
+                            )
+                        })),
+                );
+            }
+            div()
+                .id("bar-notifications-list")
+                .max_h(px(360.0))
+                .overflow_y_scroll()
+                .px_2()
+                .pb_2()
+                .child(groups)
+                .into_any_element()
+        };
+        content = content.child(rows);
 
         div()
             .relative()
@@ -323,11 +499,11 @@ impl StatusItem for NotificationsStatusItem {
             .child(bell)
             .child(popover_with_exit(
                 anchor,
-                px(300.0),
-                Palette::from_theme(self.theme.read(cx)),
+                px(360.0),
+                palette,
                 self.presence.is_closing(),
                 dismiss,
-                content,
+                content.into_any_element(),
             ))
             .into_any_element()
     }

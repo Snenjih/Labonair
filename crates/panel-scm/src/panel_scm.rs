@@ -385,6 +385,79 @@ impl RepoOperation {
     }
 }
 
+fn github_pull_request_url(remote_url: &str, branch: &str) -> Option<String> {
+    let path = if let Some(rest) = remote_url.strip_prefix("https://") {
+        let (authority, path) = rest.split_once('/')?;
+        let host = authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host);
+        if !matches!(host, "github.com" | "github.com:443") {
+            return None;
+        }
+        path
+    } else if let Some(rest) = remote_url.strip_prefix("ssh://") {
+        let (authority, path) = rest.split_once('/')?;
+        let host = authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host);
+        if !matches!(host, "github.com" | "github.com:22") {
+            return None;
+        }
+        path
+    } else {
+        let (authority, path) = remote_url.split_once(':')?;
+        let host = authority
+            .rsplit_once('@')
+            .map_or(authority, |(_, host)| host);
+        if host != "github.com" {
+            return None;
+        }
+        path
+    };
+
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let mut segments = path.split('/');
+    let owner = segments.next()?;
+    let repository = segments.next()?;
+    if segments.next().is_some()
+        || !valid_github_segment(owner)
+        || !valid_github_segment(repository)
+        || branch.is_empty()
+    {
+        return None;
+    }
+
+    Some(format!(
+        "https://github.com/{owner}/{repository}/pull/new/{}",
+        encode_url_path_segment(branch)
+    ))
+}
+
+fn valid_github_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value != "."
+        && value != ".."
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+fn encode_url_path_segment(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(HEX[(byte >> 4) as usize]));
+            encoded.push(char::from(HEX[(byte & 0x0f) as usize]));
+        }
+    }
+    encoded
+}
+
 /// Why the commit action is unavailable, shown in the button tooltip.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum DisabledReason {
@@ -1495,6 +1568,26 @@ impl GitPanelView {
     ) where
         F: std::future::Future<Output = Result<(), String>> + Send + 'static,
     {
+        self.run_op_kind_with_done(
+            kind,
+            op,
+            move |_this, result, cx| {
+                notify_err(title, result, cx);
+            },
+            cx,
+        );
+    }
+
+    fn run_op_kind_with_done<F, T>(
+        &mut self,
+        kind: RepoOperation,
+        op: F,
+        done: impl FnOnce(&mut Self, Result<T, String>, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) where
+        F: std::future::Future<Output = Result<T, String>> + Send + 'static,
+        T: Send + 'static,
+    {
         if self.op_in_progress {
             return;
         }
@@ -1526,11 +1619,11 @@ impl GitPanelView {
             let _ = this.update(cx, |this, cx| {
                 this.op_in_progress = false;
                 this.repo_op = RepoOperation::Idle;
-                notify_err(title, res, cx);
                 // A mutation may have changed HEAD — drop the cached log so the
                 // History tab refetches on its next poll.
                 this.history.clear();
                 this.refresh_soon(cx);
+                done(this, res, cx);
                 cx.notify();
             });
         })
@@ -1784,13 +1877,41 @@ impl GitPanelView {
             );
         } else {
             // New branch — publish with --set-upstream to origin.
-            self.run_op_kind(
+            let branch_for_url = branch.clone();
+            let branch_for_notification = branch.clone();
+            self.run_op_kind_with_done(
                 RepoOperation::Pushing,
-                "Publish failed",
                 async move {
-                    git.push(root, Some("origin".to_string()), Some(branch), sid)
+                    let remote_url = git
+                        .remote_url(root.clone(), Some("origin".to_string()), sid.clone())
                         .await
-                        .map(|_| ())
+                        .ok();
+                    git.push(root, Some("origin".to_string()), Some(branch), sid)
+                        .await?;
+                    Ok(remote_url.and_then(|url| github_pull_request_url(&url, &branch_for_url)))
+                },
+                move |_this, result, cx| match result {
+                    Ok(pr_url) => {
+                        let body = format!(
+                            "Branch \u{201C}{branch_for_notification}\u{201D} published to origin."
+                        );
+                        let mut notification = Notification::success("Branch published", body)
+                            .source("git")
+                            .toast_for(Duration::from_secs(8));
+                        if let Some(url) = pr_url {
+                            notification = notification.action_open_url(
+                                "git.create-pull-request",
+                                "Create PR",
+                                url,
+                            );
+                        }
+                        notification_center(cx).update(cx, |center, cx| {
+                            center.push(notification, cx);
+                        });
+                    }
+                    Err(error) => {
+                        notify_err("Publish failed", Err::<(), _>(error), cx);
+                    }
                 },
                 cx,
             );

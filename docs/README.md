@@ -37,3 +37,4 @@ Authority order when sources disagree: the user's current decision → these doc
 | [0008](adr/0008-onboarding-module.md) | Onboarding module, shown as a workspace tab | Accepted |
 | [0009](adr/0009-detached-session-host.md) | Detached session host | Accepted (multi-client exclusion superseded by 0010) |
 | [0010](adr/0010-shared-workspaces-and-multi-client-detached-sessions.md) | Shared Workspaces and multi-client Detached sessions | Accepted; implementation in progress |
+| [0011](adr/0011-actionable-notification-presentations.md) | Actionable notification presentations | Accepted |

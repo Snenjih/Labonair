@@ -21,12 +21,21 @@ pub enum NotificationKind {
 
 /// A non-executable action exposed by a notification.
 ///
-/// The owning module interprets the stable `id` when the user activates it;
-/// the registry never stores UI callbacks or feature state.
+/// Owner actions use the stable `id` when activated. Open-URL actions carry
+/// their destination as data; the registry never stores callbacks or state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotificationAction {
     pub id: String,
     pub label: String,
+    pub target: NotificationActionTarget,
+}
+
+/// Data-only action behavior. Owner actions emit an event; open-URL actions
+/// are handled by the notifications adapter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotificationActionTarget {
+    Owner,
+    OpenUrl(String),
 }
 
 impl NotificationAction {
@@ -34,6 +43,19 @@ impl NotificationAction {
         Self {
             id: id.into(),
             label: label.into(),
+            target: NotificationActionTarget::Owner,
+        }
+    }
+
+    pub fn open_url(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        url: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            target: NotificationActionTarget::OpenUrl(url.into()),
         }
     }
 }
@@ -47,6 +69,9 @@ pub struct NotificationDraft {
     pub details: Option<String>,
     pub source: Option<String>,
     pub actions: Vec<NotificationAction>,
+    /// Optional transient presentation lifetime. The record remains retained
+    /// after this duration expires.
+    pub toast_duration: Option<Duration>,
     /// Optional stable key used to suppress repeated equivalent events.
     pub dedupe_key: Option<String>,
 }
@@ -64,6 +89,7 @@ impl NotificationDraft {
             details: None,
             source: None,
             actions: Vec::new(),
+            toast_duration: None,
             dedupe_key: None,
         }
     }
@@ -80,6 +106,11 @@ impl NotificationDraft {
 
     pub fn action(mut self, action: NotificationAction) -> Self {
         self.actions.push(action);
+        self
+    }
+
+    pub fn toast_for(mut self, duration: Duration) -> Self {
+        self.toast_duration = Some(duration);
         self
     }
 
@@ -101,16 +132,18 @@ pub struct NotificationRecord {
     pub actions: Vec<NotificationAction>,
     pub dedupe_key: Option<String>,
     pub created_at: Instant,
+    pub toast_until: Option<Instant>,
     pub read: bool,
 }
 
 const DEDUPE_WINDOW: Duration = Duration::from_secs(2);
 const MAX_ITEMS: usize = 100;
+const MAX_TOASTS: usize = 3;
 
 /// In-memory notification registry used by the application.
 ///
-/// Notifications are retained until dismissed or cleared. In particular,
-/// there is no timer, toast queue, or severity-specific auto-dismiss policy.
+/// Retained records stay until dismissed or cleared. Toast deadlines control
+/// only transient visibility; they never auto-dismiss the retained record.
 #[derive(Debug, Default)]
 pub struct NotificationRegistry {
     items: Vec<NotificationRecord>,
@@ -155,9 +188,19 @@ impl NotificationRegistry {
                 actions: draft.actions,
                 dedupe_key: draft.dedupe_key,
                 created_at: now,
+                toast_until: draft.toast_duration.map(|duration| now + duration),
                 read: false,
             },
         );
+        let mut visible_toasts = 0;
+        for item in &mut self.items {
+            if item.toast_until.is_some() {
+                visible_toasts += 1;
+                if visible_toasts > MAX_TOASTS {
+                    item.toast_until = None;
+                }
+            }
+        }
         self.items.truncate(MAX_ITEMS);
         Some(id)
     }
@@ -176,6 +219,33 @@ impl NotificationRegistry {
         };
         let changed = !item.read;
         item.read = true;
+        changed
+    }
+
+    pub fn action(&self, id: u64, action_id: &str) -> Option<&NotificationAction> {
+        self.items
+            .iter()
+            .find(|item| item.id == id)?
+            .actions
+            .iter()
+            .find(|action| action.id == action_id)
+    }
+
+    pub fn dismiss_toast(&mut self, id: u64) -> bool {
+        let Some(item) = self.items.iter_mut().find(|item| item.id == id) else {
+            return false;
+        };
+        item.toast_until.take().is_some()
+    }
+
+    pub fn expire_toasts(&mut self, now: Instant) -> bool {
+        let mut changed = false;
+        for item in &mut self.items {
+            if item.toast_until.is_some_and(|deadline| deadline <= now) {
+                item.toast_until = None;
+                changed = true;
+            }
+        }
         changed
     }
 

@@ -2,8 +2,26 @@
 
 ## Status
 
-Deferred (no consumer). Activate only when a concrete feature needs an actionable notification.
+In progress. Activated by the Git Source Control publish-to-PR workflow.
 
-## Statement
+## Contract
 
-`labonair-notifications-core` keeps a data-only `NotificationAction` (id + label); no closures are stored (R08-009). Left to do when activated: render the action in the statusbar dropdown, emit `action_id` + notification id as a typed event, and route it through the owning module's command/palette handler registry, with tests for publish-to-action round trip. Nothing is to be built before a real consumer exists.
+`labonair-notifications-core` keeps data-only actions and retained notification
+records. Owner actions emit a typed event; typed external-URL actions are
+handled by the notifications adapter. A notification can opt into a temporary
+toast while remaining in the statusbar dropdown. See [ADR 0011](../../adr/0011-actionable-notification-presentations.md).
+
+## Implemented
+
+- The dropdown renders notification actions and groups Problems separately
+  from Activity.
+- The Git Source Control `Publish` action looks up `origin`'s push URL and,
+  after a successful push, offers a GitHub pull-request action when the remote
+  is a recognized GitHub repository.
+- The PR action opens GitHub's branch-specific `/pull/new/<branch>` page.
+
+## Remaining
+
+- Add focused publish-to-action and toast-lifecycle tests.
+- Visually inspect the open dropdown and actionable toast in the running native
+  app.

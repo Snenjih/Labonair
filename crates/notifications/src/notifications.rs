@@ -4,25 +4,24 @@
 //! GPUI adapter for the app-wide notification registry.
 //!
 //! The retained data model and lifecycle live in
-//! [`labonair_notifications_core`]. This crate adds only GPUI invalidation and
-//! the `Severity` spelling. Notifications are consumed by the statusbar
-//! dropdown; this crate deliberately has no toast renderer.
+//! [`labonair_notifications_core`]. This crate adds GPUI invalidation, the
+//! statusbar dropdown, and the opt-in toast overlay.
 //!
-//! Actionable notifications (R08-010) carry data-only [`NotificationAction`]s
-//! (a stable id and a label). Activating one emits a typed
-//! [`NotificationActionEvent`] from the [`NotificationCenter`]; the owning
-//! module subscribes and interprets the id — a notification never stores a
-//! closure.
+//! Notifications carry data-only [`NotificationAction`]s. Owner actions emit
+//! a typed [`NotificationActionEvent`]; external-URL actions are opened by
+//! this adapter. A notification never stores a closure.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui::{App, AppContext, Context, Entity, Global, SharedString};
-pub use labonair_notifications_core::NotificationAction;
+pub use labonair_notifications_core::{NotificationAction, NotificationActionTarget};
 use labonair_notifications_core::{NotificationDraft, NotificationKind, NotificationRegistry};
 
 mod status_item;
+mod toast_overlay;
 
 pub use status_item::{registration, NotificationsStatusItem};
+pub use toast_overlay::{registration as toast_overlay_registration, NotificationToastOverlay};
 
 /// Severity of a notification. This is the GPUI-facing spelling retained for
 /// current feature callers; the UI-free registry uses [`NotificationKind`].
@@ -58,6 +57,7 @@ pub struct Notification {
     pub details: Option<SharedString>,
     pub dedupe_key: Option<SharedString>,
     pub actions: Vec<NotificationAction>,
+    pub toast_duration: Option<Duration>,
 }
 
 impl Notification {
@@ -74,6 +74,7 @@ impl Notification {
             details: None,
             dedupe_key: None,
             actions: Vec::new(),
+            toast_duration: None,
         }
     }
 
@@ -117,9 +118,27 @@ impl Notification {
         self.actions.push(NotificationAction::new(id, label));
         self
     }
+
+    /// Show this retained notification as a toast for `duration` as well.
+    pub fn toast_for(mut self, duration: Duration) -> Self {
+        self.toast_duration = Some(duration);
+        self
+    }
+
+    /// Offer an action that opens an external URL in the user's browser.
+    pub fn action_open_url(
+        mut self,
+        id: impl Into<String>,
+        label: impl Into<String>,
+        url: impl Into<String>,
+    ) -> Self {
+        self.actions
+            .push(NotificationAction::open_url(id, label, url));
+        self
+    }
 }
 
-/// Read-only view of a retained notification for the statusbar dropdown.
+/// Read-only view of a retained notification for the dropdown and toast.
 #[derive(Debug, Clone)]
 pub struct NotificationSnapshot {
     pub id: u64,
@@ -130,6 +149,7 @@ pub struct NotificationSnapshot {
     pub source: Option<SharedString>,
     pub read: bool,
     pub actions: Vec<NotificationAction>,
+    pub toast_until: Option<Instant>,
 }
 
 /// Emitted by the [`NotificationCenter`] when the user activates an action.
@@ -159,10 +179,22 @@ impl NotificationCenter {
         Self::default()
     }
 
-    /// Publish a retained notification. There is no error gate or timeout:
-    /// every message reaches the notification dropdown until dismissed.
+    /// Publish a retained notification and start its optional toast lifetime.
+    /// The retained record remains in the dropdown when that lifetime ends.
     pub fn push(&mut self, notif: Notification, cx: &mut Context<Self>) -> Option<u64> {
-        self.insert(notif, Instant::now(), cx)
+        let toast_duration = notif.toast_duration;
+        let id = self.insert(notif, Instant::now(), cx)?;
+        if let Some(duration) = toast_duration {
+            let center = cx.entity();
+            cx.spawn(async move |_, cx| {
+                cx.background_executor().timer(duration).await;
+                let _ = center.update(cx, |center, cx| {
+                    center.expire_toasts(Instant::now(), cx);
+                });
+            })
+            .detach();
+        }
+        Some(id)
     }
 
     /// Compatibility alias for callers that distinguish action results. All
@@ -182,6 +214,7 @@ impl NotificationCenter {
         now: Instant,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
+        let toast_duration = notif.toast_duration;
         let default_key = format!(
             "{:?}|{}|{}|{}",
             notif.severity,
@@ -214,6 +247,9 @@ impl NotificationCenter {
         for action in notif.actions {
             draft = draft.action(action);
         }
+        if let Some(duration) = toast_duration {
+            draft = draft.toast_for(duration);
+        }
         let id = self.registry.insert(draft, now)?;
         cx.notify();
         Some(id)
@@ -225,14 +261,37 @@ impl NotificationCenter {
         }
     }
 
-    /// The user activated `action_id` on notification `id`: mark it read and
-    /// hand the id to the owner through [`NotificationActionEvent`].
+    /// Activate a notification action: mark it read, then open its URL target
+    /// or emit the owner action through [`NotificationActionEvent`].
     pub fn activate_action(&mut self, id: u64, action_id: String, cx: &mut Context<Self>) {
+        let target = self
+            .registry
+            .action(id, &action_id)
+            .map(|action| action.target.clone());
+        self.dismiss_toast(id, cx);
         self.mark_read(id, cx);
-        cx.emit(NotificationActionEvent {
-            notification_id: id,
-            action_id,
-        });
+        match target {
+            Some(NotificationActionTarget::OpenUrl(url)) if url.starts_with("https://") => {
+                cx.open_url(&url);
+            }
+            Some(NotificationActionTarget::OpenUrl(_)) => {}
+            _ => cx.emit(NotificationActionEvent {
+                notification_id: id,
+                action_id,
+            }),
+        }
+    }
+
+    pub fn dismiss_toast(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.registry.dismiss_toast(id) {
+            cx.notify();
+        }
+    }
+
+    fn expire_toasts(&mut self, now: Instant, cx: &mut Context<Self>) {
+        if self.registry.expire_toasts(now) {
+            cx.notify();
+        }
     }
 
     pub fn mark_read(&mut self, id: u64, cx: &mut Context<Self>) {
@@ -278,7 +337,16 @@ impl NotificationCenter {
                 source: item.source.clone().map(SharedString::from),
                 read: item.read,
                 actions: item.actions.clone(),
+                toast_until: item.toast_until,
             })
+            .collect()
+    }
+
+    pub fn toast_snapshots(&self) -> Vec<NotificationSnapshot> {
+        let now = Instant::now();
+        self.snapshots()
+            .into_iter()
+            .filter(|snapshot| snapshot.toast_until.is_some_and(|deadline| deadline > now))
             .collect()
     }
 }

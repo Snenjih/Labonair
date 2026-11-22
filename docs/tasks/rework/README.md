@@ -8,7 +8,7 @@ This is a backlog, not a gate: a direct user request always takes precedence. St
 | R07-001 product-surface acceptance | Partial | Native visual-state matrix (one open box); also covers the visual checks of closed R07-004/005 and R09-001..005 |
 | R07-007 transitional-edge review | Open | Review remaining transitional edges in `scripts/crate-graph.toml` |
 | R07-008 multi-instance / detached sessions | Partial | Code landed (4cc0d575); acceptance boxes unchecked, needs two-process tests |
-| R08-010 actionable notifications | Deferred | No consumer; build only when a feature needs it |
+| R08-010 actionable notifications | In progress | Focused action/toast lifecycle tests and native visual review of the dropdown and PR toast |
 | R09-003 editor E2 editing | Partial | Splits dropped (view groups, ADR 0005); verify command registration/keymap overrides, multi-select on folded views |
 | R09-006 editor E5 git gutter/review | Partial | Core + bridge done; verify alignment after reload, notification routing, settings records |
 | R09-007 editor E6 persistence/polish | Partial | Persistence, save policies, autosave exist; need failure/conflict tests, P2 deferral list |

@@ -46,7 +46,7 @@ No feature adds a new permanent global strip, badge row, or shell toolbar withou
 - Themes and icon themes are selected through command-palette submenus with live preview.
 - Hosts are selected through a command-palette submenu; `Enter` opens SSH, `Shift+Enter` opens SFTP.
 - The titlebar global menu exposes Keymap, Themes, Icon Themes, and Hosts. Host management is the Hosts owner's full-page surface on the Settings `Hosts` page (below Keymap, [ADR 0007](adr/0007-hosts-settings-page.md)); host selection stays a palette submenu.
-- Notifications are persistent entries in the statusbar notification dropdown. There is no toast system.
+- Notifications are retained entries in the statusbar dropdown. Producers may opt into a brief toast for selected events; the toast and dropdown share the same entry and actions ([ADR 0011](adr/0011-actionable-notification-presentations.md)).
 - Transfers are a statusbar item with progress and history.
 - Jump hosts are part of connection configuration and execution, not a standalone menu.
 - AI and agent workflows follow the same owner-first design as other capabilities.

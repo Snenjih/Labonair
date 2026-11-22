@@ -61,8 +61,9 @@ to introduce new features.
   notification history, transfer statusbar access, and keyboard navigation.
 - Passive messages appear only in the notification dropdown; actionable
   controls remain where the user must decide or correct input.
-- No undocumented permanent chrome, toast system, duplicate settings surface,
-  or feature-local styling variant remains.
+- No undocumented permanent chrome or toast behavior, duplicate settings
+  surface, or feature-local styling variant remains. The opt-in notification
+  toast follows [ADR 0011](../../adr/0011-actionable-notification-presentations.md).
 
 ## Implementation plan
 

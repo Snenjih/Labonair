@@ -157,6 +157,15 @@ pub struct WorkspaceGitState {
 pub trait GitService: Send + Sync {
     fn is_repo(&self, path: String, session_id: Option<String>) -> GitFuture<bool>;
     fn repo_root(&self, path: String, session_id: Option<String>) -> GitFuture<String>;
+    /// Returns the configured push URL for a remote (defaults to `origin`).
+    fn remote_url(
+        &self,
+        _path: String,
+        _remote: Option<String>,
+        _session_id: Option<String>,
+    ) -> GitFuture<String> {
+        Box::pin(async { Err("remote URL lookup is not available".to_string()) })
+    }
     fn workspace_state(
         &self,
         path: String,

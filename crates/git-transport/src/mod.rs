@@ -1212,7 +1212,7 @@ pub async fn git_get_commit_numstat(
         .await
 }
 
-/// Returns the fetch URL of the given remote (defaults to "origin").
+/// Returns the push URL of the given remote (defaults to "origin").
 pub async fn git_get_remote_url(
     path: String,
     remote: Option<String>,
@@ -1222,7 +1222,7 @@ pub async fn git_get_remote_url(
 ) -> Result<String, String> {
     let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let r = remote.unwrap_or_else(|| "origin".to_string());
-    executor.run(&["remote", "get-url", &r]).await
+    executor.run(&["remote", "get-url", "--push", &r]).await
 }
 
 // ─── Branch Management ────────────────────────────────────────────────────────

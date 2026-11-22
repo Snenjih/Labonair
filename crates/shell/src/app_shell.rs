@@ -12,7 +12,7 @@
 //!   split-pane [`PaneGroup`](labonair_workspace::pane_group) itself;
 //! * the [`StatusBar`] entity — renders purely from the workspace's
 //!   [`StatusItemRegistry`](labonair_panel::StatusItemRegistry) (T17-003);
-//! * the modal layer; notifications are rendered by the statusbar dropdown.
+//! * the notification owner's transient toast overlay and the modal layer.
 //!
 //! No feature logic lives in `render` anymore: there are no `drain_pending_*`
 //! calls, no per-frame `sync_live_bridge`, no `build_palette_data`. The wiring
@@ -79,6 +79,7 @@ pub struct AppShell {
     pub(crate) titlebar: Entity<Titlebar>,
     pub(crate) panels: ShellPanels,
     pub(crate) status_bar: Entity<StatusBar>,
+    pub(crate) notification_toasts: Entity<labonair_notifications::NotificationToastOverlay>,
     /// Every menu / keybind / palette command and its owner contributions.
     /// Metadata comes from providers; executable owner handlers are assembled
     /// during bootstrap (T17-007 / R07).
@@ -151,6 +152,7 @@ impl AppShell {
         titlebar: Entity<Titlebar>,
         panels: ShellPanels,
         status_bar: Entity<StatusBar>,
+        notification_toasts: Entity<labonair_notifications::NotificationToastOverlay>,
         command_registry: CommandDispatcher,
         modal_layer: Entity<ModalLayer>,
         live_bridge: WorkspaceLiveBridge,
@@ -165,6 +167,7 @@ impl AppShell {
             titlebar,
             panels,
             status_bar,
+            notification_toasts,
             command_registry,
             modal_layer,
             onboarding,
@@ -261,8 +264,7 @@ impl Render for AppShell {
                     .child(self.workspace.clone()),
             )
             .when(show_statusbar, |d| d.child(self.status_bar.clone()))
-            // Notifications use the statusbar dropdown and must not create a
-            // separate notification overlay.
+            .child(self.notification_toasts.clone())
             .child(self.modal_layer.clone())
     }
 }

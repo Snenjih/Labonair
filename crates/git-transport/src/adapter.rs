@@ -203,6 +203,19 @@ impl GitService for GitTransportService {
         })
     }
 
+    fn remote_url(
+        &self,
+        path: String,
+        remote: Option<String>,
+        session_id: Option<String>,
+    ) -> GitFuture<String> {
+        let ssh_state = self.ssh_state.clone();
+        let events = self.events.clone();
+        Box::pin(async move {
+            super::git_get_remote_url(path, remote, session_id, &ssh_state, events.clone()).await
+        })
+    }
+
     fn workspace_state(
         &self,
         path: String,

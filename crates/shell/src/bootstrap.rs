@@ -931,6 +931,8 @@ pub(crate) fn bootstrap(
         cx,
     );
     let status_bar = cx.new(|cx| StatusBar::new(workspace.clone(), theme.clone(), cx));
+    let notification_toasts =
+        labonair_notifications::toast_overlay_registration(&notifications, &theme, cx);
 
     let modal_layer = cx.new(|_| ModalLayer::new());
     let titlebar = cx.new(|cx| Titlebar::new(theme.clone(), workspace.clone(), cx));
@@ -1002,6 +1004,7 @@ pub(crate) fn bootstrap(
         titlebar,
         panels,
         status_bar,
+        notification_toasts,
         command_registry,
         modal_layer,
         live_bridge,
