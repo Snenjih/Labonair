@@ -54,8 +54,11 @@
       // Line editing the way macOS terminals do it: the keys are forwarded
       // to the shell as the readline control keys. `SendKeystroke` takes one
       // keystroke, `SendText` writes its argument to the PTY verbatim.
-      "cmd-backspace": ["terminal::SendKeystroke", "ctrl-u"],
+      // Cmd+Backspace clears the whole active line, even when the cursor is
+      // in the middle.
+      "cmd-backspace": ["terminal::SendText", "\u0001\u000b"],
       "cmd-delete": ["terminal::SendKeystroke", "ctrl-k"],
+      "alt-backspace": ["terminal::SendText", "\u001b\u007f"],
       "cmd-left": ["terminal::SendKeystroke", "ctrl-a"],
       "cmd-right": ["terminal::SendKeystroke", "ctrl-e"],
       "ctrl-backspace": ["terminal::SendKeystroke", "ctrl-w"],
