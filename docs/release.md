@@ -4,9 +4,7 @@ How Labonair is built into a distributable artifact. macOS is the only packaged 
 
 ## 1. Version
 
-Single source: `[workspace.package] version` in the root `Cargo.toml` (currently `1.0.0`); `crates/app` inherits it (`version.workspace = true`). The binary exposes it as `CARGO_PKG_VERSION`; the bundle gets `CFBundleShortVersionString` = version and `CFBundleVersion` = `git rev-list --count HEAD`. Release steps: bump the version, add a `CHANGELOG.md` section, tag `vX.Y.Z`.
-
-Known issue: `scripts/package-macos.sh` reads the version with an `awk` pattern on `crates/app/Cargo.toml` that expects `version = "..."`; with `version.workspace = true` it yields an empty string and the script exits with "could not read version". Packaging (and `scripts/smoke-test.sh`, which calls it, and thus the release workflow) fails until the script reads the workspace version. Not fixed here.
+Single source: `[workspace.package] version` in the root `Cargo.toml` (currently `1.0.0`); `crates/app` inherits it (`version.workspace = true`), and `scripts/package-macos.sh` reads it from the workspace manifest. The binary exposes it as `CARGO_PKG_VERSION`; the bundle gets `CFBundleShortVersionString` = version and `CFBundleVersion` = `git rev-list --count HEAD`. Release steps: bump the version, add a `CHANGELOG.md` section, tag `vX.Y.Z`.
 
 ## 2. macOS build
 

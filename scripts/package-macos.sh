@@ -43,9 +43,9 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-# --- version (single source of truth: crates/app/Cargo.toml) ------------------
-VERSION="$(awk -F'"' '/^\[package\]/{p=1} p && /^version[[:space:]]*=/{print $2; exit}' crates/app/Cargo.toml)"
-[[ -n "$VERSION" ]] || { echo "could not read version from crates/app/Cargo.toml" >&2; exit 1; }
+# --- version (single source of truth: workspace Cargo.toml) -------------------
+VERSION="$(awk -F'"' '/^\[workspace\.package\]$/{p=1; next} /^\[/{p=0} p && /^[[:space:]]*version[[:space:]]*=/{print $2; exit}' Cargo.toml)"
+[[ -n "$VERSION" ]] || { echo "could not read workspace version from Cargo.toml" >&2; exit 1; }
 BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 echo "==> Labonair $VERSION (build $BUILD)"
 

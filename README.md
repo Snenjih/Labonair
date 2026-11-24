@@ -24,8 +24,6 @@ The AI provider and tool backend remain in the workspace, but the user-facing AI
 | Linux | Source builds are available; there is no packaged Linux release. Linux CI is informational. |
 | Windows | Not currently supported. |
 
-The macOS bundle script currently has a known version-reading issue: the app manifest inherits its version from the workspace, while the script expects a version in the app manifest. See [release and packaging](docs/release.md) for the details and current release workflow.
-
 ## Build and run from source
 
 The Rust toolchain is pinned to **1.95.0** in `rust-toolchain.toml`.
