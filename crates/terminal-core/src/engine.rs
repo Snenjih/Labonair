@@ -1259,6 +1259,31 @@ mod tests {
     }
 
     #[test]
+    fn truecolor_sgr_keeps_exact_rgb() {
+        let (mut term, _rx) = emulator(20, 3);
+        // Semicolon and colon forms, fg+bg, then dim/bold/inverse variants.
+        term.feed(b"\x1b[38;2;18;52;86;48;2;200;100;50mA\x1b[0m");
+        term.feed(b"\x1b[38:2::1:2:3;48:2::4:5:6mB\x1b[0m");
+        term.feed(b"\x1b[1;2;38;2;10;20;30mC\x1b[0m");
+        term.feed(b"\x1b[7;38;2;10;20;30;48;2;40;50;60mD\x1b[0m");
+        let s = term.render();
+        let cell = |ch| *s.cells.iter().find(|c| c.c == ch).unwrap();
+        let rgb = |r, g, b| Rgb { r, g, b };
+        assert_eq!(
+            (cell('A').fg, cell('A').bg),
+            (rgb(18, 52, 86), rgb(200, 100, 50))
+        );
+        assert_eq!((cell('B').fg, cell('B').bg), (rgb(1, 2, 3), rgb(4, 5, 6)));
+        // Bold/dim must not alter an exact color.
+        assert_eq!(cell('C').fg, rgb(10, 20, 30));
+        // Inverse swaps, still exact.
+        assert_eq!(
+            (cell('D').fg, cell('D').bg),
+            (rgb(40, 50, 60), rgb(10, 20, 30))
+        );
+    }
+
+    #[test]
     fn emulator_config_caps_scrollback_history() {
         let (tx, _rx) = sync_channel(256);
         let colors = TerminalColors::xterm_default();

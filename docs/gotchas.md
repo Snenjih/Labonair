@@ -70,6 +70,8 @@ Index: [GPUI](#gpui) · [Terminal and alacritty_terminal](#terminal-and-alacritt
 - **`labonair-mcp-server` declares `rusqlite` directly** (it uses `rusqlite::params!`).
 - **Host and credential secrets** are resolved at the composition boundary; the `Host` read model must never contain secrets (store test enforces it).
 
+- **SSH sessions cannot rely on `env` channel requests for `COLORTERM`.** `sshd` only accepts variables listed in `AcceptEnv`, so `COLORTERM=truecolor` is exported by the bootstrap script typed into the remote shell (`ssh-transport/src/shell_integration.rs`) while `TERM=xterm-256color` travels in the PTY request. Programs started before the bootstrap runs (e.g. a remote `ForceCommand`) may not see `COLORTERM`.
+
 ## Build, test, toolchain
 
 - **Metal Toolchain is required** to compile GPUI on macOS: `xcodebuild -downloadComponent MetalToolchain`. In a sandbox, GPUI checks also fail when Metal compilation cannot write Clang modules to the user's compiler cache; allow that cache path. Pure SSH/SFTP/logic crates compile without it.
