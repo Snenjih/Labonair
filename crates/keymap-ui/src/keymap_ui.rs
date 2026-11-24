@@ -13,14 +13,13 @@
 
 mod keystroke;
 
-use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    div, point, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext, ClickEvent,
-    Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, Keystroke,
-    ParentElement, Pixels, Point, Render, ScrollStrategy, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, UniformListScrollHandle, WeakEntity, Window,
+    div, prelude::FluentBuilder, px, AnyElement, App, AppContext, ClickEvent, Context, Entity,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, Keystroke, MouseButton, ParentElement,
+    Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    WeakEntity, Window,
 };
 
 use labonair_command_palette_core::{CommandContext, CommandDescriptor, CommandId};
@@ -36,9 +35,9 @@ use labonair_settings::{
 };
 use labonair_theme::ThemeStore;
 use labonair_ui_kit::{
-    banner, button, disclosure, kbd_row, popover, segmented_control, text_field_surface,
-    text_input, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, Palette,
-    SegmentVariant, Severity, TextFieldState,
+    banner, button, context_menu, segmented_control, text_field_surface_sized, text_input,
+    ButtonSize, ButtonVariant, InputEvent, InputState, MenuItem, Palette, SegmentVariant, Severity,
+    TextFieldSize, TextFieldState,
 };
 
 /// Composition callback that opens the raw user `keymap.json` document. Its
@@ -67,13 +66,6 @@ pub fn register_settings_surfaces(
     ))
 }
 
-const GLOBAL_KEY: &str = "__global__";
-const MAX_CHORD_KEYSTROKES: usize = 3;
-// `uniform_list` measures the first item and reuses that height for every
-// row, so section headers and command rows must be the same height.
-const ROW_HEIGHT: f32 = 44.0;
-const SECTION_HEIGHT: f32 = ROW_HEIGHT;
-
 /// The keymap tab's view state.
 pub struct KeymapManagementView {
     theme: Entity<ThemeStore>,
@@ -82,16 +74,16 @@ pub struct KeymapManagementView {
     load_error: Option<String>,
     open_raw: Option<OpenRawCallback>,
 
-    // Browsing / filtering / keyboard navigation.
+    // Browsing / filtering.
     filter: String,
     row_filter: RowFilter,
-    collapsed_sections: HashSet<String>,
-    selected: usize,
-    list_scroll: UniformListScrollHandle,
+    search: Entity<InputState>,
+    _search_subscription: Subscription,
 
-    // The rebind editor, anchored as a popover while open.
+    // Inline recording state for one pill, and the right-click menu.
     editor: Option<BindingEditor>,
     capture_subscription: Option<Subscription>,
+    menu: Option<RowMenu>,
 
     // Live external-change handling.
     external_change_pending: bool,
@@ -100,38 +92,50 @@ pub struct KeymapManagementView {
     focus: FocusHandle,
 }
 
-/// One row of the flattened, virtualized list.
-enum VisibleRow {
-    Section {
-        name: String,
-        collapsed: bool,
-        count: usize,
-    },
-    /// Index into the matched-rows vector built alongside this one.
-    Command(usize),
+/// Right-click menu target: a command and, when a pill was hit, its index.
+struct RowMenu {
+    command: CommandId,
+    binding: Option<usize>,
+    anchor: Point<Pixels>,
 }
 
+/// The in-flight edit of one binding (replace, add, or remove).
 struct BindingEditor {
     command: CommandId,
     action: String,
-    title: String,
     /// Portable context this binding is scoped to (`None` = global).
     context: Option<CommandContext>,
-    /// Contexts the command allows; empty means global-only.
-    available_contexts: Vec<CommandContext>,
-    /// Whether the user may still pick the scope (only when adding a binding).
-    context_locked: bool,
-    /// Effective chords for this command in `context` — unbound when replaced.
+    /// Chords unbound when the edit is written: the replaced/removed one, or
+    /// nothing when adding an additional binding.
     original_bindings: Vec<String>,
-    /// The command ships a default for `context` that could be restored.
-    resettable: bool,
-    anchor: Point<Pixels>,
+    /// Index of the pill being replaced; `None` when adding a new binding.
+    binding: Option<usize>,
     recording: bool,
     captured: Vec<Keystroke>,
-    text_input: Option<Entity<InputState>>,
     error: Option<String>,
     saving: bool,
-    _text_subscription: Option<Subscription>,
+}
+
+/// Chords an edit unbinds: only the targeted one when replacing, none when
+/// adding an additional binding.
+fn replaced_chords(existing: &[String], index: Option<usize>) -> Vec<String> {
+    index
+        .and_then(|index| existing.get(index))
+        .cloned()
+        .into_iter()
+        .collect()
+}
+
+/// Group row sections in first-seen order, keeping row indices.
+fn group_sections(sections: &[String]) -> Vec<(String, Vec<usize>)> {
+    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    for (index, section) in sections.iter().enumerate() {
+        match groups.iter_mut().find(|(name, _)| name == section) {
+            Some((_, indices)) => indices.push(index),
+            None => groups.push((section.clone(), vec![index])),
+        }
+    }
+    groups
 }
 
 impl Focusable for KeymapManagementView {
@@ -145,9 +149,16 @@ impl KeymapManagementView {
         theme: Entity<ThemeStore>,
         descriptors: Vec<CommandDescriptor>,
         open_raw: OpenRawCallback,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search shortcuts…"));
+        let subscription = cx.subscribe(&search, |view, input, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                view.filter = input.read(cx).value().to_string();
+                cx.notify();
+            }
+        });
         let mut view = Self {
             theme,
             descriptors,
@@ -156,11 +167,11 @@ impl KeymapManagementView {
             open_raw: Some(open_raw),
             filter: String::new(),
             row_filter: RowFilter::All,
-            collapsed_sections: HashSet::new(),
-            selected: 0,
-            list_scroll: UniformListScrollHandle::new(),
+            search,
+            _search_subscription: subscription,
             editor: None,
             capture_subscription: None,
+            menu: None,
             external_change_pending: false,
             last_self_write: None,
             focus: cx.focus_handle(),
@@ -187,7 +198,6 @@ impl KeymapManagementView {
                     view.snapshot = Some(snapshot);
                     view.load_error = None;
                     view.external_change_pending = false;
-                    view.clamp_selection();
                     cx.notify();
                 });
             }
@@ -284,234 +294,71 @@ impl KeymapManagementView {
         });
     }
 
-    // ── list model ────────────────────────────────────────────────────────
-
-    fn is_narrowed(&self) -> bool {
-        !self.filter.trim().is_empty() || self.row_filter != RowFilter::All
-    }
-
-    fn build_visible(
-        &self,
-        snapshot: &KeymapManagementSnapshot,
-    ) -> (Vec<VisibleRow>, Vec<KeymapCommandRow>) {
-        let matched: Vec<KeymapCommandRow> = snapshot
-            .search_filtered(&self.filter, self.row_filter)
-            .into_iter()
-            .cloned()
-            .collect();
-
-        let force_open = self.is_narrowed();
-        let mut section_order: Vec<String> = Vec::new();
-        let mut grouped: std::collections::HashMap<String, Vec<usize>> =
-            std::collections::HashMap::new();
-        for (index, row) in matched.iter().enumerate() {
-            if !grouped.contains_key(&row.section) {
-                section_order.push(row.section.clone());
-            }
-            grouped.entry(row.section.clone()).or_default().push(index);
-        }
-
-        let mut visible = Vec::new();
-        for section in section_order {
-            let indices = &grouped[&section];
-            let collapsed = !force_open && self.collapsed_sections.contains(&section);
-            visible.push(VisibleRow::Section {
-                name: section.clone(),
-                collapsed,
-                count: indices.len(),
-            });
-            if !collapsed {
-                visible.extend(indices.iter().map(|index| VisibleRow::Command(*index)));
-            }
-        }
-        (visible, matched)
-    }
-
-    fn clamp_selection(&mut self) {
-        let Some(snapshot) = &self.snapshot else {
-            return;
-        };
-        let (visible, _) = self.build_visible(snapshot);
-        if visible.is_empty() {
-            self.selected = 0;
-            return;
-        }
-        if self.selected >= visible.len()
-            || !matches!(visible[self.selected], VisibleRow::Command(_))
-        {
-            self.selected = visible
-                .iter()
-                .position(|row| matches!(row, VisibleRow::Command(_)))
-                .unwrap_or(0);
-        }
-    }
-
-    fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let Some(snapshot) = self.snapshot.clone() else {
-            return;
-        };
-        let (visible, _) = self.build_visible(&snapshot);
-        if visible.is_empty() {
-            return;
-        }
-        let mut index = self.selected.min(visible.len() - 1) as isize;
-        loop {
-            index += delta;
-            if index < 0 || index as usize >= visible.len() {
-                return;
-            }
-            if matches!(visible[index as usize], VisibleRow::Command(_)) {
-                self.selected = index as usize;
-                self.list_scroll
-                    .scroll_to_item(self.selected, ScrollStrategy::Center);
-                cx.notify();
-                return;
-            }
-        }
-    }
-
-    fn toggle_section(&mut self, name: &str, cx: &mut Context<Self>) {
-        if !self.collapsed_sections.remove(name) {
-            self.collapsed_sections.insert(name.to_string());
-        }
-        self.clamp_selection();
-        cx.notify();
-    }
-
-    // ── keyboard ──────────────────────────────────────────────────────────
+    // ── editing ───────────────────────────────────────────────────────────
 
     fn on_key(&mut self, event: &gpui::KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let keystroke = &event.keystroke;
-        let key = keystroke.key.as_str();
-        let modified = keystroke.modifiers.platform
-            || keystroke.modifiers.control
-            || keystroke.modifiers.alt
-            || keystroke.modifiers.function;
-
-        if self.editor.is_some() {
-            if key == "escape" {
-                self.close_editor(cx);
-                cx.stop_propagation();
-            }
-            return;
-        }
-
-        match key {
-            "down" => self.move_selection(1, cx),
-            "up" => self.move_selection(-1, cx),
-            "enter" => self.activate_selected(cx),
-            "escape" if !self.filter.is_empty() => {
-                self.filter.clear();
-                self.clamp_selection();
-                cx.notify();
-            }
-            "backspace" if !modified => {
-                self.filter.pop();
-                self.clamp_selection();
-                cx.notify();
-            }
-            _ if !modified => {
-                let typed = keystroke
-                    .key_char
-                    .clone()
-                    .filter(|s| !s.is_empty() && !s.chars().any(char::is_control))
-                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
-                if let Some(text) = typed {
-                    self.filter.push_str(&text);
-                    self.selected = 0;
-                    self.clamp_selection();
-                    cx.notify();
-                }
-            }
-            _ => return,
-        }
-        cx.stop_propagation();
-    }
-
-    fn activate_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(snapshot) = self.snapshot.clone() else {
-            return;
-        };
-        let (visible, matched) = self.build_visible(&snapshot);
-        let Some(row) = visible.get(self.selected) else {
-            return;
-        };
-        match row {
-            VisibleRow::Section { name, .. } => {
-                let name = name.clone();
-                self.toggle_section(&name, cx);
-            }
-            VisibleRow::Command(index) => {
-                if let Some(command_row) = matched.get(*index).cloned() {
-                    let binding_index = (!command_row.effective_bindings.is_empty()).then_some(0);
-                    let anchor = point(px(320.0), px(180.0));
-                    self.begin_edit(&command_row, binding_index, anchor, &snapshot, cx);
-                }
-            }
+        if event.keystroke.key == "escape" && (self.editor.is_some() || self.menu.is_some()) {
+            self.menu = None;
+            self.close_editor(cx);
+            cx.stop_propagation();
         }
     }
 
-    // ── editor lifecycle ──────────────────────────────────────────────────
-
+    /// Start editing `command`: replace the pill at `binding_index`, or add an
+    /// additional binding when `None`.
     fn begin_edit(
         &mut self,
-        row: &KeymapCommandRow,
+        command: CommandId,
         binding_index: Option<usize>,
-        anchor: Point<Pixels>,
-        snapshot: &KeymapManagementSnapshot,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         self.stop_recording();
-        let _ = snapshot;
-
-        let (context, captured) = match binding_index {
-            Some(index) => {
-                let binding = &row.effective_bindings[index];
-                let context = binding.context.as_deref().and_then(context_from_label);
-                let captured = binding
-                    .keystrokes
-                    .split_whitespace()
-                    .filter_map(|token| Keystroke::parse(token).ok())
-                    .collect();
-                (context, captured)
-            }
-            None => (row.contexts.first().copied(), Vec::new()),
+        self.menu = None;
+        let Some(row) = self
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.rows.iter().find(|row| row.command == command))
+        else {
+            return false;
         };
-        let context_locked = binding_index.is_some() || row.contexts.is_empty();
-
-        let original_bindings = row
+        let binding_index = binding_index.filter(|index| *index < row.effective_bindings.len());
+        let context = match binding_index {
+            Some(index) => row.effective_bindings[index]
+                .context
+                .as_deref()
+                .and_then(context_from_label),
+            None => row.contexts.first().copied(),
+        };
+        let chords: Vec<String> = row
             .effective_bindings
             .iter()
-            .filter(|binding| binding.context.as_deref().and_then(context_from_label) == context)
             .map(|binding| binding.keystrokes.clone())
-            .collect::<Vec<_>>();
-
-        let resettable = matches!(
-            management::row_override_state(row),
-            OverrideState::Customized | OverrideState::Unbound
-        ) && row
-            .default_bindings
-            .iter()
-            .any(|default| default.context == context);
-
+            .collect();
         self.editor = Some(BindingEditor {
-            command: row.command,
-            action: row.command.action_name().to_string(),
-            title: row.title.clone(),
+            command,
+            action: command.action_name().to_string(),
             context,
-            available_contexts: row.contexts.clone(),
-            context_locked,
-            original_bindings,
-            resettable,
-            anchor,
+            original_bindings: replaced_chords(&chords, binding_index),
+            binding: binding_index,
             recording: false,
-            captured,
-            text_input: None,
+            captured: Vec::new(),
             error: None,
             saving: false,
-            _text_subscription: None,
         });
         cx.notify();
+        true
+    }
+
+    /// Start recording a replacement (`Some`) or an additional binding (`None`).
+    fn record_binding(
+        &mut self,
+        command: CommandId,
+        binding_index: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.begin_edit(command, binding_index, cx) {
+            self.start_recording(cx);
+        }
     }
 
     fn close_editor(&mut self, cx: &mut Context<Self>) {
@@ -546,6 +393,7 @@ impl KeymapManagementView {
         }
     }
 
+    /// The first non-modifier key press is the binding; Esc cancels.
     fn on_captured(&mut self, keystroke: Keystroke, cx: &mut Context<Self>) {
         let Some(editor) = self.editor.as_mut() else {
             return;
@@ -554,72 +402,13 @@ impl KeymapManagementView {
             return;
         }
         if keystroke.key == "escape" {
-            self.stop_recording();
-            cx.notify();
+            self.close_editor(cx);
             return;
         }
         if keystroke::is_modifier_only(&keystroke) {
-            cx.notify();
             return;
         }
-        editor.captured.push(keystroke);
-        if editor.captured.len() >= MAX_CHORD_KEYSTROKES {
-            self.stop_recording();
-        }
-        cx.notify();
-    }
-
-    fn toggle_text_entry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.stop_recording();
-        let Some(editor) = self.editor.as_mut() else {
-            return;
-        };
-        if editor.text_input.is_some() {
-            editor.text_input = None;
-            editor._text_subscription = None;
-            cx.notify();
-            return;
-        }
-        let seed = keystroke::to_binding_string(&editor.captured);
-        let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("e.g. cmd-k cmd-s")
-                .default_value(seed)
-        });
-        let subscription = cx.subscribe(&input, |view, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::PressEnter { .. }) {
-                view.commit_edit(cx);
-            }
-        });
-        input.update(cx, |state, cx| state.focus(window, cx));
-        editor.text_input = Some(input);
-        editor._text_subscription = Some(subscription);
-        cx.notify();
-    }
-
-    fn candidate_binding(&self, cx: &App) -> String {
-        let Some(editor) = &self.editor else {
-            return String::new();
-        };
-        if let Some(input) = &editor.text_input {
-            input.read(cx).value().trim().to_string()
-        } else {
-            keystroke::to_binding_string(&editor.captured)
-        }
-    }
-
-    fn set_context(&mut self, context: Option<CommandContext>, cx: &mut Context<Self>) {
-        if let Some(editor) = self.editor.as_mut() {
-            if editor.context_locked {
-                return;
-            }
-            editor.context = context;
-            editor.error = None;
-        }
-        cx.notify();
-    }
-
-    fn commit_edit(&mut self, cx: &mut Context<Self>) {
+        editor.captured = vec![keystroke];
         self.write_edit(false, cx);
     }
 
@@ -632,36 +421,23 @@ impl KeymapManagementView {
         let Some(snapshot) = self.snapshot.clone() else {
             return;
         };
-        if self
-            .editor
-            .as_ref()
-            .map(|editor| editor.saving)
-            .unwrap_or(true)
-        {
+        let Some(editor) = self.editor.as_mut() else {
+            return;
+        };
+        if editor.saving {
             return;
         }
-
         let candidate = if unbind {
             String::new()
         } else {
-            self.candidate_binding(cx)
-        };
-        let Some(editor) = self.editor.as_mut() else {
-            return;
+            keystroke::to_binding_string(&editor.captured)
         };
 
         if !unbind {
             if candidate.is_empty() {
-                editor.error = Some("Press a key combination, or type one.".to_string());
+                editor.error = Some("Press a key combination.".to_string());
                 cx.notify();
                 return;
-            }
-            for token in candidate.split_whitespace() {
-                if let Err(error) = Keystroke::parse(token) {
-                    editor.error = Some(format!("Not a valid keystroke: `{token}` ({error})."));
-                    cx.notify();
-                    return;
-                }
             }
             let context_name = editor.context.map(runtime::context_name);
             if let Some(conflict) = snapshot.conflict(editor.command, context_name, &candidate) {
@@ -678,33 +454,28 @@ impl KeymapManagementView {
             }
         }
 
-        let source = snapshot.document.source.clone();
         let context_name = editor
             .context
             .map(runtime::context_name)
             .map(str::to_string);
-        let old_bindings = editor.original_bindings.clone();
-        let action = editor.action.clone();
-        let replacement = (!candidate.is_empty()).then(|| candidate.clone());
-
-        let updated = match file::append_user_binding_override(
-            &source,
+        let replacement = (!candidate.is_empty()).then_some(candidate);
+        match file::append_user_binding_override(
+            &snapshot.document.source,
             context_name.as_deref(),
-            &old_bindings,
-            &action,
+            &editor.original_bindings,
+            &editor.action,
             replacement.as_deref(),
         ) {
-            Ok(updated) => updated,
+            Ok(updated) => {
+                editor.saving = true;
+                editor.error = None;
+                self.persist(updated, cx);
+            }
             Err(error) => {
                 editor.error = Some(error);
                 cx.notify();
-                return;
             }
-        };
-
-        editor.saving = true;
-        editor.error = None;
-        self.persist(updated, cx);
+        }
     }
 
     fn reset_to_default(&mut self, cx: &mut Context<Self>) {
@@ -770,7 +541,6 @@ impl KeymapManagementView {
             }
         }
     }
-
     fn persist(&mut self, updated: String, cx: &mut Context<Self>) {
         let save = cx
             .background_executor()
@@ -811,9 +581,6 @@ impl KeymapManagementView {
         }
     }
 }
-
-// ── free rendering helpers (uniform_list closure only has `&mut App`) ──────
-
 fn chord_chips(chord: &str) -> Vec<String> {
     chord
         .split_whitespace()
@@ -840,513 +607,214 @@ fn context_from_label(label: &str) -> Option<CommandContext> {
     }
 }
 
-fn context_label(context: Option<CommandContext>) -> &'static str {
-    context.map_or(runtime::GLOBAL_CONTEXT_LABEL, runtime::context_label)
-}
+// ── rendering ──────────────────────────────────────────────────────────────
 
-fn render_command_row(
-    view: &Entity<KeymapManagementView>,
-    row: &KeymapCommandRow,
-    matched_index: usize,
-    selected: bool,
-    conflicted: bool,
-    palette: Palette,
-) -> AnyElement {
-    let state = management::row_override_state(row);
-    let contexts: Vec<String> = {
-        let mut seen = Vec::new();
-        for binding in &row.effective_bindings {
-            let label =
-                context_label(binding.context.as_deref().and_then(context_from_label)).to_string();
-            if !seen.contains(&label) {
-                seen.push(label);
-            }
-        }
-        if seen.is_empty() {
-            seen.push(
-                row.contexts
-                    .first()
-                    .copied()
-                    .map(runtime::context_label)
-                    .unwrap_or(runtime::GLOBAL_CONTEXT_LABEL)
-                    .to_string(),
-            );
-        }
-        seen
-    };
-
-    let trailing: AnyElement = if row.effective_bindings.is_empty() {
-        add_binding_button(view, row, matched_index, palette)
-    } else {
-        div()
-            .flex()
-            .items_center()
-            .gap(px(4.0))
-            .children(
-                (0..row.effective_bindings.len())
-                    .map(|index| binding_button(view, row, matched_index, index, palette)),
-            )
-            .child(add_binding_button(view, row, matched_index, palette))
-            .into_any_element()
-    };
-
-    let subtitle = contexts.join(", ");
-    let status: Option<AnyElement> = match state {
-        OverrideState::Customized => Some(
-            div()
-                .text_size(px(9.0))
-                .text_color(palette.info)
-                .child("Modified")
-                .into_any_element(),
-        ),
-        OverrideState::Unbound => Some(
-            div()
-                .text_size(px(9.0))
-                .text_color(palette.muted)
-                .child("Unbound")
-                .into_any_element(),
-        ),
-        OverrideState::Default => None,
-    };
-
-    let view_for_click = view.clone();
-    let command = row.command;
-    div()
-        .h(px(ROW_HEIGHT))
-        .w_full()
-        .flex()
-        .items_center()
-        .child(
-            ListItem::new(("keymap-row", matched_index), palette)
-                .selected(selected)
-                .icon(if conflicted {
-                    IconName::Warning
-                } else {
-                    match command {
-                        CommandId::SplitRight => IconName::SplitRight,
-                        CommandId::SplitDown => IconName::SplitDown,
-                        _ => IconName::Command,
-                    }
-                })
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w_0()
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.0))
-                                .text_size(px(12.0))
-                                .child(SharedString::from(row.title.clone()))
-                                .children(status),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(10.0))
-                                .text_color(if conflicted {
-                                    palette.warning
-                                } else {
-                                    palette.muted
-                                })
-                                .child(SharedString::from(if conflicted {
-                                    format!("{subtitle} · overridden by another command")
-                                } else {
-                                    subtitle
-                                })),
-                        ),
-                )
-                .trailing(trailing)
-                .on_click(move |event: &ClickEvent, _window, cx| {
-                    let position = event.position();
-                    view_for_click.update(cx, |this, cx| {
-                        if let Some(snapshot) = this.snapshot.clone() {
-                            if let Some(command_row) = snapshot
-                                .rows
-                                .iter()
-                                .find(|candidate| candidate.command == command)
-                                .cloned()
-                            {
-                                let binding_index =
-                                    (!command_row.effective_bindings.is_empty()).then_some(0);
-                                this.begin_edit(
-                                    &command_row,
-                                    binding_index,
-                                    position,
-                                    &snapshot,
-                                    cx,
-                                );
-                            }
-                        }
-                    });
-                }),
-        )
-        .into_any_element()
-}
-
-fn binding_button(
-    view: &Entity<KeymapManagementView>,
-    row: &KeymapCommandRow,
-    matched_index: usize,
-    binding_index: usize,
-    palette: Palette,
-) -> AnyElement {
-    let chord = row.effective_bindings[binding_index].keystrokes.clone();
-    let command = row.command;
-    let view = view.clone();
-    button(
-        ("keymap-binding", matched_index * 8 + binding_index),
-        palette,
-        ButtonVariant::Subtle,
-        ButtonSize::Xs,
-    )
-    .child(kbd_row(chord_chips(&chord), palette))
-    .on_click(move |event: &ClickEvent, _window, cx| {
-        // Don't also trigger the row's open-editor click.
-        cx.stop_propagation();
-        let position = event.position();
-        view.update(cx, |this, cx| {
-            if let Some(snapshot) = this.snapshot.clone() {
-                if let Some(command_row) = snapshot
-                    .rows
-                    .iter()
-                    .find(|candidate| candidate.command == command)
-                    .cloned()
-                {
-                    this.begin_edit(&command_row, Some(binding_index), position, &snapshot, cx);
-                }
-            }
-        });
-    })
-    .into_any_element()
-}
-
-fn add_binding_button(
-    view: &Entity<KeymapManagementView>,
-    row: &KeymapCommandRow,
-    matched_index: usize,
-    palette: Palette,
-) -> AnyElement {
-    let command = row.command;
-    let unbound = row.effective_bindings.is_empty();
-    let view = view.clone();
-    button(
-        ("keymap-add", matched_index),
-        palette,
-        if unbound {
-            ButtonVariant::Outlined
-        } else {
-            ButtonVariant::Subtle
-        },
-        ButtonSize::Xs,
-    )
-    .child(if unbound { "Add binding" } else { "+" })
-    .on_click(move |event: &ClickEvent, _window, cx| {
-        cx.stop_propagation();
-        let position = event.position();
-        view.update(cx, |this, cx| {
-            if let Some(snapshot) = this.snapshot.clone() {
-                if let Some(command_row) = snapshot
-                    .rows
-                    .iter()
-                    .find(|candidate| candidate.command == command)
-                    .cloned()
-                {
-                    this.begin_edit(&command_row, None, position, &snapshot, cx);
-                }
-            }
-        });
-    })
-    .into_any_element()
+fn chord_label(chord: &str) -> String {
+    chord_chips(chord).concat()
 }
 
 impl KeymapManagementView {
-    fn render_editor(
+    fn render_pill(
         &self,
+        row: &KeymapCommandRow,
+        index: Option<usize>,
         palette: Palette,
-        window: &Window,
         cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let editor = self.editor.as_ref()?;
-        let candidate = self.candidate_binding(cx);
+    ) -> AnyElement {
+        let command = row.command;
+        let recording = self.editor.as_ref().is_some_and(|editor| {
+            editor.recording && editor.command == command && editor.binding == index
+        });
+        let (label, variant) = match (recording, index) {
+            (true, _) => ("Press keys…".to_string(), ButtonVariant::Filled),
+            (false, Some(i)) => (
+                chord_label(&row.effective_bindings[i].keystrokes),
+                ButtonVariant::Outlined,
+            ),
+            (false, None) => ("None".to_string(), ButtonVariant::Subtle),
+        };
+        let slot = index.unwrap_or(usize::MAX);
+        button(
+            SharedString::from(format!(
+                "keymap-pill-{}-{}",
+                row.command.action_name(),
+                slot
+            )),
+            palette,
+            variant,
+            ButtonSize::Sm,
+        )
+        .min_w(px(72.0))
+        .child(
+            div()
+                .text_color(if index.is_none() && !recording {
+                    palette.muted
+                } else {
+                    palette.fg
+                })
+                .child(SharedString::from(label)),
+        )
+        .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
+            let modifiers = event.modifiers();
+            // Shift/Cmd-click adds another binding instead of replacing.
+            let additive = modifiers.shift || modifiers.platform;
+            this.record_binding(command, if additive { None } else { index }, cx);
+        }))
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _window, cx| {
+                this.menu = Some(RowMenu {
+                    command,
+                    binding: index,
+                    anchor: event.position,
+                });
+                cx.stop_propagation();
+                cx.notify();
+            }),
+        )
+        .into_any_element()
+    }
 
-        let mut card = div()
-            .w(px(320.0))
-            .p(px(12.0))
+    fn render_row(
+        &self,
+        row: &KeymapCommandRow,
+        first: bool,
+        conflicted: bool,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let command = row.command;
+        let pills: Vec<AnyElement> = if row.effective_bindings.is_empty() {
+            vec![self.render_pill(row, None, palette, cx)]
+        } else {
+            (0..row.effective_bindings.len())
+                .map(|index| self.render_pill(row, Some(index), palette, cx))
+                .collect()
+        };
+        let error = self
+            .editor
+            .as_ref()
+            .filter(|editor| editor.command == command)
+            .and_then(|editor| editor.error.clone());
+        let note = if conflicted {
+            Some(("Overridden by another command", palette.warning))
+        } else if management::row_override_state(row) == OverrideState::Customized {
+            Some(("Modified", palette.info))
+        } else {
+            None
+        };
+
+        div()
+            .id(SharedString::from(format!(
+                "keymap-row-{}",
+                command.action_name()
+            )))
+            .w_full()
+            .px(px(14.0))
+            .py(px(8.0))
             .flex()
             .flex_col()
-            .gap(px(8.0))
+            .gap(px(4.0))
+            .when(!first, |row| row.border_t_1().border_color(palette.border))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &gpui::MouseDownEvent, _window, cx| {
+                    this.menu = Some(RowMenu {
+                        command,
+                        binding: None,
+                        anchor: event.position,
+                    });
+                    cx.notify();
+                }),
+            )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(div().text_size(px(12.0)).text_color(palette.fg).child(
-                        SharedString::from(if editor.original_bindings.is_empty() {
-                            format!("Add a binding · {}", editor.title)
-                        } else {
-                            format!("Rebind · {}", editor.title)
-                        }),
-                    ))
-                    .child(div().text_size(px(10.0)).text_color(palette.muted).child(
-                        SharedString::from(context_label(editor.context).to_string()),
-                    )),
-            );
-
-        // Context picker — only while adding, and only if the command scopes.
-        if !editor.context_locked && !editor.available_contexts.is_empty() {
-            let selected_key = editor
-                .context
-                .map(runtime::context_name)
-                .unwrap_or(GLOBAL_KEY);
-            let mut control = segmented_control("keymap-context", palette, selected_key)
-                .variant(SegmentVariant::Outline)
-                .segment(GLOBAL_KEY, runtime::GLOBAL_CONTEXT_LABEL);
-            for context in &editor.available_contexts {
-                control = control.segment(
-                    runtime::context_name(*context),
-                    runtime::context_label(*context),
-                );
-            }
-            let available = editor.available_contexts.clone();
-            card = card.child(control.on_select(cx.listener(
-                move |this, key: &SharedString, _window, cx| {
-                    let picked = available
-                        .iter()
-                        .copied()
-                        .find(|context| runtime::context_name(*context) == key.as_ref());
-                    this.set_context(picked, cx);
-                },
-            )));
-        }
-
-        // Capture surface.
-        card = card.child(
-            div()
-                .h(px(34.0))
-                .px(px(8.0))
-                .flex()
-                .items_center()
-                .rounded(px(5.0))
-                .border_1()
-                .border_color(if editor.recording {
-                    palette.selected_accent
-                } else {
-                    palette.border
-                })
-                .child(if editor.recording {
-                    div()
-                        .text_size(px(10.0))
-                        .text_color(palette.muted)
-                        .child("Recording — press the keys…")
-                        .into_any_element()
-                } else if candidate.is_empty() {
-                    div()
-                        .text_size(px(10.0))
-                        .text_color(palette.muted)
-                        .child("No binding")
-                        .into_any_element()
-                } else {
-                    kbd_row(chord_chips(&candidate), palette).into_any_element()
-                }),
-        );
-
-        if let Some(input) = &editor.text_input {
-            let state = if input.read(cx).focus_handle(cx).is_focused(window) {
-                TextFieldState::Focused
-            } else {
-                TextFieldState::Normal
-            };
-            card = card.child(
-                text_field_surface(
-                    "keymap-manual-binding",
-                    palette,
-                    state,
-                    text_input(input, palette),
-                )
-                .h(px(34.0)),
-            );
-        }
-
-        // Row of controls: record / manual toggle.
-        card = card.child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .child(
-                    button(
-                        "keymap-record",
-                        palette,
-                        if editor.recording {
-                            ButtonVariant::TintedError
-                        } else {
-                            ButtonVariant::Outlined
-                        },
-                        ButtonSize::Xs,
-                    )
-                    .child(if editor.recording { "Stop" } else { "Record" })
-                    .on_click(cx.listener(
-                        |this, _: &ClickEvent, _window, cx| {
-                            let recording = this
-                                .editor
-                                .as_ref()
-                                .map(|editor| editor.recording)
-                                .unwrap_or(false);
-                            if recording {
-                                this.stop_recording();
-                            } else {
-                                this.start_recording(cx);
-                            }
-                            cx.notify();
-                        },
-                    )),
-                )
-                .child(
-                    button(
-                        "keymap-manual",
-                        palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::Xs,
-                    )
-                    .child(if editor.text_input.is_some() {
-                        "Use recorder"
-                    } else {
-                        "Type manually"
-                    })
-                    .on_click(cx.listener(
-                        |this, _: &ClickEvent, window, cx| {
-                            this.toggle_text_entry(window, cx);
-                        },
-                    )),
-                ),
-        );
-
-        if let Some(error) = &editor.error {
-            card = card.child(
-                div()
-                    .text_size(px(10.0))
-                    .text_color(palette.error)
-                    .child(SharedString::from(error.clone())),
-            );
-        }
-
-        // Default + reset.
-        if editor.resettable {
-            let defaults: Vec<String> = self
-                .descriptors
-                .iter()
-                .find(|descriptor| descriptor.id == editor.command)
-                .map(|descriptor| {
-                    descriptor
-                        .default_bindings
-                        .iter()
-                        .filter(|default| default.context == editor.context)
-                        .map(|default| default.keystrokes.clone())
-                        .collect()
-                })
-                .unwrap_or_default();
-            let mut default_row = div()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .text_size(px(10.0))
-                .text_color(palette.muted)
-                .child("Default:");
-            if defaults.is_empty() {
-                default_row = default_row.child("none");
-            } else {
-                for chord in &defaults {
-                    default_row = default_row.child(kbd_row(chord_chips(chord), palette));
-                }
-            }
-            card = card.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(default_row)
+                    .gap(px(12.0))
                     .child(
-                        button(
-                            "keymap-reset",
-                            palette,
-                            ButtonVariant::Subtle,
-                            ButtonSize::Xs,
-                        )
-                        .child("Reset")
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _window, cx| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .child(SharedString::from(row.title.clone())),
+                            )
+                            .children(note.map(|(text, color)| {
+                                div().text_size(px(10.0)).text_color(color).child(text)
+                            })),
+                    )
+                    .child(div().flex().items_center().gap(px(6.0)).children(pills)),
+            )
+            .children(error.map(|error| {
+                div()
+                    .text_size(px(11.0))
+                    .text_color(palette.error)
+                    .child(SharedString::from(error))
+            }))
+            .into_any_element()
+    }
+
+    fn render_menu(&self, palette: Palette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let menu = self.menu.as_ref()?;
+        let row = self
+            .snapshot
+            .as_ref()?
+            .rows
+            .iter()
+            .find(|row| row.command == menu.command)?;
+        let (command, binding) = (menu.command, menu.binding);
+        let view = cx.entity();
+        let dismiss = {
+            let view = view.clone();
+            move |_: &mut Window, cx: &mut App| {
+                view.update(cx, |this, cx| {
+                    this.menu = None;
+                    cx.notify();
+                })
+            }
+        };
+        let resettable = management::row_override_state(row) != OverrideState::Default;
+        let mut items = vec![
+            MenuItem::new("reset", "Reset to default")
+                .disabled(!resettable)
+                .on_click({
+                    let view = view.clone();
+                    move |_, _, cx| {
+                        view.update(cx, |this, cx| {
+                            if this.begin_edit(command, binding, cx) {
                                 this.reset_to_default(cx);
-                            },
-                        )),
-                    ),
+                            }
+                        })
+                    }
+                }),
+            MenuItem::new("add", "Add another binding").on_click({
+                let view = view.clone();
+                move |_, _, cx| view.update(cx, |this, cx| this.record_binding(command, None, cx))
+            }),
+        ];
+        if binding.is_some() {
+            items.push(MenuItem::separator());
+            items.push(
+                MenuItem::new("remove", "Remove binding")
+                    .destructive()
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _, cx| {
+                            view.update(cx, |this, cx| {
+                                if this.begin_edit(command, binding, cx) {
+                                    this.unbind_edit(cx);
+                                }
+                            })
+                        }
+                    }),
             );
         }
-
-        // Save / Unbind / Cancel.
-        card = card.child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .child(
-                    button(
-                        "keymap-save",
-                        palette,
-                        ButtonVariant::Filled,
-                        ButtonSize::Xs,
-                    )
-                    .child(if editor.saving { "Saving…" } else { "Save" })
-                    .on_click(cx.listener(
-                        |this, _: &ClickEvent, _window, cx| {
-                            this.commit_edit(cx);
-                        },
-                    )),
-                )
-                .when(!editor.original_bindings.is_empty(), |row| {
-                    row.child(
-                        button(
-                            "keymap-unbind",
-                            palette,
-                            ButtonVariant::Outlined,
-                            ButtonSize::Xs,
-                        )
-                        .child("Unbind")
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _window, cx| {
-                                this.unbind_edit(cx);
-                            },
-                        )),
-                    )
-                })
-                .child(
-                    button(
-                        "keymap-cancel",
-                        palette,
-                        ButtonVariant::Subtle,
-                        ButtonSize::Xs,
-                    )
-                    .child("Cancel")
-                    .on_click(cx.listener(
-                        |this, _: &ClickEvent, _window, cx| {
-                            this.close_editor(cx);
-                        },
-                    )),
-                ),
-        );
-
-        let view = cx.entity();
-        Some(popover(
-            editor.anchor,
-            px(320.0),
-            palette,
-            move |_window, cx| {
-                view.update(cx, |this, cx| this.close_editor(cx));
-            },
-            card.into_any_element(),
-        ))
+        Some(context_menu(menu.anchor, palette, dismiss, items))
     }
 }
 
@@ -1358,10 +826,9 @@ impl Render for KeymapManagementView {
             .flex()
             .items_center()
             .justify_between()
-            .px(px(18.0))
-            .py(px(14.0))
-            .border_b_1()
-            .border_color(palette.border)
+            .px(px(24.0))
+            .pt(px(18.0))
+            .pb(px(10.0))
             .child(
                 div()
                     .flex()
@@ -1372,7 +839,7 @@ impl Render for KeymapManagementView {
                             .mt(px(3.0))
                             .text_size(px(11.0))
                             .text_color(palette.muted)
-                            .child("Browse every command and rebind its keys"),
+                            .child("Click a shortcut to rebind it. Shift-click adds another."),
                     ),
             )
             .child(
@@ -1388,34 +855,21 @@ impl Render for KeymapManagementView {
                 })),
             );
 
-        let filter_row = div()
-            .mx(px(16.0))
-            .my(px(10.0))
-            .h(px(30.0))
-            .px(px(10.0))
-            .flex()
-            .items_center()
-            .gap(px(6.0))
-            .rounded(px(6.0))
-            .border_1()
-            .border_color(palette.border)
-            .child(IconName::Command.svg(palette.muted).size(px(12.0)))
-            .child(
-                div()
-                    .flex_1()
-                    .text_size(px(12.0))
-                    .text_color(if self.filter.is_empty() {
-                        palette.muted
-                    } else {
-                        palette.fg
-                    })
-                    .child(SharedString::from(if self.filter.is_empty() {
-                        "Type to filter commands…".to_string()
-                    } else {
-                        self.filter.clone()
-                    })),
-            );
-
+        // Search (left, fills the row) and mode filter (right) share one row.
+        let search_state = if self.search.read(cx).focus_handle(cx).is_focused(window) {
+            TextFieldState::Focused
+        } else {
+            TextFieldState::Normal
+        };
+        let search = text_field_surface_sized(
+            "keymap-search",
+            palette,
+            search_state,
+            TextFieldSize::Compact,
+            text_input(&self.search, palette),
+        )
+        .flex_1()
+        .min_w_0();
         let filters = segmented_control(
             "keymap-filter",
             palette,
@@ -1440,10 +894,16 @@ impl Render for KeymapManagementView {
                 "unbound" => RowFilter::Unbound,
                 _ => RowFilter::All,
             };
-            this.selected = 0;
-            this.clamp_selection();
             cx.notify();
         }));
+        let toolbar = div()
+            .px(px(24.0))
+            .pb(px(12.0))
+            .flex()
+            .items_center()
+            .gap(px(12.0))
+            .child(search)
+            .child(div().flex_shrink_0().child(filters));
 
         let mut root = div()
             .track_focus(&self.focus)
@@ -1456,7 +916,6 @@ impl Render for KeymapManagementView {
             .text_color(palette.fg)
             .child(header);
 
-        // Diagnostics banner from the loaded document.
         if let Some(snapshot) = &self.snapshot {
             if !snapshot.issues.is_empty() {
                 let has_error = snapshot
@@ -1510,14 +969,17 @@ impl Render for KeymapManagementView {
             )));
         }
 
-        root = root
-            .child(filter_row)
-            .child(div().mx(px(16.0)).mb(px(8.0)).child(filters));
+        root = root.child(toolbar);
 
         let body = if let Some(snapshot) = self.snapshot.clone() {
             let conflicts = snapshot.conflict_commands();
-            let (visible, matched) = self.build_visible(&snapshot);
-            if visible.is_empty() {
+            let matched: Vec<KeymapCommandRow> = snapshot
+                .search_filtered(&self.filter, self.row_filter)
+                .into_iter()
+                .cloned()
+                .collect();
+            let sections: Vec<String> = matched.iter().map(|row| row.section.clone()).collect();
+            if matched.is_empty() {
                 div()
                     .flex()
                     .flex_1()
@@ -1528,50 +990,54 @@ impl Render for KeymapManagementView {
                     .child(SharedString::from(empty_message(self.row_filter)))
                     .into_any_element()
             } else {
-                let view = cx.entity();
-                let selected = self.selected;
-                let matched = std::rc::Rc::new(matched);
-                let conflicts = std::rc::Rc::new(conflicts);
-                let visible = std::rc::Rc::new(visible);
-                let list_view = view.clone();
-                let list = uniform_list(
-                    "keymap-command-list",
-                    visible.len(),
-                    move |range, _window, _cx| {
-                        range
-                            .map(|i| match &visible[i] {
-                                VisibleRow::Section {
-                                    name,
-                                    collapsed,
-                                    count,
-                                } => render_section_row(
-                                    &list_view,
-                                    name.clone(),
-                                    *collapsed,
-                                    *count,
-                                    palette,
-                                ),
-                                VisibleRow::Command(index) => render_command_row(
-                                    &list_view,
-                                    &matched[*index],
-                                    *index,
-                                    selected == i,
-                                    conflicts.contains(&matched[*index].command),
-                                    palette,
-                                ),
-                            })
-                            .collect::<Vec<_>>()
-                    },
-                )
-                .track_scroll(self.list_scroll.clone())
-                .px(px(8.0))
-                .pb(px(16.0))
-                .flex_1();
+                let mut column = div().flex().flex_col().gap(px(20.0)).max_w(px(760.0));
+                for (name, indices) in group_sections(&sections) {
+                    let rows: Vec<AnyElement> = indices
+                        .iter()
+                        .enumerate()
+                        .map(|(position, index)| {
+                            let row = &matched[*index];
+                            self.render_row(
+                                row,
+                                position == 0,
+                                conflicts.contains(&row.command),
+                                palette,
+                                cx,
+                            )
+                        })
+                        .collect();
+                    column = column.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .px(px(4.0))
+                                    .text_size(px(11.0))
+                                    .text_color(palette.muted)
+                                    .child(SharedString::from(name)),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .rounded(px(palette.radius.lg))
+                                    .border_1()
+                                    .border_color(palette.border)
+                                    .overflow_hidden()
+                                    .children(rows),
+                            ),
+                    );
+                }
                 div()
-                    .flex()
+                    .id("keymap-scroll")
                     .flex_1()
                     .min_h_0()
-                    .child(list)
+                    .overflow_y_scroll()
+                    .px(px(24.0))
+                    .pb(px(24.0))
+                    .child(column)
                     .into_any_element()
             }
         } else if self.load_error.is_none() {
@@ -1588,46 +1054,8 @@ impl Render for KeymapManagementView {
             div().flex().flex_1().into_any_element()
         };
 
-        root.child(body)
-            .children(self.render_editor(palette, window, cx))
+        root.child(body).children(self.render_menu(palette, cx))
     }
-}
-
-fn render_section_row(
-    view: &Entity<KeymapManagementView>,
-    name: String,
-    collapsed: bool,
-    count: usize,
-    palette: Palette,
-) -> AnyElement {
-    let view = view.clone();
-    let section = name.clone();
-    div()
-        .h(px(SECTION_HEIGHT))
-        .w_full()
-        .flex()
-        .items_center()
-        .justify_between()
-        .px(px(6.0))
-        .child(
-            disclosure(
-                SharedString::from(format!("keymap-section-{name}")),
-                name.clone(),
-                collapsed,
-                palette.muted,
-                palette.fg,
-            )
-            .on_click(move |_: &ClickEvent, _window, cx| {
-                view.update(cx, |this, cx| this.toggle_section(&section, cx));
-            }),
-        )
-        .child(
-            div()
-                .text_size(px(10.0))
-                .text_color(palette.muted)
-                .child(SharedString::from(count.to_string())),
-        )
-        .into_any_element()
 }
 
 fn empty_message(filter: RowFilter) -> &'static str {
@@ -1659,7 +1087,26 @@ mod tests {
     fn keymap_view_type_is_ui_owned() {
         fn assert_focusable<T: Focusable>() {}
         assert_focusable::<KeymapManagementView>();
-        let _ = labonair_command_palette_core::CommandId::OpenKeymapJson;
+    }
+
+    #[test]
+    fn replace_unbinds_only_the_target_chord_and_add_unbinds_none() {
+        let existing = vec!["cmd-a".to_string(), "cmd-b".to_string()];
+        assert_eq!(replaced_chords(&existing, Some(1)), vec!["cmd-b"]);
+        assert!(replaced_chords(&existing, None).is_empty());
+        assert!(replaced_chords(&existing, Some(5)).is_empty());
+    }
+
+    #[test]
+    fn sections_group_in_first_seen_order() {
+        let sections: Vec<String> = ["File", "Edit", "File"].map(String::from).to_vec();
+        assert_eq!(
+            group_sections(&sections),
+            vec![
+                ("File".to_string(), vec![0, 2]),
+                ("Edit".to_string(), vec![1])
+            ]
+        );
     }
 
     #[test]
