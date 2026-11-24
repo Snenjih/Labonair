@@ -610,6 +610,7 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let handle = rt.handle().clone();
         let view = cx.update(|cx| {
+            labonair_notifications::init(cx);
             let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Dark));
             cx.new(|cx| UpdaterView::new(handle, theme, cx))
         });
