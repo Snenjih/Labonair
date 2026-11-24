@@ -8,11 +8,16 @@
 //! in this sibling UI crate.
 
 mod editor;
+pub mod markdown;
 mod multibuffer;
+pub mod preview;
+pub mod preview_mode;
 mod status_item;
 mod syntax_theme;
 
 pub use editor::{EditorBufferSnapshot, EditorEvent, EditorSidePreviewContent, EditorView};
 pub use multibuffer::{MultiBufferEvent, MultiBufferView};
+pub use preview::{PreviewImageAction, PreviewView};
+pub use preview_mode::{OpenMode, PreviewKind, ViewMode};
 pub use status_item::{status_item_registration, ActiveEditorProvider};
 pub use syntax_theme::EditorPalette;

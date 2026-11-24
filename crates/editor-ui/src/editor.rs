@@ -14,7 +14,7 @@
 //! Workspace to mirror the dirty flag and peek state onto its tab.
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -76,6 +76,8 @@ use labonair_editor::{
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
+use crate::preview::PreviewView;
+use crate::preview_mode::{self, PreviewKind, ViewMode};
 use crate::syntax_theme::EditorPalette;
 use labonair_activity_ui::{try_activity_center, ActivityDraft, ActivityKind};
 use labonair_notifications::{notification_center, Notification};
@@ -678,23 +680,6 @@ fn minimap_width_pixels(max_width_columns: u32) -> f32 {
     (max_width_columns.clamp(20, 160) as f32 * 3.0).clamp(76.0, 320.0)
 }
 
-fn is_tabular_preview_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "csv" | "tsv" | "ssv" | "psv"
-            )
-        })
-}
-
-fn is_svg_preview_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FoldMarker {
     range: FoldRange,
@@ -1294,6 +1279,13 @@ pub struct EditorView {
     diagnostics_menu_anchor: Option<Point<Pixels>>,
     line_ending_menu_anchor: Option<Point<Pixels>>,
     encoding_menu_anchor: Option<Point<Pixels>>,
+    /// Source (text) or Preview content form of this tab (ADR 0015).
+    view_mode: ViewMode,
+    preview: Option<Entity<PreviewView>>,
+    /// What the preview entity currently shows: path + buffer revision.
+    preview_synced: Option<(PathBuf, Revision)>,
+    /// The file was (re)loaded since the preview last synced.
+    preview_disk_dirty: bool,
     selection_drag: Option<EditorSelectionDrag>,
     text_drag: Option<EditorTextDrag>,
     outline_open: bool,
@@ -1633,6 +1625,10 @@ impl EditorView {
             diagnostics_menu_anchor: None,
             line_ending_menu_anchor: None,
             encoding_menu_anchor: None,
+            view_mode: ViewMode::Source,
+            preview: None,
+            preview_synced: None,
+            preview_disk_dirty: false,
             selection_drag: None,
             text_drag: None,
             outline_open: false,
@@ -2028,13 +2024,107 @@ impl EditorView {
         true
     }
 
-    fn request_preview_to_side(
+    /// The preview this tab's file type has, if any.
+    pub fn preview_kind(&self) -> Option<PreviewKind> {
+        self.doc.path.as_deref().and_then(preview_mode::classify)
+    }
+
+    pub fn view_mode(&self) -> ViewMode {
+        self.view_mode
+    }
+
+    /// Whether the Preview content form is what this tab currently shows.
+    fn preview_active(&self) -> bool {
+        self.view_mode == ViewMode::Preview && self.preview_kind().is_some()
+    }
+
+    /// Switch between Source and Preview. Types without a preview, and
+    /// binary types without a text form, keep their only mode.
+    pub fn set_view_mode(&mut self, mode: ViewMode, cx: &mut Context<Self>) {
+        let Some(kind) = self.preview_kind() else {
+            notify_info(cx, "Preview", "This file type has no preview.");
+            return;
+        };
+        let mode = if kind.has_source_form() {
+            mode
+        } else {
+            ViewMode::Preview
+        };
+        if self.view_mode != mode {
+            self.view_mode = mode;
+            self.preview_synced = None;
+            cx.notify();
+        }
+    }
+
+    /// Image-viewer command (zoom in/out/fit/100%) for the active preview.
+    pub fn perform_preview_image_action(
         &mut self,
-        content: EditorSidePreviewContent,
+        action: crate::preview::PreviewImageAction,
+        viewport_width: f32,
+        viewport_height: f32,
         cx: &mut Context<Self>,
-    ) -> bool {
-        cx.emit(EditorEvent::PreviewToSideRequested { content });
-        true
+    ) {
+        if !self.preview_active() {
+            return;
+        }
+        if let Some(preview) = self.preview.clone() {
+            preview.update(cx, |p, cx| {
+                p.perform_image_action(action, viewport_width, viewport_height, cx)
+            });
+        }
+    }
+
+    /// Bring the preview entity in line with the file / buffer revision.
+    /// Called from render while Preview mode is active; cheap when in sync.
+    fn sync_preview(&mut self, cx: &mut Context<Self>) -> Option<Entity<PreviewView>> {
+        let path = self.doc.path.clone()?;
+        let kind = preview_mode::classify(&path)?;
+        let view = match &self.preview {
+            Some(view) => view.clone(),
+            None => {
+                let theme = self.theme.clone();
+                let view = cx.new(|cx| PreviewView::new(theme, cx).embedded());
+                self.preview = Some(view.clone());
+                view
+            }
+        };
+        if kind.follows_buffer() && matches!(self.doc.file_state(), FileState::Loading) {
+            return Some(view);
+        }
+        let revision = self.editor_revision();
+        let up_to_date = self
+            .preview_synced
+            .as_ref()
+            .is_some_and(|(p, r)| *p == path && (!kind.follows_buffer() || *r == revision));
+        if up_to_date && !self.preview_disk_dirty {
+            return Some(view);
+        }
+        let same_path = self
+            .preview_synced
+            .as_ref()
+            .is_some_and(|(p, _)| *p == path);
+        let snapshot = self.doc.snapshot();
+        let language = self.doc.language;
+        view.update(cx, |preview, cx| match kind {
+            PreviewKind::Markdown => {
+                preview.set_editor_source(Some(path.clone()), language, snapshot, cx)
+            }
+            PreviewKind::Svg => preview.set_editor_svg_source(Some(path.clone()), snapshot, cx),
+            PreviewKind::Tabular => {
+                preview.set_editor_tabular_source(Some(path.clone()), snapshot, cx)
+            }
+            PreviewKind::Image | PreviewKind::Pdf | PreviewKind::External => {
+                if same_path {
+                    preview.reload(cx);
+                } else {
+                    preview.set_url(path.to_string_lossy().into_owned(), cx);
+                }
+            }
+        });
+        self.preview_synced = Some((path, revision));
+        self.preview_disk_dirty = false;
+        Some(view)
     }
 
     /// Execute a typed Editor command from the canonical command registry.
@@ -2134,108 +2224,21 @@ impl EditorView {
                 self.ensure_cursor_visible(cx);
                 cx.notify();
             }
-            EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview) => {
-                if let Some(source) = self.markdown_source_snapshot() {
-                    cx.emit(EditorEvent::MarkdownPreviewRequested(source));
-                } else {
-                    notify_info(
-                        cx,
-                        "Markdown Preview",
-                        "Open a Markdown file before opening its preview.",
-                    );
-                }
+            EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview)
+            | EditorCommandRoute::Ui(EditorUiCommand::OpenPreviewToSide)
+            | EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingMarkdownPreview)
+            | EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingSvgPreview)
+            | EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview)
+            | EditorCommandRoute::Ui(EditorUiCommand::OpenTabularPreview) => {
+                // Legacy "open preview" commands now switch this tab to Preview mode.
+                self.set_view_mode(ViewMode::Preview, cx);
             }
-            EditorCommandRoute::Ui(EditorUiCommand::OpenPreviewToSide) => {
-                let content = if let Some(source) = self.markdown_source_snapshot() {
-                    Some(EditorSidePreviewContent::Markdown(source))
-                } else if self
-                    .doc
-                    .path
-                    .as_ref()
-                    .is_some_and(|path| is_svg_preview_path(path))
-                {
-                    Some(EditorSidePreviewContent::Svg(self.buffer_snapshot()))
-                } else if self
-                    .doc
-                    .path
-                    .as_ref()
-                    .is_some_and(|path| is_tabular_preview_path(path))
-                {
-                    Some(EditorSidePreviewContent::Tabular(self.buffer_snapshot()))
-                } else {
-                    notify_info(
-                        cx,
-                        "Preview",
-                        "Open a Markdown, SVG, CSV, TSV, SSV, or PSV file before previewing it to the side.",
-                    );
-                    None
+            EditorCommandRoute::Ui(EditorUiCommand::TogglePreview) => {
+                let next = match self.view_mode {
+                    ViewMode::Source => ViewMode::Preview,
+                    ViewMode::Preview => ViewMode::Source,
                 };
-                if let Some(content) = content {
-                    if !self.request_preview_to_side(content, cx) {
-                        notify_info(cx, "Preview", "Could not create an adjacent editor pane.");
-                    }
-                }
-            }
-            EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview) => {
-                let source = self.doc.path.as_ref().filter(|path| {
-                    path.extension()
-                        .and_then(|extension| extension.to_str())
-                        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
-                });
-                if source.is_some() {
-                    cx.emit(EditorEvent::SvgPreviewRequested(self.buffer_snapshot()));
-                } else {
-                    notify_info(
-                        cx,
-                        "SVG Preview",
-                        "Open an SVG file before opening its preview.",
-                    );
-                }
-            }
-            EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingSvgPreview) => {
-                let source = self.doc.path.as_ref().filter(|path| {
-                    path.extension()
-                        .and_then(|extension| extension.to_str())
-                        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
-                });
-                if source.is_some() {
-                    cx.emit(EditorEvent::SvgFollowingPreviewRequested(
-                        self.buffer_snapshot(),
-                    ));
-                } else {
-                    notify_info(
-                        cx,
-                        "SVG Preview",
-                        "Open an SVG file before opening a following preview.",
-                    );
-                }
-            }
-            EditorCommandRoute::Ui(EditorUiCommand::OpenTabularPreview) => {
-                if let Some(path) = self
-                    .doc
-                    .path
-                    .clone()
-                    .filter(|path| is_tabular_preview_path(path))
-                {
-                    cx.emit(EditorEvent::TabularPreviewRequested(path));
-                } else {
-                    notify_info(
-                        cx,
-                        "Table Preview",
-                        "Open a CSV, TSV, SSV, or PSV file before opening its preview.",
-                    );
-                }
-            }
-            EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingMarkdownPreview) => {
-                if let Some(source) = self.markdown_source_snapshot() {
-                    cx.emit(EditorEvent::MarkdownFollowingPreviewRequested(source));
-                } else {
-                    notify_info(
-                        cx,
-                        "Markdown Preview",
-                        "Open a Markdown file before opening a following preview.",
-                    );
-                }
+                self.set_view_mode(next, cx);
             }
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb) => {
                 self.breadcrumb_visible_override = Some(!self.breadcrumbs_visible());
@@ -2484,10 +2487,6 @@ impl EditorView {
             language: self.doc.language,
             snapshot: self.doc.snapshot(),
         }
-    }
-
-    fn markdown_source_snapshot(&self) -> Option<EditorBufferSnapshot> {
-        (self.doc.language == Language::Markdown).then(|| self.buffer_snapshot())
     }
 
     fn emit_buffer_changed(&self, cx: &mut Context<Self>) {
@@ -5465,6 +5464,9 @@ impl EditorView {
         self.pending_navigation = None;
         self.pending_lsp_navigation = None;
         self.navigation_history.clear();
+        self.view_mode = preview_mode::open_mode(&path);
+        self.preview_synced = None;
+        self.preview_disk_dirty = true;
         self.doc = Document::loading(path.clone());
         self.reset_editor_group_views();
         self.recovery_prompt = None;
@@ -5483,6 +5485,7 @@ impl EditorView {
             let result = load.await;
             let _ = this.update(cx, |this, cx| {
                 let failed = result.is_err();
+                this.preview_disk_dirty = true;
                 this.doc = Self::document_from_load(path, result);
                 this.reset_editor_group_views();
                 if !failed {
@@ -5597,6 +5600,7 @@ impl EditorView {
         cx.spawn(async move |this, cx| {
             let result = load.await;
             let _ = this.update(cx, |this, cx| {
+                this.preview_disk_dirty = true;
                 let decision = if matches!(this.doc.file_state(), FileState::Conflict) {
                     ReloadDecision::DiscardBuffer
                 } else {
@@ -6841,6 +6845,9 @@ impl EditorView {
     }
 
     fn on_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.preview_active() {
+            return;
+        }
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
 
@@ -9185,24 +9192,20 @@ impl EditorView {
         let selections_menu = self.selections_menu_enabled();
         let code_actions = self.prefs.toolbar_code_actions()
             && self.language_service_snapshot.capabilities.code_actions;
-        let markdown_preview = self.doc.language == Language::Markdown;
-        let svg_preview = self.doc.path.as_ref().is_some_and(|path| {
-            path.extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
-        });
-        let tabular_preview = self
-            .doc
-            .path
-            .as_ref()
-            .is_some_and(|path| is_tabular_preview_path(path));
+        let preview_active = self.preview_active();
+        let preview_toggle = self
+            .preview_kind()
+            .is_some_and(|kind| kind.has_source_form());
+        let quick_actions = quick_actions && !preview_active;
+        let selections_menu = selections_menu && !preview_active;
+        let code_actions = code_actions && !preview_active;
         let temporary_read_only = self.doc.temporary_read_only();
         if !editor_toolbar_has_contribution(
             breadcrumbs,
             quick_actions,
             selections_menu,
             code_actions,
-            markdown_preview || svg_preview || tabular_preview,
+            preview_toggle,
         ) && !temporary_read_only
         {
             return None;
@@ -9231,55 +9234,22 @@ impl EditorView {
             .justify_end()
             .gap_1()
             .flex_shrink_0();
-        if markdown_preview {
-            let preview =
-                icon_button_builder("editor-markdown-preview-toggle", palette, IconName::Eye)
-                    .size(ButtonSize::IconSm)
-                    .shape(IconButtonShape::Square)
-                    .tooltip("Open Markdown Preview · Alt-click to open to the side")
-                    .render()
-                    .on_click(cx.listener(|this, ev: &ClickEvent, _window, cx| {
-                        let command = if ev.modifiers().alt {
-                            CommandId::EditorOpenPreviewToSide
-                        } else {
-                            CommandId::EditorOpenMarkdownPreview
-                        };
-                        let _ = this.dispatch_registered_command(command, cx);
-                    }));
-            actions = actions.child(preview);
-        }
-        if svg_preview {
-            let preview = icon_button_builder("editor-svg-preview-toggle", palette, IconName::Eye)
+        if preview_toggle {
+            let (icon, tip) = if preview_active {
+                (IconName::FileCode, "Show Source (⌘⇧V)")
+            } else {
+                (IconName::Eye, "Show Preview (⌘⇧V)")
+            };
+            let toggle = icon_button_builder("editor-preview-toggle", palette, icon)
                 .size(ButtonSize::IconSm)
                 .shape(IconButtonShape::Square)
-                .tooltip("Open SVG Preview · Alt-click to open to the side")
+                .selected(preview_active)
+                .tooltip(tip)
                 .render()
-                .on_click(cx.listener(|this, ev: &ClickEvent, _window, cx| {
-                    let command = if ev.modifiers().alt {
-                        CommandId::EditorOpenPreviewToSide
-                    } else {
-                        CommandId::EditorOpenSvgPreview
-                    };
-                    let _ = this.dispatch_registered_command(command, cx);
+                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                    let _ = this.dispatch_registered_command(CommandId::EditorTogglePreview, cx);
                 }));
-            actions = actions.child(preview);
-        }
-        if tabular_preview {
-            let preview =
-                icon_button_builder("editor-tabular-preview-toggle", palette, IconName::Eye)
-                    .size(ButtonSize::IconSm)
-                    .shape(IconButtonShape::Square)
-                    .tooltip("Open Table Preview · Alt-click to open to the side")
-                    .render()
-                    .on_click(cx.listener(|this, ev: &ClickEvent, _window, cx| {
-                        let command = if ev.modifiers().alt {
-                            CommandId::EditorOpenPreviewToSide
-                        } else {
-                            CommandId::EditorOpenTabularPreview
-                        };
-                        let _ = this.dispatch_registered_command(command, cx);
-                    }));
-            actions = actions.child(preview);
+            actions = actions.child(toggle);
         }
         if temporary_read_only {
             let toggle = button(
@@ -12020,8 +11990,18 @@ impl Render for EditorView {
 
         let editor_surface = text_area.into_any_element();
 
-        let file_status = self.render_file_status(cx);
-        let show_text_area = self.should_render_text_area();
+        let preview_active = self.preview_active();
+        let preview_view = if preview_active {
+            self.sync_preview(cx)
+        } else {
+            None
+        };
+        let file_status = if preview_active {
+            None
+        } else {
+            self.render_file_status(cx)
+        };
+        let show_text_area = !preview_active && self.should_render_text_area();
         let minimap = minimap_policy_visible(
             self.minimap_visibility(),
             self.prefs.minimap_display_in(),
@@ -12043,6 +12023,16 @@ impl Render for EditorView {
             window,
             cx,
         ));
+        if let Some(preview_view) = preview_view {
+            buffer_surface = buffer_surface.child(
+                div()
+                    .id("editor-preview-surface")
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .child(preview_view),
+            );
+        }
         if show_text_area {
             let mut editor_surface_container = div().relative().flex().flex_1().min_w_0().min_h_0();
             if minimap {
@@ -12081,9 +12071,10 @@ impl Render for EditorView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                    if !this
-                        .bounds
-                        .is_some_and(|bounds| bounds.contains(&ev.position))
+                    if this.preview_active()
+                        || !this
+                            .bounds
+                            .is_some_and(|bounds| bounds.contains(&ev.position))
                     {
                         return;
                     }
@@ -12566,16 +12557,6 @@ mod tests {
     }
 
     #[test]
-    fn tabular_preview_file_types_match_native_preview_resolver() {
-        for path in ["data.csv", "data.tsv", "data.ssv", "data.psv", "DATA.CSV"] {
-            assert!(is_tabular_preview_path(&PathBuf::from(path)));
-        }
-        for path in ["notes.md", "main.rs", "data.parquet", "Makefile"] {
-            assert!(!is_tabular_preview_path(&PathBuf::from(path)));
-        }
-    }
-
-    #[test]
     fn font_zoom_accumulates_trackpad_deltas_and_resets_on_direction_change() {
         let mut remainder = 0.0;
         assert_eq!(font_zoom_steps(&mut remainder, 0.4), 0);
@@ -12676,120 +12657,6 @@ mod tests {
     }
 
     #[gpui::test]
-    fn following_markdown_preview_command_emits_typed_editor_source(cx: &mut TestAppContext) {
-        let view = setup(cx);
-        let captured = Arc::new(std::sync::Mutex::new(None));
-        let captured_event = captured.clone();
-        let _subscription = cx.update(|cx| {
-            cx.subscribe(&view, move |_, event: &EditorEvent, _| {
-                if let EditorEvent::MarkdownFollowingPreviewRequested(source) = event {
-                    if let Ok(mut captured) = captured_event.lock() {
-                        *captured = Some(source.clone());
-                    }
-                }
-            })
-        });
-
-        cx.update(|cx| {
-            view.update(cx, |view, cx| {
-                view.doc = Document::from_file("guide.md".into(), "# Guide", 1);
-                assert!(view.dispatch_registered_command(
-                    CommandId::EditorOpenFollowingMarkdownPreview,
-                    cx
-                ));
-            });
-        });
-
-        let source = captured
-            .lock()
-            .expect("event capture lock")
-            .clone()
-            .expect("following preview event");
-        assert_eq!(
-            source.path.as_deref(),
-            Some(std::path::Path::new("guide.md"))
-        );
-        assert_eq!(source.language, Language::Markdown);
-        assert_eq!(source.snapshot.text(), "# Guide");
-    }
-
-    #[gpui::test]
-    fn following_svg_preview_command_emits_typed_editor_source(cx: &mut TestAppContext) {
-        let view = setup(cx);
-        let captured = Arc::new(std::sync::Mutex::new(None));
-        let captured_event = captured.clone();
-        let _subscription = cx.update(|cx| {
-            cx.subscribe(&view, move |_, event: &EditorEvent, _| {
-                if let EditorEvent::SvgFollowingPreviewRequested(source) = event {
-                    if let Ok(mut captured) = captured_event.lock() {
-                        *captured = Some(source.clone());
-                    }
-                }
-            })
-        });
-
-        cx.update(|cx| {
-            view.update(cx, |view, cx| {
-                view.doc = Document::from_file(
-                    "icon.svg".into(),
-                    r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>"#,
-                    1,
-                );
-                assert!(
-                    view.dispatch_registered_command(CommandId::EditorOpenFollowingSvgPreview, cx)
-                );
-            });
-        });
-
-        let source = captured
-            .lock()
-            .expect("event capture lock")
-            .clone()
-            .expect("following SVG preview event");
-        assert_eq!(
-            source.path.as_deref(),
-            Some(std::path::Path::new("icon.svg"))
-        );
-        assert_eq!(
-            source.snapshot.text(),
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>"#
-        );
-    }
-
-    #[gpui::test]
-    fn preview_to_side_command_requests_a_preview_pane_with_typed_source(cx: &mut TestAppContext) {
-        let view = setup(cx);
-        let captured = Arc::new(std::sync::Mutex::new(None));
-        let captured_event = captured.clone();
-        let _subscription = cx.update(|cx| {
-            cx.subscribe(&view, move |_, event: &EditorEvent, _| {
-                if let EditorEvent::PreviewToSideRequested {
-                    content: EditorSidePreviewContent::Markdown(source),
-                } = event
-                {
-                    if let Ok(mut captured) = captured_event.lock() {
-                        *captured = Some(source.snapshot.text());
-                    }
-                }
-            })
-        });
-
-        cx.update(|cx| {
-            view.update(cx, |view, cx| {
-                view.doc = Document::from_file("guide.md".into(), "# Guide", 1);
-                assert!(view.dispatch_registered_command(CommandId::EditorOpenPreviewToSide, cx));
-            });
-        });
-
-        let source = captured
-            .lock()
-            .expect("event capture lock")
-            .clone()
-            .expect("side preview event");
-        assert_eq!(source, "# Guide");
-    }
-
-    #[gpui::test]
     fn view_groups_share_one_document_with_independent_selections(cx: &mut TestAppContext) {
         let view = setup(cx);
         cx.update(|cx| {
@@ -12818,31 +12685,22 @@ mod tests {
     }
 
     #[gpui::test]
-    fn tabular_preview_command_emits_the_current_file_path(cx: &mut TestAppContext) {
+    fn toggle_preview_switches_between_source_and_preview(cx: &mut TestAppContext) {
         let view = setup(cx);
-        let captured = Arc::new(std::sync::Mutex::new(None));
-        let captured_event = captured.clone();
-        let _subscription = cx.update(|cx| {
-            cx.subscribe(&view, move |_, event: &EditorEvent, _| {
-                if let EditorEvent::TabularPreviewRequested(path) = event {
-                    if let Ok(mut captured) = captured_event.lock() {
-                        *captured = Some(path.clone());
-                    }
-                }
-            })
-        });
-
         cx.update(|cx| {
             view.update(cx, |view, cx| {
-                view.doc = Document::from_file("report.tsv".into(), "name\tvalue", 1);
-                assert!(view.dispatch_registered_command(CommandId::EditorOpenTabularPreview, cx));
+                view.doc = Document::from_file("notes.md".into(), "# hi", 1);
+                assert_eq!(view.view_mode(), ViewMode::Source);
+                assert!(view.dispatch_registered_command(CommandId::EditorTogglePreview, cx));
+                assert_eq!(view.view_mode(), ViewMode::Preview);
+                assert!(view.preview_active());
+                assert!(view.dispatch_registered_command(CommandId::EditorTogglePreview, cx));
+                assert_eq!(view.view_mode(), ViewMode::Source);
+
+                view.doc = Document::from_file("main.rs".into(), "fn main() {}", 1);
+                assert!(!view.preview_active());
             });
         });
-
-        assert_eq!(
-            captured.lock().expect("event capture lock").as_deref(),
-            Some(std::path::Path::new("report.tsv"))
-        );
     }
 
     /// Build an [`EditorSettings`] with `f` applied to a default `editor` area.

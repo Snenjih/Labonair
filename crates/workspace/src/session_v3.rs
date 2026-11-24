@@ -419,13 +419,33 @@ struct RestoreCtx<'a> {
     dropped: usize,
 }
 
+/// ADR 0015: a persisted Preview pane for a local file is restored as an
+/// Editor pane (which reopens previewable files in Preview mode). URLs stay
+/// legacy Preview panes until the Preview pane kind is removed.
+fn migrate_preview_pane(state: PaneState) -> PaneState {
+    match state {
+        PaneState::Preview(p) if !p.url.is_empty() && !p.url.contains("://") => {
+            PaneState::Editor(EditorPaneState {
+                path: p.url,
+                cwd: None,
+                state: None,
+            })
+        }
+        other => other,
+    }
+}
+
 fn restore_node(node: &SerializedNode, depth: usize, cx: &mut RestoreCtx<'_>) -> Option<Member> {
     if depth > MAX_TREE_DEPTH {
         cx.dropped += 1;
         return None;
     }
     match node {
-        SerializedNode::Pane { id, pane } => match pane.parse().filter(|s| (cx.keep)(s)) {
+        SerializedNode::Pane { id, pane } => match pane
+            .parse()
+            .map(migrate_preview_pane)
+            .filter(|s| (cx.keep)(s))
+        {
             Some(state) => {
                 let new = (cx.alloc)();
                 cx.remap.push((*id, new));

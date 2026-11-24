@@ -4292,9 +4292,11 @@ name = "labonair-editor-ui"
 version = "1.0.0"
 dependencies = [
  "gpui",
+ "image",
  "labonair-activity-ui",
  "labonair-command-palette-core",
  "labonair-editor",
+ "labonair-explorer-host",
  "labonair-filesystem",
  "labonair-notifications",
  "labonair-panel",
@@ -4302,7 +4304,9 @@ dependencies = [
  "labonair-settings-json",
  "labonair-theme",
  "labonair-ui-kit",
+ "resvg",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5052,7 +5056,6 @@ dependencies = [
  "chrono",
  "dirs 6.0.0",
  "gpui",
- "image",
  "jsonc-parser",
  "labonair-activity-ui",
  "labonair-ai",
@@ -5084,7 +5087,6 @@ dependencies = [
  "labonair-transfers",
  "labonair-ui-kit",
  "labonair-workspace-storage",
- "resvg",
  "serde",
  "serde_json",
  "tokio",

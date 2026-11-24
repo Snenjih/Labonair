@@ -60,6 +60,7 @@ pub enum EditorUiCommand {
     ToggleReadOnly,
     NextSnippetTabstop,
     PreviousSnippetTabstop,
+    TogglePreview,
     OpenMarkdownPreview,
     OpenPreviewToSide,
     OpenFollowingMarkdownPreview,
@@ -234,6 +235,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
         CommandId::EditorOpenMarkdownPreview => {
             EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview)
         }
+        CommandId::EditorTogglePreview => EditorCommandRoute::Ui(EditorUiCommand::TogglePreview),
         CommandId::EditorOpenPreviewToSide => {
             EditorCommandRoute::Ui(EditorUiCommand::OpenPreviewToSide)
         }
@@ -407,6 +409,7 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorGoForward,
     CommandId::EditorToggleSearchSelection,
     CommandId::EditorToggleReadOnly,
+    CommandId::EditorTogglePreview,
     CommandId::EditorOpenMarkdownPreview,
     CommandId::EditorOpenPreviewToSide,
     CommandId::EditorOpenFollowingMarkdownPreview,
@@ -568,12 +571,19 @@ impl CommandProvider for EditorCommandProvider {
             )
             .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
+                CommandId::EditorTogglePreview,
+                "Toggle Source / Preview",
+                "Editor",
+            )
+            .with_contexts(&[CommandContext::Editor])
+            .with_aliases(&["preview", "markdown", "svg", "image"])
+            .with_default_binding("cmd-shift-v", Some(CommandContext::Editor)),
+            CommandDescriptor::new(
                 CommandId::EditorOpenMarkdownPreview,
                 "Open Markdown Preview",
                 "Editor",
             )
-            .with_contexts(&[CommandContext::Editor])
-            .with_default_binding("cmd-shift-v", Some(CommandContext::Editor)),
+            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
                 CommandId::EditorOpenPreviewToSide,
                 "Open Preview to the Side",
@@ -1267,23 +1277,23 @@ mod tests {
     }
 
     #[test]
-    fn markdown_preview_is_editor_owned_and_uses_its_pinned_binding() {
+    fn toggle_preview_is_editor_owned_and_uses_its_pinned_binding() {
         let command = EditorCommandProvider
             .commands()
             .into_iter()
-            .find(|command| command.id == CommandId::EditorOpenMarkdownPreview)
-            .expect("Markdown Preview descriptor");
+            .find(|command| command.id == CommandId::EditorTogglePreview)
+            .expect("Toggle Preview descriptor");
 
-        assert_eq!(command.title, "Open Markdown Preview");
-        assert_eq!(command.id.action_name(), "markdown::OpenPreview");
+        assert_eq!(command.title, "Toggle Source / Preview");
+        assert_eq!(command.id.action_name(), "editor::TogglePreview");
         assert_eq!(command.default_bindings[0].keystrokes, "cmd-shift-v");
         assert_eq!(
             command.default_bindings[0].context,
             Some(CommandContext::Editor)
         );
         assert_eq!(
-            route_for_command(CommandId::EditorOpenMarkdownPreview),
-            Some(EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview))
+            route_for_command(CommandId::EditorTogglePreview),
+            Some(EditorCommandRoute::Ui(EditorUiCommand::TogglePreview))
         );
     }
 

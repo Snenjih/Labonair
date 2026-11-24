@@ -163,6 +163,7 @@ pub enum CommandId {
     EditorGoForward,
     EditorToggleSearchSelection,
     EditorToggleReadOnly,
+    EditorTogglePreview,
     EditorOpenMarkdownPreview,
     EditorOpenPreviewToSide,
     EditorOpenFollowingMarkdownPreview,
@@ -778,6 +779,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         "search::ToggleSelection"
     ),
     (CommandId::EditorToggleReadOnly, "editor.toggle-read-only"),
+    (CommandId::EditorTogglePreview, "editor::TogglePreview"),
     (
         CommandId::EditorOpenMarkdownPreview,
         "markdown::OpenPreview"

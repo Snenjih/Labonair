@@ -44,7 +44,6 @@ pub use host_sessions::list_background_sessions;
 pub mod frame_insets;
 pub mod layout;
 pub mod live_bridge;
-pub mod markdown;
 pub mod mcp_event_bridge;
 pub mod menu_slot;
 pub mod modal_layer;
@@ -3084,6 +3083,25 @@ impl Workspace {
     /// Open `target` (a local path or URL) in a preview tab, reusing the active
     /// preview tab if one is already open.
     pub fn open_preview(&mut self, target: String, window: &mut Window, cx: &mut Context<Self>) {
+        // Local files open in the editor (Preview mode when the type has one,
+        // ADR 0015). Only URLs still reach the legacy Preview pane.
+        if !target.contains("://") {
+            self.open_file(target.clone(), false, window, cx);
+            let path = std::path::PathBuf::from(&target);
+            if let Some(editor) = self
+                .editors
+                .values()
+                .find(|e| e.read(cx).path().as_deref() == Some(path.as_path()))
+                .cloned()
+            {
+                editor.update(cx, |e, cx| {
+                    if e.preview_kind().is_some() {
+                        e.set_view_mode(labonair_editor_ui::ViewMode::Preview, cx);
+                    }
+                });
+            }
+            return;
+        }
         self.activate_preview_target(target, cx);
         self.focus_active(window, cx);
     }
@@ -3145,6 +3163,17 @@ impl Workspace {
         window: &Window,
         cx: &mut Context<Self>,
     ) {
+        let viewport = window.viewport_size();
+        if let Some(editor) = self.active_editor_view(cx) {
+            editor.update(cx, |editor, cx| {
+                editor.perform_preview_image_action(
+                    action,
+                    f32::from(viewport.width),
+                    f32::from(viewport.height),
+                    cx,
+                )
+            });
+        }
         let Some(tab_id) = self
             .tabs
             .read(cx)

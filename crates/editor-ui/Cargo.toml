@@ -10,8 +10,11 @@ path = "src/lib.rs"
 
 [dependencies]
 gpui = { workspace = true }
+image = { workspace = true }
+resvg = { workspace = true }
 labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-editor = { path = "../editor" }
+labonair-explorer-host = { path = "../explorer-host" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-activity-ui = { path = "../activity-ui" }
 labonair-notifications = { path = "../notifications" }
@@ -21,6 +24,7 @@ labonair-settings-json = { path = "../settings-json" }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
