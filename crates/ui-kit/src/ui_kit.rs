@@ -129,8 +129,9 @@ pub use preview_tile::{
 pub use search_field::{search_clear_button, search_field, search_input};
 pub use segmented::{segmented_control, SegmentSize, SegmentVariant, SegmentedControl};
 pub use select::{
-    select_popover, select_popover_with_exit, select_trigger, select_trigger_disabled,
-    selected_label, SelectOption, SelectPopoverAnchor,
+    filter_options, select_popover, select_popover_with_exit, select_trigger,
+    select_trigger_disabled, selected_label, SelectOption, SelectPopoverAnchor,
+    SELECT_SEARCH_THRESHOLD,
 };
 pub use settings_widgets::{
     category_chip, settings_group, settings_row, slider_control, slider_row, ChipHue,
