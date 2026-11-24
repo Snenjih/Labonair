@@ -542,7 +542,9 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 .when_some(detail, |d, text| {
                     d.child(
                         div()
-                            .flex_shrink_0()
+                            .min_w_0()
+                            .max_w(c.space(150.0))
+                            .truncate()
                             .ml_auto()
                             .pl(c.space(8.0))
                             .text_size(px(12.0))
@@ -657,9 +659,10 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 .text_color(c.popover_fg)
                 .hover(|s| s.bg(c.accent).text_color(c.accent_fg))
                 .when_some(icon, |d, ic| d.child(icon_slot(ic, c.popover_fg)))
-                .child(label)
+                .child(div().flex_1().min_w_0().truncate().child(label))
                 .child(
                     div()
+                        .flex_none()
                         .ml_auto()
                         .child(IconName::ChevronRight.svg(c.muted).size(px(14.0))),
                 );

@@ -419,6 +419,27 @@ pub fn all_fields() -> Vec<AnyField> {
             "Tabs share the whole tab strip equally. Off sizes each tab to its title, up to a maximum."
         ),
         field!(
+            appearance.tab_bar_background,
+            "tabBarBackground",
+            Switch,
+            "Tab bar background",
+            "Draw the backdrop strip behind the row of tabs. The tabs keep their own backgrounds either way."
+        ),
+        field!(
+            appearance.tab_density,
+            "tabDensity",
+            Segmented(&[("comfortable", "Comfortable"), ("compact", "Compact")]),
+            "Tab density",
+            "How much space tabs take: height, horizontal padding and gaps."
+        ),
+        field!(
+            appearance.tab_shape,
+            "tabShape",
+            Segmented(&[("round", "Round"), ("soft", "Soft")]),
+            "Tab shape",
+            "Round tabs are fully rounded pills; Soft uses a smaller corner radius."
+        ),
+        field!(
             appearance.dim_inactive_panes,
             "dimInactivePanes",
             Switch,

@@ -19,10 +19,10 @@ use gpui::{
 use labonair_command_palette_core::CommandId;
 use labonair_settings::{Settings as _, WorkspaceSettings};
 use labonair_ui_kit::{
-    caret, context_menu_with_exit, divider, floating_tab_strip, icon_button_builder,
+    caret, context_menu_with_exit, divider, floating_tab_strip_styled, icon_button_builder,
     tab_drop_marker, tab_group_gap, tab_item, Axis, ButtonSize, Density, IconButtonShape, IconName,
-    MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDropSide, TabLayout, TabStyle,
-    TabTileSpec, Tooltip,
+    MenuItem, MotionExt, Palette, SubmenuHoverSource, TabDensity, TabDropSide, TabLayout, TabShape,
+    TabStyle, TabTileSpec, TerminalTabState, Tooltip,
 };
 
 use crate::pane::PaneId;
@@ -125,6 +125,16 @@ pub(crate) fn tab_display(tab: &Tab, workspace: &Workspace, cx: &App) -> TabDisp
     }
 }
 
+/// Density and shape from the settings (defaults before settings load).
+fn tab_look(cx: &App) -> (TabDensity, TabShape) {
+    labonair_settings::ThemeSettings::try_get(cx).map_or_else(Default::default, |s| {
+        (
+            TabDensity::from_setting(s.tab_density()),
+            TabShape::from_setting(s.tab_shape()),
+        )
+    })
+}
+
 /// Tile of a detected coding agent.
 pub(crate) fn agent_tile(agent: labonair_terminal::agent::Agent) -> TabTileSpec {
     use labonair_terminal::agent::Agent;
@@ -147,8 +157,21 @@ impl Workspace {
         if kind != PaneKind::Terminal {
             return kind_tile(kind.tab_kind(), false);
         }
+        let c = Palette::from_theme(self.theme.read(cx));
+        let exited_failed =
+            self.panes
+                .get(&pane)
+                .and_then(|p| match p.view.read(cx).handle().status() {
+                    labonair_terminal::SessionStatus::Exited(code) => Some(code != 0),
+                    _ => None,
+                });
         if let Some(host) = self.pane_ssh_host(pane) {
-            let tile = TabTileSpec::ssh();
+            let state = if exited_failed.is_some() {
+                TerminalTabState::SshDisconnected
+            } else {
+                TerminalTabState::SshConnected
+            };
+            let tile = TabTileSpec::terminal_state(state, None, &c);
             let icon = self
                 .host_view
                 .picker_rows(cx)
@@ -160,10 +183,14 @@ impl Workspace {
                 None => tile,
             };
         }
-        self.programs
-            .get(&pane)
-            .copied()
-            .unwrap_or_else(TabTileSpec::terminal)
+        self.programs.get(&pane).copied().unwrap_or_else(|| {
+            let state = if exited_failed == Some(true) {
+                TerminalTabState::Failed
+            } else {
+                TerminalTabState::Idle
+            };
+            TabTileSpec::terminal_state(state, None, &c)
+        })
     }
 
     /// Host id of the SSH session shown by terminal pane `pane`.
@@ -331,8 +358,10 @@ impl Workspace {
         if let Some(status) = display.agent_status {
             tab_item = tab_item.badge(crate::agent_integration::badge(status, &c));
         }
+        let (density, shape) = tab_look(cx);
         tab_item = tab_item
             .style(TabStyle::Floating)
+            .density_shape(density, shape)
             .layout(layout)
             .selected(active)
             .dirty(display.dirty)
@@ -614,6 +643,9 @@ impl Workspace {
 
         let fill_tabs = labonair_settings::ThemeSettings::try_get(cx)
             .is_some_and(|settings| settings.tab_fill_space());
+        let bar_background = labonair_settings::ThemeSettings::try_get(cx)
+            .is_none_or(|settings| settings.tab_bar_background());
+        let (density, shape) = tab_look(cx);
         div()
             .flex()
             .items_center()
@@ -644,14 +676,14 @@ impl Workspace {
             })
             .when(show_tab_bar_buttons, |bar| bar.child(spaces_trigger))
             .child(
-                floating_tab_strip("tab-strip", c, TabLayout::Horizontal)
+                floating_tab_strip_styled("tab-strip", c, TabLayout::Horizontal, density, shape)
                     // Shrinkable and scrollable, unlike the kit default.
                     .flex_shrink()
                     .min_w_0()
                     .when(fill_tabs, |strip| strip.flex_1())
                     // No tabs: keep the (empty) strip for layout so "+" stays
                     // right-aligned, but drop the track fill and rim.
-                    .when(tabs.is_empty(), |strip| {
+                    .when(tabs.is_empty() || !bar_background, |strip| {
                         strip
                             .bg(gpui::transparent_black())
                             .border_color(gpui::transparent_black())
@@ -783,23 +815,29 @@ impl Workspace {
                 this.drop_pane_on_strip(dragged, window, cx);
             }))
             .child(
-                floating_tab_strip("sidebar-tab-list", c, TabLayout::Vertical)
-                    .flex_1()
-                    .flex_shrink()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.tab_strip.scroll_v)
-                    .on_drag_move(cx.listener(
-                        |this, ev: &DragMoveEvent<DraggedTab>, _window, _cx| {
-                            this.auto_scroll_strip(true, ev.bounds, ev.event.position);
-                        },
-                    ))
-                    .on_drag_move(cx.listener(
-                        |this, ev: &DragMoveEvent<DraggedPane>, _window, _cx| {
-                            this.auto_scroll_strip(true, ev.bounds, ev.event.position);
-                        },
-                    ))
-                    .children(groups),
+                floating_tab_strip_styled(
+                    "sidebar-tab-list",
+                    c,
+                    TabLayout::Vertical,
+                    TabDensity::default(),
+                    TabShape::default(),
+                )
+                .flex_1()
+                .flex_shrink()
+                .min_h_0()
+                .overflow_y_scroll()
+                .track_scroll(&self.tab_strip.scroll_v)
+                .on_drag_move(
+                    cx.listener(|this, ev: &DragMoveEvent<DraggedTab>, _window, _cx| {
+                        this.auto_scroll_strip(true, ev.bounds, ev.event.position);
+                    }),
+                )
+                .on_drag_move(
+                    cx.listener(|this, ev: &DragMoveEvent<DraggedPane>, _window, _cx| {
+                        this.auto_scroll_strip(true, ev.bounds, ev.event.position);
+                    }),
+                )
+                .children(groups),
             )
             .child(
                 div()
@@ -882,6 +920,11 @@ impl Workspace {
                         (row.id.clone(), row.name.clone(), row.subtitle.clone());
                     sub.push(
                         MenuItem::new(SharedString::from(format!("nt-{proto}-{id}")), name)
+                            .icon(if ssh {
+                                IconName::Server
+                            } else {
+                                IconName::Cloud
+                            })
                             .detail(subtitle)
                             .on_click({
                                 let v = view.clone();

@@ -152,6 +152,21 @@ impl ThemeSettings {
         self.0.tab_fill_space.unwrap_or(false)
     }
 
+    /// Whether the backdrop strip behind the tabs is drawn.
+    pub fn tab_bar_background(&self) -> bool {
+        self.0.tab_bar_background.unwrap_or(true)
+    }
+
+    /// `"comfortable"` | `"compact"`.
+    pub fn tab_density(&self) -> &str {
+        self.0.tab_density.as_deref().unwrap_or("comfortable")
+    }
+
+    /// `"round"` | `"soft"`.
+    pub fn tab_shape(&self) -> &str {
+        self.0.tab_shape.as_deref().unwrap_or("round")
+    }
+
     /// Inactive panes are darkened.
     pub fn dim_inactive_panes(&self) -> bool {
         self.0.dim_inactive_panes.unwrap_or(false)

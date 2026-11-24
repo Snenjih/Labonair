@@ -113,7 +113,9 @@ impl Workspace {
             // SSH panes have no foreground process: fall back to the screen.
             let is_ssh = self.ssh_tabs.values().any(|t| t.pane_id == id);
             let agent = match foreground {
-                Some(p) => Agent::detect(&p.name),
+                Some(p) => {
+                    Agent::detect_process(&p.name, &view.shell_title().unwrap_or_default())
+                }
                 None if is_ssh => Agent::detect_screen(
                     &view.shell_title().unwrap_or_default(),
                     &view.recent_lines(30),

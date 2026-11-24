@@ -46,6 +46,89 @@ pub enum TabStyle {
     Floating,
 }
 
+/// How much room floating tabs get (`tabDensity` setting).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TabDensity {
+    #[default]
+    Comfortable,
+    Compact,
+}
+
+impl TabDensity {
+    /// Parse the settings value; unknown values fall back to the default.
+    pub fn from_setting(value: &str) -> Self {
+        match value {
+            "compact" => Self::Compact,
+            _ => Self::Comfortable,
+        }
+    }
+}
+
+/// Corner shape of floating tabs and their track (`tabShape` setting).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TabShape {
+    /// Fully rounded pills.
+    #[default]
+    Round,
+    /// A small radius from the palette's radius scale.
+    Soft,
+}
+
+impl TabShape {
+    /// Parse the settings value; unknown values fall back to the default.
+    pub fn from_setting(value: &str) -> Self {
+        match value {
+            "soft" => Self::Soft,
+            _ => Self::Round,
+        }
+    }
+}
+
+/// Unscaled (pre-`Palette::space`) metrics of a horizontal floating tab.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TabMetrics {
+    pub height: f32,
+    pub pad_x: f32,
+    /// Gap between a tab's own icon / title / badges.
+    pub inner_gap: f32,
+    /// Gap between tabs.
+    pub strip_gap: f32,
+    /// Padding between the track and its tabs.
+    pub track_pad: f32,
+}
+
+impl TabDensity {
+    pub fn metrics(self) -> TabMetrics {
+        match self {
+            Self::Comfortable => TabMetrics {
+                height: FLOATING_PILL_HEIGHT,
+                pad_x: 10.0,
+                inner_gap: 6.0,
+                strip_gap: FLOATING_GAP_H,
+                track_pad: FLOATING_TRACK_PADDING,
+            },
+            Self::Compact => TabMetrics {
+                height: 22.0,
+                pad_x: 6.0,
+                inner_gap: 4.0,
+                strip_gap: 0.0,
+                track_pad: 1.0,
+            },
+        }
+    }
+}
+
+impl TabShape {
+    /// Corner radius for a block of `height`; `soft` is the palette radius used
+    /// by [`TabShape::Soft`].
+    pub fn radius(self, height: f32, soft: f32) -> f32 {
+        match self {
+            Self::Round => height / 2.0,
+            Self::Soft => soft.min(height / 2.0),
+        }
+    }
+}
+
 /// One caller-owned tab item. Workspace retains selection, ordering, drag/drop,
 /// persistence, and close policy; this component supplies common tab chrome
 /// and keyboard activation.
@@ -58,6 +141,8 @@ pub struct TabItemBuilder {
     leading_tiles: Vec<TabTileSpec>,
     layout: TabLayout,
     style: TabStyle,
+    density: TabDensity,
+    shape: TabShape,
     selected: bool,
     disabled: bool,
     dirty: bool,
@@ -88,6 +173,8 @@ pub fn tab_item(
         leading_tiles: Vec::new(),
         layout: TabLayout::Horizontal,
         style: TabStyle::Classic,
+        density: TabDensity::default(),
+        shape: TabShape::default(),
         selected: false,
         disabled: false,
         dirty: false,
@@ -112,6 +199,13 @@ impl TabItemBuilder {
     /// Switch between the classic strip and the floating block style.
     pub fn style(mut self, style: TabStyle) -> Self {
         self.style = style;
+        self
+    }
+
+    /// Density and corner shape of floating tabs.
+    pub fn density_shape(mut self, density: TabDensity, shape: TabShape) -> Self {
+        self.density = density;
+        self.shape = shape;
         self
     }
 
@@ -226,6 +320,8 @@ impl TabItemBuilder {
             leading_tiles,
             layout,
             style,
+            density,
+            shape,
             selected,
             disabled,
             dirty,
@@ -244,25 +340,39 @@ impl TabItemBuilder {
         let floating = style == TabStyle::Floating;
         // Horizontal floating tabs are pills on the strip's track.
         let pill = floating && horizontal;
+        let m = density.metrics();
+        let pill_radius = px(shape.radius(m.height, palette.radius.md));
         let mut row = div()
             .id(id.clone())
             .group("tab_item")
             .flex()
             .flex_row()
             .items_center()
-            .gap(palette.space(if horizontal && !floating { 8.0 } else { 6.0 }))
-            .h(palette.space(if horizontal && !floating { 40.0 } else { 28.0 }))
+            .gap(palette.space(if horizontal && !floating {
+                8.0
+            } else if pill {
+                m.inner_gap
+            } else {
+                6.0
+            }))
+            .h(palette.space(if horizontal && !floating {
+                40.0
+            } else if horizontal || floating {
+                m.height
+            } else {
+                28.0
+            }))
             .px(palette.space(if horizontal && !floating {
                 12.0
             } else if floating && horizontal {
-                10.0
+                m.pad_x
             } else {
                 8.0
             }))
             .rounded(if horizontal && !floating {
                 px(0.0)
             } else if pill {
-                px(FLOATING_PILL_HEIGHT / 2.0)
+                pill_radius
             } else {
                 px(palette.radius.md)
             })
@@ -305,7 +415,7 @@ impl TabItemBuilder {
                 div()
                     .absolute()
                     .inset_0()
-                    .rounded(px(FLOATING_PILL_HEIGHT / 2.0))
+                    .rounded(pill_radius)
                     .bg(palette.tab_active)
                     .shadow(palette.row_shadow())
                     .motion_state_fade((ElementId::from(id.clone()), "fill"), palette, selected),
@@ -484,18 +594,34 @@ pub fn floating_tab_strip(
     c: Palette,
     layout: TabLayout,
 ) -> Stateful<Div> {
+    floating_tab_strip_styled(id, c, layout, TabDensity::default(), TabShape::default())
+}
+
+/// [`floating_tab_strip`] with an explicit density and corner shape.
+pub fn floating_tab_strip_styled(
+    id: impl Into<ElementId>,
+    c: Palette,
+    layout: TabLayout,
+    density: TabDensity,
+    shape: TabShape,
+) -> Stateful<Div> {
+    let m = density.metrics();
     let strip = div().id(id).flex().flex_shrink_0();
     match layout {
         TabLayout::Horizontal => {
             // Pills + padding + the 1px rim on both sides (border-box sizing).
-            let height = c.space(FLOATING_PILL_HEIGHT + 2.0 * FLOATING_TRACK_PADDING) + px(2.0);
+            let height = c.space(m.height + 2.0 * m.track_pad) + px(2.0);
+            let radius = match shape {
+                TabShape::Round => height / 2.0,
+                TabShape::Soft => px(c.radius.lg).min(height / 2.0),
+            };
             strip
                 .flex_row()
                 .items_center()
                 .h(height)
-                .p(c.space(FLOATING_TRACK_PADDING))
-                .gap(c.space(FLOATING_GAP_H))
-                .rounded(height / 2.0)
+                .p(c.space(m.track_pad))
+                .gap(c.space(m.strip_gap))
+                .rounded(radius)
                 .bg(c.track)
                 .border_1()
                 .border_color(c.track_line)
@@ -646,5 +772,37 @@ mod tests {
         );
         assert_eq!(navigation_direction(TabLayout::Vertical, "up"), Some(false));
         assert_eq!(navigation_direction(TabLayout::Vertical, "right"), None);
+    }
+}
+
+#[cfg(test)]
+mod density_tests {
+    use super::*;
+
+    #[test]
+    fn settings_parse_with_defaults() {
+        assert_eq!(TabDensity::from_setting("compact"), TabDensity::Compact);
+        assert_eq!(
+            TabDensity::from_setting("comfortable"),
+            TabDensity::Comfortable
+        );
+        assert_eq!(TabDensity::from_setting("bogus"), TabDensity::default());
+        assert_eq!(TabShape::from_setting("soft"), TabShape::Soft);
+        assert_eq!(TabShape::from_setting(""), TabShape::Round);
+    }
+
+    #[test]
+    fn compact_is_tighter_and_default_keeps_today() {
+        let (c, d) = (
+            TabDensity::Compact.metrics(),
+            TabDensity::Comfortable.metrics(),
+        );
+        assert!(c.height < d.height && c.pad_x < d.pad_x && c.strip_gap < d.strip_gap);
+        assert_eq!(
+            (d.height, d.pad_x, d.strip_gap, d.track_pad),
+            (28.0, 10.0, 2.0, 2.0)
+        );
+        assert_eq!(TabShape::Round.radius(28.0, 6.0), 14.0);
+        assert_eq!(TabShape::Soft.radius(28.0, 6.0), 6.0);
     }
 }

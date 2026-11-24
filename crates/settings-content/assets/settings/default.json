@@ -50,6 +50,9 @@
     // "titlebar" or "sidebar".
     "tabsLocation": "titlebar",
     "tabFillSpace": false,
+    "tabBarBackground": true,
+    "tabDensity": "comfortable",
+    "tabShape": "round",
     "dimInactivePanes": false,
     "zenModeShowHeader": true,
     "zenModeShowStatusbar": true

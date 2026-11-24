@@ -37,6 +37,21 @@ impl Agent {
         }
     }
 
+    /// Like [`Agent::detect`], plus the node-wrapped case: an npm-installed
+    /// `claude` runs as `node`/`bun`, so the OS process name is the runtime and
+    /// only the OSC title (`✳ Claude Code`, spinner variants) identifies it.
+    pub fn detect_process(process_name: &str, title: &str) -> Option<Self> {
+        Self::detect(process_name).or_else(|| {
+            matches!(
+                normalize_process_name(process_name).as_str(),
+                "node" | "bun" | "deno"
+            )
+            .then(|| Self::detect_screen(title, &[]))
+            .flatten()
+            .filter(|a| *a == Self::ClaudeCode)
+        })
+    }
+
     /// Recognise an agent from the screen alone (OSC title + visible tail), for
     /// SSH panes where no foreground process is available.
     // ponytail: banner/title text match only; a stale banner left on screen
@@ -207,6 +222,12 @@ mod tests {
     #[test]
     fn detects_agents_by_process_name() {
         assert_eq!(Agent::detect("claude"), Some(Agent::ClaudeCode));
+        assert_eq!(
+            Agent::detect_process("node", "\u{2733} Claude Code"),
+            Some(Agent::ClaudeCode)
+        );
+        assert_eq!(Agent::detect_process("node", "server.js"), None);
+        assert_eq!(Agent::detect_process("vim", "Claude Code"), None);
         assert_eq!(
             Agent::detect("/opt/bin/Claude-2.1.0"),
             Some(Agent::ClaudeCode)

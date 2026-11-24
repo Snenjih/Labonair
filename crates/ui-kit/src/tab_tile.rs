@@ -18,6 +18,40 @@ pub struct TabTileSpec {
     pub fg: Hsla,
     /// Light tiles (codex) get a thin dark outline so they stay visible.
     pub outlined: bool,
+    /// Just the glyph: no tile background, rim or shadow.
+    pub bare: bool,
+}
+
+/// Observable state of a terminal pane, shown by its tab icon.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TerminalTabState {
+    /// Local shell at its prompt (or exited cleanly).
+    Idle,
+    /// The shell / child exited with a non-zero status.
+    Failed,
+    /// SSH session alive.
+    SshConnected,
+    /// SSH session ended.
+    SshDisconnected,
+}
+
+/// Which palette colour a state icon uses (kept separate from [`Palette`] so
+/// the mapping stays a pure, testable function).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StateTint {
+    Muted,
+    Success,
+    Error,
+}
+
+/// Glyph and tint for a terminal tab state.
+pub fn terminal_state_look(state: TerminalTabState) -> (IconName, StateTint) {
+    match state {
+        TerminalTabState::Idle => (IconName::Terminal, StateTint::Muted),
+        TerminalTabState::Failed => (IconName::Terminal, StateTint::Error),
+        TerminalTabState::SshConnected => (IconName::Server, StateTint::Success),
+        TerminalTabState::SshDisconnected => (IconName::Server, StateTint::Error),
+    }
 }
 
 /// Fixed program colours; the tile art is brand-coloured
@@ -49,6 +83,7 @@ impl TabTileSpec {
             bg: rgb(bg).into(),
             fg: rgb(tile_colors::WHITE).into(),
             outlined: false,
+            bare: false,
         }
     }
 
@@ -58,6 +93,7 @@ impl TabTileSpec {
             bg: rgb(tile_colors::TERMINAL_BG).into(),
             fg: rgb(tile_colors::TERMINAL_FG).into(),
             outlined: false,
+            bare: false,
         }
     }
     pub fn claude() -> Self {
@@ -69,6 +105,7 @@ impl TabTileSpec {
             bg: rgb(tile_colors::CODEX_BG).into(),
             fg: rgb(tile_colors::CODEX_FG).into(),
             outlined: true,
+            bare: false,
         }
     }
     pub fn pi() -> Self {
@@ -115,6 +152,25 @@ impl TabTileSpec {
             bg: rgb(bg).into(),
             fg: rgb(fg).into(),
             outlined: false,
+            bare: false,
+        }
+    }
+
+    /// A bare (unboxed) state icon for a terminal pane; `glyph` overrides the
+    /// state's default (the host-type icon on an SSH pane).
+    pub fn terminal_state(state: TerminalTabState, glyph: Option<IconName>, c: &Palette) -> Self {
+        let (default_glyph, tint) = terminal_state_look(state);
+        let fg = match tint {
+            StateTint::Muted => c.muted,
+            StateTint::Success => c.success,
+            StateTint::Error => c.error,
+        };
+        Self {
+            glyph: glyph.unwrap_or(default_glyph),
+            bg: gpui::transparent_black(),
+            fg,
+            outlined: false,
+            bare: true,
         }
     }
 
@@ -185,6 +241,16 @@ pub fn tab_tile_stack(specs: &[TabTileSpec], c: &Palette) -> Div {
 }
 
 fn tile_box(spec: TabTileSpec, c: &Palette, height: f32, glyph: bool) -> Div {
+    if spec.bare {
+        return div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .w(px(TILE_SIZE))
+            .h(px(height))
+            .when(glyph, |d| d.child(spec.glyph.svg(spec.fg).size(px(14.0))));
+    }
     let corner = px(4.5);
     let border = if spec.outlined {
         gpui::hsla(0.0, 0.0, 0.0, 0.12)
@@ -260,6 +326,31 @@ mod tests {
         ] {
             let _ = tab_tile(spec, &c);
         }
+    }
+
+    #[test]
+    fn terminal_states_map_to_distinct_looks() {
+        use TerminalTabState::*;
+        assert_eq!(
+            terminal_state_look(Idle),
+            (IconName::Terminal, StateTint::Muted)
+        );
+        assert_eq!(
+            terminal_state_look(Failed),
+            (IconName::Terminal, StateTint::Error)
+        );
+        assert_eq!(
+            terminal_state_look(SshConnected),
+            (IconName::Server, StateTint::Success)
+        );
+        assert_eq!(
+            terminal_state_look(SshDisconnected),
+            (IconName::Server, StateTint::Error)
+        );
+        let c = test_palette();
+        let spec = TabTileSpec::terminal_state(Failed, None, &c);
+        assert!(spec.bare && spec.fg == c.error);
+        let _ = tab_tile(spec, &c);
     }
 
     #[test]

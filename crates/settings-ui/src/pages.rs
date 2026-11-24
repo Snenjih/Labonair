@@ -434,7 +434,10 @@ const APPEARANCE_GROUPS: &[Group] = &[
             "appearance.glassBlur",
         ],
     ),
-    ("Tabs", paths!("appearance": "tabsLocation", "tabFillSpace")),
+    (
+        "Tabs",
+        paths!("appearance": "tabsLocation", "tabFillSpace", "tabBarBackground", "tabDensity", "tabShape"),
+    ),
     (
         "Panes",
         &[

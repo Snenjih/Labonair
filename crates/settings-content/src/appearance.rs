@@ -106,6 +106,12 @@ pub struct AppearanceContent {
     pub tabs_location: Option<String>,
     /// Tabs share the whole strip equally instead of sizing to their title.
     pub tab_fill_space: Option<bool>,
+    /// Draw the backdrop strip behind the row of tabs.
+    pub tab_bar_background: Option<bool>,
+    /// `"comfortable"` | `"compact"` — spacing of tabs.
+    pub tab_density: Option<String>,
+    /// `"round"` | `"soft"` — corner shape of tabs.
+    pub tab_shape: Option<String>,
     /// Darken inactive panes so the active one stands out.
     pub dim_inactive_panes: Option<bool>,
     /// Zen mode: show the window header bar.
@@ -136,6 +142,9 @@ impl AppearanceContent {
             glass_blur: Some(40),
             tabs_location: Some("titlebar".to_string()),
             tab_fill_space: Some(false),
+            tab_bar_background: Some(true),
+            tab_density: Some("comfortable".to_string()),
+            tab_shape: Some("round".to_string()),
             dim_inactive_panes: Some(false),
             zen_mode_show_header: Some(true),
             zen_mode_show_statusbar: Some(true),

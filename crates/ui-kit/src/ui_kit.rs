@@ -141,12 +141,12 @@ pub use slider::{slider, SliderEvent, SliderState, SliderValue};
 pub use stack::{h_stack, v_stack};
 pub use switch::{switch, ToggleSwitch};
 pub use tab::{
-    floating_tab_strip, tab_drop_marker, tab_group_gap, tab_item, TabDropSide, TabItemBuilder,
-    TabLayout, TabStyle,
+    floating_tab_strip, floating_tab_strip_styled, tab_drop_marker, tab_group_gap, tab_item,
+    TabDensity, TabDropSide, TabItemBuilder, TabLayout, TabMetrics, TabShape, TabStyle,
 };
 pub use tab_tile::{
-    stack_width, tab_tile, tab_tile_stack, tile_colors, tile_rim, TabTileSpec, MAX_STACKED_TILES,
-    TILE_SIZE,
+    stack_width, tab_tile, tab_tile_stack, terminal_state_look, tile_colors, tile_rim, StateTint,
+    TabTileSpec, TerminalTabState, MAX_STACKED_TILES, TILE_SIZE,
 };
 pub use text_field::{
     caret, field_input, text_area_surface, text_field, text_field_surface,
