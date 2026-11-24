@@ -1376,20 +1376,43 @@ impl Workspace {
         let Some(pane_id) = self.agent_notification_targets.remove(&notification_id) else {
             return;
         };
+        self.focus_pane_tab(pane_id, window, cx);
+    }
+
+    /// Focus the tab holding `pane_id`; false when the pane is gone.
+    pub fn open_os_notification_target(
+        &mut self,
+        target: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        match agent_integration::decode_pane_target(target) {
+            Some(pane_id) => self.focus_pane_tab(pane_id, window, cx),
+            None => false,
+        }
+    }
+
+    fn focus_pane_tab(
+        &mut self,
+        pane_id: PaneId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some(tab_id) = self
             .layouts
             .iter()
             .find_map(|(tab_id, layout)| layout.leaves().contains(&pane_id).then_some(*tab_id))
         else {
-            return;
+            return false;
         };
         let Some(tab) = self.tabs.read(cx).get(tab_id).cloned() else {
-            return;
+            return false;
         };
         if self.spaces.read(cx).active_id() != tab.space_id {
             self.switch_space(tab.space_id, cx);
         }
         self.select_tab(tab_id, window, cx);
+        true
     }
 
     // ── Session persistence (T14-001) ─────────────────────────────────────
@@ -6948,7 +6971,12 @@ impl Workspace {
                         d.child(
                             loading_btn("ssh-l-restart-host", "Restart host", c, false).on_click(
                                 cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.restart_background_host(ssh_id.clone(), is_sftp, tab_id, cx)
+                                    this.restart_background_host(
+                                        ssh_id.clone(),
+                                        is_sftp,
+                                        tab_id,
+                                        cx,
+                                    )
                                 }),
                             ),
                         )

@@ -61,7 +61,7 @@ fn toast_card(
                 .gap(palette.space(2.0))
                 .child(
                     div()
-                        .text_size(px(14.0))
+                        .text_size(px(12.0))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(palette.fg)
                         .child(snapshot.title),
@@ -99,14 +99,13 @@ fn toast_card(
         .items_center()
         .gap(palette.space(10.0))
         .w_full()
-        .px(palette.space(14.0))
-        .py(palette.space(11.0))
+        .px(palette.space(10.0))
+        .py(palette.space(7.0))
         .rounded(px(palette.radius.lg))
         .border_1()
         .border_color(palette.border)
         .bg(palette.popover)
-        .shadow(palette.popover_shadow())
-        .child(icon.svg(color).size(px(18.0)))
+        .child(icon.svg(color).size(px(14.0)))
         .child(content)
         .child(
             icon_button_builder(
@@ -133,7 +132,7 @@ impl Render for NotificationToastOverlay {
         let palette = Palette::from_theme(self.theme.read(cx));
         div()
             .absolute()
-            .top(px(18.0))
+            .bottom(palette.space(36.0))
             .left_0()
             .right_0()
             .flex()

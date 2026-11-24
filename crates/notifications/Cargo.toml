@@ -15,5 +15,12 @@ labonair-panel = { path = "../panel" }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSDictionary", "NSError", "NSString", "NSUUID", "NSObject"] }
+objc2-user-notifications = "0.3"
+
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

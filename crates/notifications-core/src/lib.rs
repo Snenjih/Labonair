@@ -136,6 +136,9 @@ pub struct NotificationRecord {
     pub read: bool,
 }
 
+/// Lifetime of every in-app toast. Per-notification durations only opt a
+/// notification into a toast; they do not change how long it stays.
+pub const TOAST_DURATION: Duration = Duration::from_secs(15);
 const DEDUPE_WINDOW: Duration = Duration::from_secs(2);
 const MAX_ITEMS: usize = 100;
 const MAX_TOASTS: usize = 3;
@@ -188,7 +191,7 @@ impl NotificationRegistry {
                 actions: draft.actions,
                 dedupe_key: draft.dedupe_key,
                 created_at: now,
-                toast_until: draft.toast_duration.map(|duration| now + duration),
+                toast_until: draft.toast_duration.map(|_| now + TOAST_DURATION),
                 read: false,
             },
         );
@@ -291,6 +294,17 @@ mod tests {
         assert_eq!(registry.unread_count(), 2);
         assert!(registry.mark_read(registry.list()[0].id));
         assert_eq!(registry.unread_count(), 1);
+    }
+
+    #[test]
+    fn toasts_expire_after_fixed_duration() {
+        let mut registry = NotificationRegistry::new();
+        let now = Instant::now();
+        let d = NotificationDraft::new(NotificationKind::Info, "t", "b")
+            .toast_for(Duration::from_secs(1));
+        registry.insert(d, now);
+        assert!(!registry.expire_toasts(now + TOAST_DURATION - Duration::from_secs(1)));
+        assert!(registry.expire_toasts(now + TOAST_DURATION));
     }
 
     #[test]

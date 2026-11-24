@@ -1008,6 +1008,39 @@ pub(crate) fn bootstrap(
         labonair_filesystem::paths::data_dir().join("onboarding.json"),
     );
 
+    // OS-notification clicks: the handler may fire off the GPUI thread, so it
+    // only queues the target; a foreground poll applies it (ADR 0014).
+    let os_clicks: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+    {
+        let queue = os_clicks.clone();
+        labonair_notifications::set_os_click_handler(move |target| {
+            if let Ok(mut q) = queue.lock() {
+                q.push(target);
+            }
+        });
+        let workspace = workspace.clone();
+        let handle = window.window_handle();
+        cx.spawn(async move |_, cx| loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(250))
+                .await;
+            let targets: Vec<String> = os_clicks
+                .lock()
+                .map(|mut q| std::mem::take(&mut *q))
+                .unwrap_or_default();
+            for target in targets {
+                let workspace = workspace.clone();
+                let _ = cx.update_window(handle, |_, window, cx| {
+                    window.activate_window();
+                    workspace.update(cx, |ws, cx| {
+                        ws.open_os_notification_target(&target, window, cx);
+                    });
+                });
+            }
+        })
+        .detach();
+    }
+
     let shell = AppShell::from_parts(
         theme,
         background,

@@ -17,6 +17,17 @@ use labonair_settings::Settings as _;
 
 use crate::Workspace;
 
+const PANE_TARGET_PREFIX: &str = "pane:";
+
+/// OS-notification click target identifying a terminal pane.
+pub(crate) fn encode_pane_target(pane: crate::pane::PaneId) -> String {
+    format!("{PANE_TARGET_PREFIX}{pane}")
+}
+
+pub(crate) fn decode_pane_target(target: &str) -> Option<crate::pane::PaneId> {
+    target.strip_prefix(PANE_TARGET_PREFIX)?.parse().ok()
+}
+
 pub(crate) const OPEN_RESULT_ACTION: &str = "agent.open-result";
 
 /// Live agent state of one terminal pane.
@@ -145,7 +156,11 @@ impl Workspace {
             if notify {
                 let (title, body) = (agent.label(), "Finished its work");
                 if cx.active_window().is_none() {
-                    labonair_notifications::notify_os(title, body);
+                    labonair_notifications::notify_os_with_target(
+                        title,
+                        body,
+                        Some(&encode_pane_target(pane_id)),
+                    );
                 }
                 let center = labonair_notifications::notification_center(cx);
                 let notification_id = center.update(cx, |center, cx| {
@@ -175,5 +190,17 @@ impl Workspace {
         if changed {
             cx.notify();
         }
+    }
+}
+
+#[cfg(test)]
+mod target_tests {
+    use super::*;
+
+    #[test]
+    fn pane_target_roundtrips() {
+        assert_eq!(decode_pane_target(&encode_pane_target(42)), Some(42));
+        assert_eq!(decode_pane_target("file:/x"), None);
+        assert_eq!(decode_pane_target("pane:x"), None);
     }
 }

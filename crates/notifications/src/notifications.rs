@@ -14,12 +14,15 @@
 use std::time::{Duration, Instant};
 
 use gpui::{App, AppContext, Context, Entity, Global, SharedString};
+pub use labonair_notifications_core::TOAST_DURATION;
 pub use labonair_notifications_core::{NotificationAction, NotificationActionTarget};
 use labonair_notifications_core::{NotificationDraft, NotificationKind, NotificationRegistry};
 
+mod os_notify;
 mod status_item;
 mod toast_overlay;
 
+pub use os_notify::{notify_os_with_target, route_click, set_os_click_handler, ClickRoute};
 pub use status_item::{registration, NotificationsStatusItem};
 pub use toast_overlay::{registration as toast_overlay_registration, NotificationToastOverlay};
 
@@ -184,10 +187,10 @@ impl NotificationCenter {
     pub fn push(&mut self, notif: Notification, cx: &mut Context<Self>) -> Option<u64> {
         let toast_duration = notif.toast_duration;
         let id = self.insert(notif, Instant::now(), cx)?;
-        if let Some(duration) = toast_duration {
+        if toast_duration.is_some() {
             let center = cx.entity();
             cx.spawn(async move |_, cx| {
-                cx.background_executor().timer(duration).await;
+                cx.background_executor().timer(TOAST_DURATION).await;
                 let _ = center.update(cx, |center, cx| {
                     center.expire_toasts(Instant::now(), cx);
                 });
@@ -368,31 +371,9 @@ pub fn notification_center(cx: &App) -> Entity<NotificationCenter> {
     cx.global::<GlobalNotificationCenter>().0.clone()
 }
 
-/// Fire-and-forget native OS notification (macOS only for now). Title and body
-/// are passed to AppleScript as argv, never interpolated into the script.
+/// Fire-and-forget native OS notification without a click target.
 pub fn notify_os(title: &str, body: &str) {
-    #[cfg(target_os = "macos")]
-    {
-        use std::process::{Command, Stdio};
-        let _ = Command::new("osascript")
-            .args([
-                "-e",
-                "on run argv",
-                "-e",
-                "display notification (item 2 of argv) with title (item 1 of argv)",
-                "-e",
-                "end run",
-                title,
-                body,
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-    }
-    // ponytail: Linux/Windows native notifications not implemented.
-    #[cfg(not(target_os = "macos"))]
-    let _ = (title, body);
+    os_notify::notify_os_with_target(title, body, None);
 }
 
 /// Turns a `Result<T, String>` into a retained error notification.
