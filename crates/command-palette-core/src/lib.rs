@@ -90,7 +90,6 @@ pub enum CommandId {
     ToggleVimMode,
     ToggleHelixMode,
     OpenCommandPalette,
-    NewPreviewTab,
     PreviewImageZoomIn,
     PreviewImageZoomOut,
     PreviewImageResetZoom,
@@ -164,12 +163,6 @@ pub enum CommandId {
     EditorToggleSearchSelection,
     EditorToggleReadOnly,
     EditorTogglePreview,
-    EditorOpenMarkdownPreview,
-    EditorOpenPreviewToSide,
-    EditorOpenFollowingMarkdownPreview,
-    EditorOpenFollowingSvgPreview,
-    EditorOpenSvgPreview,
-    EditorOpenTabularPreview,
     EditorToggleBreadcrumb,
     EditorToggleInlayHints,
     EditorExpandEmmetAbbreviation,
@@ -643,7 +636,6 @@ impl CommandRegistry {
 const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::NewTerminalTab, "tab::NewTerminal"),
     (CommandId::NewEditorTab, "tab::NewEditor"),
-    (CommandId::NewPreviewTab, "tab::NewPreview"),
     (CommandId::PreviewImageZoomIn, "image_viewer::ZoomIn"),
     (CommandId::PreviewImageZoomOut, "image_viewer::ZoomOut"),
     (CommandId::PreviewImageResetZoom, "image_viewer::ResetZoom"),
@@ -780,24 +772,6 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     ),
     (CommandId::EditorToggleReadOnly, "editor.toggle-read-only"),
     (CommandId::EditorTogglePreview, "editor::TogglePreview"),
-    (
-        CommandId::EditorOpenMarkdownPreview,
-        "markdown::OpenPreview"
-    ),
-    (
-        CommandId::EditorOpenFollowingMarkdownPreview,
-        "markdown::OpenFollowingPreview",
-    ),
-    (
-        CommandId::EditorOpenPreviewToSide,
-        "editor.open-preview-to-side",
-    ),
-    (
-        CommandId::EditorOpenFollowingSvgPreview,
-        "svg::OpenFollowingPreview",
-    ),
-    (CommandId::EditorOpenSvgPreview, "svg::OpenPreview"),
-    (CommandId::EditorOpenTabularPreview, "tabular::OpenPreview"),
     (CommandId::EditorToggleBreadcrumb, "editor.toggle-breadcrumb"),
     (CommandId::EditorToggleInlayHints, "editor.toggle-inlay-hints"),
     (

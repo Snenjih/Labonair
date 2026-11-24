@@ -24,7 +24,6 @@ use crate::tabs::TabKind;
 pub enum PaneKind {
     Terminal,
     Editor,
-    Preview,
     Sftp,
     GitGraph,
     Diff,
@@ -36,10 +35,9 @@ pub enum PaneKind {
 
 impl PaneKind {
     /// Every kind, in a stable order (tests, menus).
-    pub const ALL: [PaneKind; 10] = [
+    pub const ALL: [PaneKind; 9] = [
         PaneKind::Terminal,
         PaneKind::Editor,
-        PaneKind::Preview,
         PaneKind::Sftp,
         PaneKind::GitGraph,
         PaneKind::Diff,
@@ -54,7 +52,6 @@ impl PaneKind {
         match self {
             PaneKind::Terminal => TabKind::Workspace,
             PaneKind::Editor => TabKind::Editor,
-            PaneKind::Preview => TabKind::Preview,
             PaneKind::Sftp => TabKind::Sftp,
             PaneKind::GitGraph => TabKind::GitGraph,
             PaneKind::Diff => TabKind::Diff,
@@ -104,7 +101,6 @@ impl From<TabKind> for PaneKind {
         match kind {
             TabKind::Workspace => PaneKind::Terminal,
             TabKind::Editor => PaneKind::Editor,
-            TabKind::Preview => PaneKind::Preview,
             TabKind::Sftp => PaneKind::Sftp,
             TabKind::GitGraph => PaneKind::GitGraph,
             TabKind::Diff => PaneKind::Diff,
@@ -289,12 +285,7 @@ mod tests {
             assert!(k.is_singleton(), "{k:?}");
             assert!(!k.can_split(), "{k:?}");
         }
-        for k in [
-            PaneKind::Terminal,
-            PaneKind::Editor,
-            PaneKind::Preview,
-            PaneKind::Sftp,
-        ] {
+        for k in [PaneKind::Terminal, PaneKind::Editor, PaneKind::Sftp] {
             assert!(!k.is_singleton(), "{k:?}");
             assert!(k.can_split(), "{k:?}");
         }

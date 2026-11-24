@@ -61,12 +61,6 @@ pub enum EditorUiCommand {
     NextSnippetTabstop,
     PreviousSnippetTabstop,
     TogglePreview,
-    OpenMarkdownPreview,
-    OpenPreviewToSide,
-    OpenFollowingMarkdownPreview,
-    OpenFollowingSvgPreview,
-    OpenSvgPreview,
-    OpenTabularPreview,
     ToggleBreadcrumb,
     ToggleInlayHints,
     Rewrap,
@@ -232,23 +226,7 @@ pub fn route_for_command(id: CommandId) -> Option<EditorCommandRoute> {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleSearchSelection)
         }
         CommandId::EditorToggleReadOnly => EditorCommandRoute::Ui(EditorUiCommand::ToggleReadOnly),
-        CommandId::EditorOpenMarkdownPreview => {
-            EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview)
-        }
         CommandId::EditorTogglePreview => EditorCommandRoute::Ui(EditorUiCommand::TogglePreview),
-        CommandId::EditorOpenPreviewToSide => {
-            EditorCommandRoute::Ui(EditorUiCommand::OpenPreviewToSide)
-        }
-        CommandId::EditorOpenFollowingMarkdownPreview => {
-            EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingMarkdownPreview)
-        }
-        CommandId::EditorOpenFollowingSvgPreview => {
-            EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingSvgPreview)
-        }
-        CommandId::EditorOpenSvgPreview => EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview),
-        CommandId::EditorOpenTabularPreview => {
-            EditorCommandRoute::Ui(EditorUiCommand::OpenTabularPreview)
-        }
         CommandId::EditorToggleBreadcrumb => {
             EditorCommandRoute::Ui(EditorUiCommand::ToggleBreadcrumb)
         }
@@ -410,12 +388,6 @@ pub const EXECUTABLE_EDITOR_COMMAND_IDS: &[CommandId] = &[
     CommandId::EditorToggleSearchSelection,
     CommandId::EditorToggleReadOnly,
     CommandId::EditorTogglePreview,
-    CommandId::EditorOpenMarkdownPreview,
-    CommandId::EditorOpenPreviewToSide,
-    CommandId::EditorOpenFollowingMarkdownPreview,
-    CommandId::EditorOpenFollowingSvgPreview,
-    CommandId::EditorOpenSvgPreview,
-    CommandId::EditorOpenTabularPreview,
     CommandId::EditorToggleBreadcrumb,
     CommandId::EditorToggleInlayHints,
     CommandId::EditorDeleteLine,
@@ -578,43 +550,6 @@ impl CommandProvider for EditorCommandProvider {
             .with_contexts(&[CommandContext::Editor])
             .with_aliases(&["preview", "markdown", "svg", "image"])
             .with_default_binding("cmd-shift-v", Some(CommandContext::Editor)),
-            CommandDescriptor::new(
-                CommandId::EditorOpenMarkdownPreview,
-                "Open Markdown Preview",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(
-                CommandId::EditorOpenPreviewToSide,
-                "Open Preview to the Side",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor])
-            .with_default_binding("cmd-k v", Some(CommandContext::Editor)),
-            CommandDescriptor::new(
-                CommandId::EditorOpenFollowingMarkdownPreview,
-                "Open Following Markdown Preview",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(
-                CommandId::EditorOpenFollowingSvgPreview,
-                "Open Following SVG Preview",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(
-                CommandId::EditorOpenSvgPreview,
-                "Open SVG Preview",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor]),
-            CommandDescriptor::new(
-                CommandId::EditorOpenTabularPreview,
-                "Open Table Preview",
-                "Editor",
-            )
-            .with_contexts(&[CommandContext::Editor]),
             CommandDescriptor::new(
                 CommandId::EditorChangeLanguage,
                 "Change Language Mode…",
@@ -1294,99 +1229,6 @@ mod tests {
         assert_eq!(
             route_for_command(CommandId::EditorTogglePreview),
             Some(EditorCommandRoute::Ui(EditorUiCommand::TogglePreview))
-        );
-    }
-
-    #[test]
-    fn preview_to_side_is_editor_owned_and_uses_the_chord_binding() {
-        let command = EditorCommandProvider
-            .commands()
-            .into_iter()
-            .find(|command| command.id == CommandId::EditorOpenPreviewToSide)
-            .expect("Preview to the Side descriptor");
-
-        assert_eq!(command.title, "Open Preview to the Side");
-        assert_eq!(command.id.action_name(), "editor.open-preview-to-side");
-        assert_eq!(command.default_bindings[0].keystrokes, "cmd-k v");
-        assert_eq!(
-            command.default_bindings[0].context,
-            Some(CommandContext::Editor)
-        );
-        assert_eq!(
-            route_for_command(CommandId::EditorOpenPreviewToSide),
-            Some(EditorCommandRoute::Ui(EditorUiCommand::OpenPreviewToSide))
-        );
-    }
-
-    #[test]
-    fn svg_preview_is_an_editor_owned_command() {
-        let command = EditorCommandProvider
-            .commands()
-            .into_iter()
-            .find(|command| command.id == CommandId::EditorOpenSvgPreview)
-            .expect("SVG Preview descriptor");
-
-        assert_eq!(command.title, "Open SVG Preview");
-        assert_eq!(command.id.action_name(), "svg::OpenPreview");
-        assert!(command.default_bindings.is_empty());
-        assert_eq!(
-            route_for_command(CommandId::EditorOpenSvgPreview),
-            Some(EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview))
-        );
-    }
-
-    #[test]
-    fn tabular_preview_is_an_editor_owned_command() {
-        let command = EditorCommandProvider
-            .commands()
-            .into_iter()
-            .find(|command| command.id == CommandId::EditorOpenTabularPreview)
-            .expect("table Preview descriptor");
-
-        assert_eq!(command.title, "Open Table Preview");
-        assert_eq!(command.id.action_name(), "tabular::OpenPreview");
-        assert!(command.default_bindings.is_empty());
-        assert_eq!(
-            route_for_command(CommandId::EditorOpenTabularPreview),
-            Some(EditorCommandRoute::Ui(EditorUiCommand::OpenTabularPreview))
-        );
-    }
-
-    #[test]
-    fn following_markdown_preview_is_an_editor_owned_command() {
-        let command = EditorCommandProvider
-            .commands()
-            .into_iter()
-            .find(|command| command.id == CommandId::EditorOpenFollowingMarkdownPreview)
-            .expect("Following Markdown Preview descriptor");
-
-        assert_eq!(command.title, "Open Following Markdown Preview");
-        assert_eq!(command.id.action_name(), "markdown::OpenFollowingPreview");
-        assert!(command.default_bindings.is_empty());
-        assert_eq!(
-            route_for_command(CommandId::EditorOpenFollowingMarkdownPreview),
-            Some(EditorCommandRoute::Ui(
-                EditorUiCommand::OpenFollowingMarkdownPreview
-            ))
-        );
-    }
-
-    #[test]
-    fn following_svg_preview_is_an_editor_owned_command() {
-        let command = EditorCommandProvider
-            .commands()
-            .into_iter()
-            .find(|command| command.id == CommandId::EditorOpenFollowingSvgPreview)
-            .expect("Following SVG Preview descriptor");
-
-        assert_eq!(command.title, "Open Following SVG Preview");
-        assert_eq!(command.id.action_name(), "svg::OpenFollowingPreview");
-        assert!(command.default_bindings.is_empty());
-        assert_eq!(
-            route_for_command(CommandId::EditorOpenFollowingSvgPreview),
-            Some(EditorCommandRoute::Ui(
-                EditorUiCommand::OpenFollowingSvgPreview
-            ))
         );
     }
 

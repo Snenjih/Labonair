@@ -204,7 +204,7 @@ mod tests {
     fn untitled_panes_fall_back_to_the_kind_label() {
         let mut s = PaneMetaStore::new();
         s.insert(1, PaneMeta::new(PaneKind::Terminal));
-        s.insert(2, PaneMeta::new(PaneKind::Preview));
+        s.insert(2, PaneMeta::new(PaneKind::Sftp));
         assert_eq!(group_label(&[1, 2], &s, Some(1), None).title, "Terminal +1");
     }
 

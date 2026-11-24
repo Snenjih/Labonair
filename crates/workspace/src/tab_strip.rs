@@ -225,7 +225,6 @@ pub(crate) fn kind_tile(kind: TabKind, ssh: bool) -> TabTileSpec {
         TabKind::Workspace if ssh => TabTileSpec::ssh(),
         TabKind::Workspace => TabTileSpec::terminal(),
         TabKind::Editor => TabTileSpec::editor(),
-        TabKind::Preview => TabTileSpec::preview(),
         TabKind::AiDiff => TabTileSpec::ai_diff(),
         TabKind::Sftp => TabTileSpec::sftp(),
         TabKind::GitGraph => TabTileSpec::git_graph(),
@@ -982,18 +981,6 @@ impl Workspace {
                         v.update(cx, |this, cx| {
                             this.close_new_tab_menu(cx);
                             this.new_editor_tab(w, cx)
-                        })
-                    }
-                }),
-            MenuItem::new("nt-preview", "Preview")
-                .icon(IconName::Globe)
-                .keybind(["\u{2318}", "\u{21E7}", "P"])
-                .on_click({
-                    let v = view.clone();
-                    move |_, w, cx| {
-                        v.update(cx, |this, cx| {
-                            this.close_new_tab_menu(cx);
-                            this.new_preview_tab(w, cx)
                         })
                     }
                 }),

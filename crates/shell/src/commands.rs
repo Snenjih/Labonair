@@ -241,7 +241,6 @@ pub(crate) fn attach_action_handlers(
     on!(menu::OpenProject => CommandId::OpenProject);
     on!(menu::ReturnToStandalone => CommandId::ReturnToStandalone);
     on!(menu::NewEditorTab => CommandId::NewEditorTab);
-    on!(menu::NewPreviewTab => CommandId::NewPreviewTab);
     on!(menu::NewSshTab => CommandId::NewSshTab);
     on!(menu::NewSftpTab => CommandId::NewSftpTab);
     on!(menu::OpenHosts => CommandId::OpenHosts);

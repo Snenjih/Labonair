@@ -161,7 +161,6 @@ fn palette_toggle_state(key: &str, cx: &App) -> bool {
 pub enum PaletteTabKind {
     Workspace,
     Editor,
-    Preview,
     Diff,
     Sftp,
     Home,
@@ -410,7 +409,6 @@ pub fn context_of(kind: PaletteTabKind, is_ssh: bool) -> Option<CommandContext> 
         PaletteTabKind::Workspace if is_ssh => CommandContext::SshTerminal,
         PaletteTabKind::Workspace => CommandContext::Terminal,
         PaletteTabKind::Editor => CommandContext::Editor,
-        PaletteTabKind::Preview => CommandContext::Preview,
         PaletteTabKind::Diff => CommandContext::Diff,
         PaletteTabKind::Sftp => CommandContext::Sftp,
         PaletteTabKind::Home => CommandContext::Home,
@@ -1766,10 +1764,6 @@ mod tests {
         assert_eq!(
             context_of(PaletteTabKind::Editor, false),
             Some(CommandContext::Editor)
-        );
-        assert_eq!(
-            context_of(PaletteTabKind::Preview, false),
-            Some(CommandContext::Preview)
         );
         assert_eq!(context_of(PaletteTabKind::Other, false), None);
     }

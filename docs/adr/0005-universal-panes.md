@@ -31,7 +31,7 @@ close) shared across kinds.
    (shared buffer, independent selections, scroll, and folds). The
    `EditorSplitTree` domain, its `editor.*` split commands, and the
    "Editor group N · preview" mirrors are replaced by the generic `pane::*`
-   commands. Preview and Markdown side panes become sibling Preview panes.
+   commands. Preview and Markdown side panes become sibling Preview panes (superseded by [ADR 0015](0015-preview-merged-into-editor.md): previews are an Editor content form).
 4. The pane bar is generic shared chrome in `labonair-ui-kit` (icon, title,
    leading/trailing slots, split horizontal, split vertical, zoom, close). It
    knows no tab kinds. It is not new permanent shell chrome: it is part of the

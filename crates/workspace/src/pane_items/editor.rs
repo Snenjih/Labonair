@@ -10,11 +10,7 @@ use gpui::{AnyElement, App, Context, IntoElement, SharedString, Styled, Window};
 
 use super::{EditorBinding, PaneSpec, SplitCloneError};
 use crate::pane::PaneId;
-use crate::views::preview::PreviewView;
-use crate::EditorSidePreviewKind;
 use crate::Workspace;
-use gpui::AppContext;
-use labonair_editor_ui::EditorSidePreviewContent;
 
 impl Workspace {
     pub(super) fn editor_pane_spec(&self, pane: PaneId, cx: &App, spec: &mut PaneSpec) {
@@ -123,23 +119,6 @@ impl Workspace {
         if let Some(editor) = self.editors.remove(&slot) {
             editor.update(cx, |editor, _cx| editor.prepare_for_close());
         }
-        self.editor_side_previews.remove(&slot);
-        if self.following_markdown_preview == Some(slot) {
-            self.following_markdown_preview = None;
-            self.following_markdown_editor = None;
-        } else if self.following_markdown_editor == Some(slot) {
-            self.following_markdown_editor = None;
-        }
-        if self.following_svg_preview == Some(slot) {
-            self.following_svg_preview = None;
-            self.following_svg_editor = None;
-        } else if self.following_svg_editor == Some(slot) {
-            self.following_svg_editor = None;
-        }
-        self.markdown_previews.remove(&slot);
-        self.markdown_previews.retain(|_, source| *source != slot);
-        self.svg_previews.remove(&slot);
-        self.svg_previews.retain(|_, source| *source != slot);
         if let Some(re) = self.remote_edits.remove(&slot) {
             let temp = re.temp_path;
             let service = self.ssh_remote_file.clone();
@@ -164,78 +143,6 @@ impl Workspace {
             if let Some(layout) = self.layouts.get_mut(&tab) {
                 layout.set_active(pane);
             }
-        }
-        cx.notify();
-    }
-
-    /// `Open Preview to the Side`: show the preview in a Preview pane right
-    /// of the editor's pane (reused while it still exists).
-    pub(crate) fn open_editor_preview_to_side(
-        &mut self,
-        slot: u64,
-        content: EditorSidePreviewContent,
-        cx: &mut Context<Self>,
-    ) {
-        let kind = match &content {
-            EditorSidePreviewContent::Markdown(_) => EditorSidePreviewKind::Markdown,
-            EditorSidePreviewContent::Svg(_) => EditorSidePreviewKind::Svg,
-            EditorSidePreviewContent::Tabular(_) => EditorSidePreviewKind::Tabular,
-        };
-        let existing = self
-            .editor_side_previews
-            .get(&slot)
-            .map(|(pane, _)| *pane)
-            .filter(|pane| self.previews.contains_key(pane) && self.tab_of_pane(*pane).is_some());
-        let preview_pane = match existing {
-            Some(pane) => pane,
-            None => {
-                let Some(source) = self
-                    .layouts
-                    .values()
-                    .flat_map(|l| l.leaves())
-                    .find(|p| self.editor_slot_of_pane(*p) == Some(slot))
-                else {
-                    return;
-                };
-                let Some(tab) = self.tab_of_pane(source) else {
-                    return;
-                };
-                let Some(mut candidate) = self.layouts.get(&tab).cloned() else {
-                    return;
-                };
-                let (_, metrics) = self.pane_style(cx);
-                let new_id = crate::pane::next_id();
-                let mut alloc = crate::pane::next_id;
-                let placed = crate::tiling::try_split(
-                    &mut candidate,
-                    source,
-                    new_id,
-                    crate::pane::SplitDirection::Right,
-                    &mut alloc,
-                    self.pane_container_px(),
-                    &metrics,
-                );
-                if placed.is_err() {
-                    self.notify_pane_problem(
-                        "No room for the preview",
-                        "A pane needs at least 240 x 120 px. Close a pane or enlarge the window.",
-                        cx,
-                    );
-                    return;
-                }
-                let theme = self.theme.clone();
-                let view = cx.new(|cx| PreviewView::new(theme, cx));
-                self.previews.insert(new_id, view);
-                self.register_pane(new_id, crate::pane_kind::PaneKind::Preview);
-                self.layouts.insert(tab, candidate);
-                self.zoom.clear(tab);
-                self.sync_tab_kind(tab, cx);
-                new_id
-            }
-        };
-        self.editor_side_previews.insert(slot, (preview_pane, kind));
-        if let Some(preview) = self.previews.get(&preview_pane).cloned() {
-            Self::set_editor_side_preview_content(&preview, content, cx);
         }
         cx.notify();
     }

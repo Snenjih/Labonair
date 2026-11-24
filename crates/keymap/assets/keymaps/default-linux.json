@@ -12,7 +12,6 @@
       "ctrl-p": "command_palette::Toggle",
       "ctrl-shift-/": "settings::OpenShortcuts",
       "ctrl-t": "tab::NewTerminal",
-      "ctrl-shift-p": "tab::NewPreview",
       "ctrl-e": "tab::NewEditor",
       "ctrl-w": "tab::Close",
       "ctrl-tab": "tab::Next",

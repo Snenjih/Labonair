@@ -103,21 +103,9 @@ pub enum EditorEvent {
     ProjectDiagnosticsRefreshRequested,
     /// The user made their first edit — a peek tab should become permanent.
     Edited,
-    /// A Markdown preview should open for this exact immutable source revision.
-    MarkdownPreviewRequested(EditorBufferSnapshot),
-    /// A following Markdown preview should bind to this Editor tab and revision.
-    MarkdownFollowingPreviewRequested(EditorBufferSnapshot),
-    /// An SVG preview should bind to this immutable editor revision.
-    SvgPreviewRequested(EditorBufferSnapshot),
-    /// A single SVG preview should follow whichever Editor tab was last active.
-    SvgFollowingPreviewRequested(EditorBufferSnapshot),
-    /// Open a native preview in a Preview pane beside the editor's pane.
-    PreviewToSideRequested { content: EditorSidePreviewContent },
     /// A different group of this editor took focus (a mirror pane was
     /// clicked); the Workspace moves its active pane to the group's pane.
     GroupFocused(labonair_editor::EditorGroupId),
-    /// A delimited text preview should open for this file in the Workspace preview host.
-    TabularPreviewRequested(PathBuf),
     /// The content or file identity of an editor buffer changed.
     BufferChanged(EditorBufferSnapshot),
     /// Vim `:q` / `:wq` — the hosting workspace should close this editor's tab.
@@ -140,14 +128,6 @@ pub struct EditorBufferSnapshot {
     pub path: Option<PathBuf>,
     pub language: Language,
     pub snapshot: BufferSnapshot,
-}
-
-/// Preview payloads accepted by the Editor's adjacent split pane.
-#[derive(Clone, Debug)]
-pub enum EditorSidePreviewContent {
-    Markdown(EditorBufferSnapshot),
-    Svg(EditorBufferSnapshot),
-    Tabular(EditorBufferSnapshot),
 }
 
 /// Editor-owned query and match state shared by the workspace search overlay
@@ -2223,15 +2203,6 @@ impl EditorView {
                 }
                 self.ensure_cursor_visible(cx);
                 cx.notify();
-            }
-            EditorCommandRoute::Ui(EditorUiCommand::OpenMarkdownPreview)
-            | EditorCommandRoute::Ui(EditorUiCommand::OpenPreviewToSide)
-            | EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingMarkdownPreview)
-            | EditorCommandRoute::Ui(EditorUiCommand::OpenFollowingSvgPreview)
-            | EditorCommandRoute::Ui(EditorUiCommand::OpenSvgPreview)
-            | EditorCommandRoute::Ui(EditorUiCommand::OpenTabularPreview) => {
-                // Legacy "open preview" commands now switch this tab to Preview mode.
-                self.set_view_mode(ViewMode::Preview, cx);
             }
             EditorCommandRoute::Ui(EditorUiCommand::TogglePreview) => {
                 let next = match self.view_mode {

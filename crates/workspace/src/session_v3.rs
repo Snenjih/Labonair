@@ -62,9 +62,13 @@ pub struct EditorPaneState {
     /// Editor-owned view/session payload (opaque to the workspace).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<labonair_editor::EditorSessionSnapshot>,
+    /// The tab was showing its Preview content form (ADR 0015).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub preview: bool,
 }
 
-/// Persisted state of a preview pane.
+/// Legacy wire payload of the removed Preview pane kind. Read only, to migrate
+/// saved sessions (ADR 0015); never written.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewPaneState {
@@ -86,7 +90,6 @@ pub struct SftpPaneState {
 pub enum PaneState {
     Terminal(PaneSessionSnapshot),
     Editor(EditorPaneState),
-    Preview(PreviewPaneState),
     Sftp(SftpPaneState),
 }
 
@@ -100,7 +103,6 @@ impl PaneState {
         match self {
             PaneState::Terminal(_) => PaneKind::Terminal,
             PaneState::Editor(_) => PaneKind::Editor,
-            PaneState::Preview(_) => PaneKind::Preview,
             PaneState::Sftp(_) => PaneKind::Sftp,
         }
     }
@@ -115,7 +117,6 @@ impl PaneState {
                 t.kind == PaneSessionKind::Local || t.host_id.as_deref().is_some_and(non_empty)
             }
             PaneState::Editor(e) => non_empty(&e.path),
-            PaneState::Preview(p) => non_empty(&p.url),
             PaneState::Sftp(s) => non_empty(&s.host_id),
         }
     }
@@ -125,7 +126,6 @@ impl PaneState {
         let (kind, state) = match self {
             PaneState::Terminal(t) => (KIND_TERMINAL, serde_json::to_value(t)),
             PaneState::Editor(e) => (KIND_EDITOR, serde_json::to_value(e)),
-            PaneState::Preview(p) => (KIND_PREVIEW, serde_json::to_value(p)),
             PaneState::Sftp(s) => (KIND_SFTP, serde_json::to_value(s)),
         };
         Some(SerializedPane {
@@ -155,7 +155,9 @@ impl SerializedPane {
         let parsed = match self.kind.as_str() {
             KIND_TERMINAL => PaneState::Terminal(serde_json::from_value(state).ok()?),
             KIND_EDITOR => PaneState::Editor(serde_json::from_value(state).ok()?),
-            KIND_PREVIEW => PaneState::Preview(serde_json::from_value(state).ok()?),
+            KIND_PREVIEW => {
+                migrate_legacy_preview(serde_json::from_value::<PreviewPaneState>(state).ok()?)?
+            }
             KIND_SFTP => PaneState::Sftp(serde_json::from_value(state).ok()?),
             _ => return None,
         };
@@ -419,20 +421,19 @@ struct RestoreCtx<'a> {
     dropped: usize,
 }
 
-/// ADR 0015: a persisted Preview pane for a local file is restored as an
-/// Editor pane (which reopens previewable files in Preview mode). URLs stay
-/// legacy Preview panes until the Preview pane kind is removed.
-fn migrate_preview_pane(state: PaneState) -> PaneState {
-    match state {
-        PaneState::Preview(p) if !p.url.is_empty() && !p.url.contains("://") => {
-            PaneState::Editor(EditorPaneState {
-                path: p.url,
-                cwd: None,
-                state: None,
-            })
-        }
-        other => other,
-    }
+/// ADR 0015: a saved Preview pane for a local file is restored as an Editor
+/// pane (which reopens previewable files in Preview mode). A saved URL
+/// preview has no equivalent and is dropped.
+fn migrate_legacy_preview(p: PreviewPaneState) -> Option<PaneState> {
+    let url = p.url.trim();
+    (!url.is_empty() && !url.contains("://")).then(|| {
+        PaneState::Editor(EditorPaneState {
+            path: url.to_string(),
+            cwd: None,
+            state: None,
+            preview: true,
+        })
+    })
 }
 
 fn restore_node(node: &SerializedNode, depth: usize, cx: &mut RestoreCtx<'_>) -> Option<Member> {
@@ -441,11 +442,7 @@ fn restore_node(node: &SerializedNode, depth: usize, cx: &mut RestoreCtx<'_>) ->
         return None;
     }
     match node {
-        SerializedNode::Pane { id, pane } => match pane
-            .parse()
-            .map(migrate_preview_pane)
-            .filter(|s| (cx.keep)(s))
-        {
+        SerializedNode::Pane { id, pane } => match pane.parse().filter(|s| (cx.keep)(s)) {
             Some(state) => {
                 let new = (cx.alloc)();
                 cx.remap.push((*id, new));
@@ -638,11 +635,14 @@ pub fn migrate_tab(tab: &TabSnapshot) -> Option<PaneGroupSnapshot> {
                 path: e.path.clone(),
                 cwd: None,
                 state: e.state.clone(),
+                preview: false,
             }))?,
         }),
         TabSnapshot::Preview(p) => Some(PaneGroupSnapshot {
             title: None,
-            tree: single_leaf(PaneState::Preview(PreviewPaneState { url: p.url.clone() }))?,
+            tree: single_leaf(migrate_legacy_preview(PreviewPaneState {
+                url: p.url.clone(),
+            })?)?,
         }),
         TabSnapshot::Sftp(s) => Some(PaneGroupSnapshot {
             title: None,
@@ -801,7 +801,7 @@ mod tests {
                     state: None,
                 }),
                 TabSnapshot::Preview(PreviewTabSnapshot {
-                    url: "https://x".into(),
+                    url: "/notes/a.md".into(),
                 }),
                 TabSnapshot::Sftp(SftpTabSnapshot {
                     host_id: "host-1".into(),
@@ -853,7 +853,7 @@ mod tests {
     }
 
     #[test]
-    fn editor_preview_and_sftp_tabs_become_single_leaves() {
+    fn editor_legacy_preview_and_sftp_tabs_become_single_leaves() {
         let s = migrate_session(&v2_session());
         // Home dropped; the active v2 tab (editor, index 2) is now index 1.
         assert_eq!(s.tabs.len(), 4);
@@ -872,7 +872,7 @@ mod tests {
             vec![
                 PaneKind::Terminal,
                 PaneKind::Editor,
-                PaneKind::Preview,
+                PaneKind::Editor,
                 PaneKind::Sftp
             ]
         );
@@ -1099,6 +1099,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn old_session_json_with_preview_panes_restores_files_and_drops_urls() {
+        let raw = r#"{"root":{"type":"axis","axis":"horizontal","flexes":[0.5,0.25,0.25],
+            "members":[
+              {"type":"pane","id":1,"kind":"preview","state":{"url":"/tmp/pic.png"}},
+              {"type":"pane","id":2,"kind":"preview","state":{"url":"https://example.com/a.html"}},
+              {"type":"pane","id":3,"kind":"preview","state":{}}]},
+            "active":1}"#;
+        let tree: SerializedTree = serde_json::from_str(raw).expect("old tree parses");
+        let r = restore_tree(&tree, &mut counter(0), &keep_all);
+        assert_eq!(r.panes.len(), 1);
+        assert_eq!(r.dropped, 2);
+        match &r.panes[0].1 {
+            PaneState::Editor(e) => assert_eq!(e.path, "/tmp/pic.png"),
+            other => panic!("{other:?}"),
+        }
+    }
+
     fn editor(id: PaneId, path: &str) -> SerializedNode {
         pane(id, "editor", serde_json::json!({ "path": path }))
     }
@@ -1260,6 +1278,7 @@ mod tests {
                 path: format!("/f{id}.rs"),
                 cwd: None,
                 state: None,
+                preview: false,
             })),
             _ => None,
         };

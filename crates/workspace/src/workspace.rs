@@ -152,7 +152,6 @@ use crate::ssh_connection::{
 };
 use crate::tabs::{Tab, TabData, TabDiagnosticStatus, TabGitStatus, TabKind, TabStore};
 use crate::theme::ThemeStore;
-use crate::views::preview::{PreviewImageAction, PreviewView};
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
@@ -163,7 +162,8 @@ use labonair_editor::{
     ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, Revision, SearchError,
     SearchQuery, TextRange,
 };
-use labonair_editor_ui::{EditorBufferSnapshot, EditorEvent, EditorSidePreviewContent, EditorView};
+use labonair_editor_ui::PreviewImageAction;
+use labonair_editor_ui::{EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
 use labonair_hosts_ui::HostManagerView;
@@ -636,13 +636,6 @@ impl Render for DragGhost {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum EditorSidePreviewKind {
-    Markdown,
-    Svg,
-    Tabular,
-}
-
 /// One pane's backing session + content view.
 pub(crate) struct PaneEntry {
     pub(crate) session_id: SessionId,
@@ -813,21 +806,6 @@ pub struct Workspace {
     pub(crate) project_search_task: Option<Task<()>>,
     /// SFTP browser view per `Sftp` tab id (T08-001).
     pub(crate) sftp_views: HashMap<u64, Entity<SftpView>>,
-    /// Native preview view per `Preview` tab id (T15-006 — WebView replacement).
-    pub(crate) previews: HashMap<u64, Entity<PreviewView>>,
-    /// Preview tabs that follow edits from their source editor tab.
-    pub(crate) markdown_previews: HashMap<u64, u64>,
-    /// SVG preview tabs that follow edits from their source editor tab.
-    pub(crate) svg_previews: HashMap<u64, u64>,
-    /// Preview pane opened beside an editor document (`Open Preview to the
-    /// Side`), keyed by the editor slot; the view lives in `previews`.
-    pub(crate) editor_side_previews: HashMap<u64, (PaneId, EditorSidePreviewKind)>,
-    /// Single preview tab that follows whichever editor was last activated.
-    pub(crate) following_markdown_preview: Option<u64>,
-    pub(crate) following_markdown_editor: Option<u64>,
-    /// Single SVG preview tab that follows whichever editor was last activated.
-    pub(crate) following_svg_preview: Option<u64>,
-    pub(crate) following_svg_editor: Option<u64>,
     /// The shared commit-graph view, lazily created for the `GitGraph` tab.
     pub(crate) git_graph: Option<Entity<GitGraphView>>,
     /// The keymap-management view, lazily created for the single `Keymap` tab.
@@ -882,7 +860,6 @@ pub struct Workspace {
     pub(crate) pending_sftp: Vec<String>,
     /// File-open requests queued by SFTP views, drained in `render`.
     pub(crate) pending_open: Vec<PendingOpen>,
-    pub(crate) pending_preview_focus: bool,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
     pub(crate) confirm_close: Option<u64>,
     /// Remaining tabs in a confirmed close-left/right/others/all operation.
@@ -1055,12 +1032,6 @@ impl Workspace {
         cx.subscribe(&tabs, |this, _, ev: &crate::tabs::ActiveTabChanged, cx| {
             if let Some(editor) = this.editors.get(&this.editor_slot_for_tab(ev.0)).cloned() {
                 editor.update(cx, |e, cx| e.check_external(cx));
-                if this.following_markdown_preview.is_some() {
-                    this.update_following_markdown_preview_for_editor(ev.0, cx);
-                }
-                if this.following_svg_preview.is_some() {
-                    this.update_following_svg_preview_for_editor(ev.0, cx);
-                }
             }
             // Keep the active space's "resume here" tab current live, so a
             // later `switch_space` away and back lands on the right tab
@@ -1197,10 +1168,6 @@ impl Workspace {
             project_search_owner: None,
             project_search_task: None,
             sftp_views: HashMap::new(),
-            previews: HashMap::new(),
-            markdown_previews: HashMap::new(),
-            svg_previews: HashMap::new(),
-            editor_side_previews: HashMap::new(),
             pane_meta: crate::pane_kind::PaneMetaStore::new(),
             explorer_modes: HashMap::new(),
             explorer_sticky: std::cell::RefCell::new(None),
@@ -1212,10 +1179,6 @@ impl Workspace {
             pane_dnd: crate::pane_drop::PaneDnd::default(),
             tab_hover: crate::tab_hover::TabHover::default(),
             pane_area: std::rc::Rc::new(std::cell::Cell::new(None)),
-            following_markdown_preview: None,
-            following_markdown_editor: None,
-            following_svg_preview: None,
-            following_svg_editor: None,
             git_graph: None,
             keymap: None,
             onboarding: None,
@@ -1235,7 +1198,6 @@ impl Workspace {
             remote_edits: HashMap::new(),
             pending_sftp: Vec::new(),
             pending_open: Vec::new(),
-            pending_preview_focus: false,
             confirm_close: None,
             pending_close: VecDeque::new(),
             context_menu: MenuSlot::new(),
@@ -3068,24 +3030,14 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
-    /// File ▸ New Preview Tab — an empty native preview pane (the WebView
-    /// replacement). Opens the address bar ready for a path or URL.
-    pub fn new_preview_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let tab_id = self
-            .tabs
-            .update(cx, |s, cx| s.open(TabKind::Preview, TabData::default(), cx));
-        let theme = self.theme.clone();
-        let view = cx.new(|cx| PreviewView::new(theme, cx));
-        self.previews.insert(tab_id, view);
-        self.focus_active(window, cx);
-    }
-
-    /// Open `target` (a local path or URL) in a preview tab, reusing the active
-    /// preview tab if one is already open.
+    /// Open `target` in the Editor in Preview mode when its type has a preview
+    /// (ADR 0015). URLs open in the system browser.
     pub fn open_preview(&mut self, target: String, window: &mut Window, cx: &mut Context<Self>) {
-        // Local files open in the editor (Preview mode when the type has one,
-        // ADR 0015). Only URLs still reach the legacy Preview pane.
-        if !target.contains("://") {
+        if target.contains("://") {
+            cx.open_url(&target);
+            return;
+        }
+        {
             self.open_file(target.clone(), false, window, cx);
             let path = std::path::PathBuf::from(&target);
             if let Some(editor) = self
@@ -3100,58 +3052,6 @@ impl Workspace {
                     }
                 });
             }
-            return;
-        }
-        self.activate_preview_target(target, cx);
-        self.focus_active(window, cx);
-    }
-
-    fn activate_preview_target(&mut self, target: String, cx: &mut Context<Self>) {
-        let anchor = self.anchor_dir(Some(target.as_str()).filter(|t| !t.contains("://")), cx);
-        let title = std::path::Path::new(&target)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| target.clone());
-
-        let existing = self
-            .tabs
-            .read(cx)
-            .tabs_by_kind(TabKind::Preview)
-            .first()
-            .map(|t| t.id);
-
-        let tab_id = if let Some(tab_id) = existing {
-            self.tabs.update(cx, |s, cx| {
-                s.set_custom_title(tab_id, Some(title.clone()), cx);
-                s.set_url(tab_id, Some(target.clone()), cx);
-                s.set_active(tab_id, cx);
-            });
-            tab_id
-        } else {
-            let tab_id = self.tabs.update(cx, |s, cx| {
-                let id = s.open(
-                    TabKind::Preview,
-                    TabData {
-                        url: Some(target.clone()),
-                        ..TabData::default()
-                    },
-                    cx,
-                );
-                s.set_custom_title(id, Some(title.clone()), cx);
-                id
-            });
-            let theme = self.theme.clone();
-            let view = cx.new(|cx| PreviewView::new(theme, cx));
-            self.previews.insert(tab_id, view);
-            tab_id
-        };
-
-        self.set_pane_anchor(tab_id, anchor);
-        self.markdown_previews
-            .retain(|_, preview_tab_id| *preview_tab_id != tab_id);
-        if let Some(view) = self.previews.get(&tab_id).cloned() {
-            view.update(cx, |p, cx| p.set_url(target, cx));
         }
     }
 
@@ -3174,475 +3074,6 @@ impl Workspace {
                 )
             });
         }
-        let Some(tab_id) = self
-            .tabs
-            .read(cx)
-            .active()
-            .filter(|tab| tab.kind == TabKind::Preview)
-            .map(|tab| tab.id)
-        else {
-            return;
-        };
-        let Some(preview) = self.previews.get(&tab_id).cloned() else {
-            return;
-        };
-        let viewport = window.viewport_size();
-        preview.update(cx, |preview, cx| {
-            preview.perform_image_action(
-                action,
-                f32::from(viewport.width),
-                f32::from(viewport.height),
-                cx,
-            )
-        });
-    }
-
-    /// Open the Editor-owned Markdown buffer in a Workspace preview tab. The
-    /// preview keeps following that editor tab through subsequent revisions.
-    fn open_markdown_preview_for_editor(
-        &mut self,
-        editor_tab_id: u64,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        let target = source
-            .path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled.md".to_string());
-        let name = source
-            .path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled");
-        let title = format!("{name} Preview");
-        let existing = self
-            .markdown_previews
-            .get(&editor_tab_id)
-            .copied()
-            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
-
-        let preview_tab_id = if let Some(preview_tab_id) = existing {
-            self.tabs.update(cx, |tabs, cx| {
-                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
-                tabs.set_url(preview_tab_id, Some(target.clone()), cx);
-                tabs.set_active(preview_tab_id, cx);
-            });
-            preview_tab_id
-        } else {
-            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
-                let preview_tab_id = tabs.open(
-                    TabKind::Preview,
-                    TabData {
-                        url: Some(target.clone()),
-                        ..TabData::default()
-                    },
-                    cx,
-                );
-                tabs.set_custom_title(preview_tab_id, Some(title), cx);
-                tabs.set_active(preview_tab_id, cx);
-                preview_tab_id
-            });
-            let theme = self.theme.clone();
-            let view = cx.new(|cx| PreviewView::new(theme, cx));
-            self.previews.insert(preview_tab_id, view);
-            self.markdown_previews.insert(editor_tab_id, preview_tab_id);
-            preview_tab_id
-        };
-
-        if let Some(view) = self.previews.get(&preview_tab_id).cloned() {
-            let language = source.language;
-            let path = source.path;
-            let snapshot = source.snapshot;
-            view.update(cx, |preview, cx| {
-                preview.set_editor_source(path, language, snapshot, cx)
-            });
-        }
-        self.pending_preview_focus = true;
-        cx.notify();
-    }
-
-    fn open_svg_preview_for_editor(
-        &mut self,
-        editor_tab_id: u64,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        let target = source
-            .path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled.svg".to_string());
-        let name = source
-            .path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled");
-        let title = format!("{name} Preview");
-        let existing = self
-            .svg_previews
-            .get(&editor_tab_id)
-            .copied()
-            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
-
-        let preview_tab_id = if let Some(preview_tab_id) = existing {
-            self.tabs.update(cx, |tabs, cx| {
-                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
-                tabs.set_url(preview_tab_id, Some(target.clone()), cx);
-                tabs.set_active(preview_tab_id, cx);
-            });
-            preview_tab_id
-        } else {
-            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
-                let preview_tab_id = tabs.open(
-                    TabKind::Preview,
-                    TabData {
-                        url: Some(target.clone()),
-                        ..TabData::default()
-                    },
-                    cx,
-                );
-                tabs.set_custom_title(preview_tab_id, Some(title), cx);
-                tabs.set_active(preview_tab_id, cx);
-                preview_tab_id
-            });
-            let theme = self.theme.clone();
-            let view = cx.new(|cx| PreviewView::new(theme, cx));
-            self.previews.insert(preview_tab_id, view);
-            self.svg_previews.insert(editor_tab_id, preview_tab_id);
-            preview_tab_id
-        };
-
-        if let Some(view) = self.previews.get(&preview_tab_id).cloned() {
-            view.update(cx, |preview, cx| {
-                preview.set_editor_svg_source(source.path, source.snapshot, cx)
-            });
-        }
-        self.pending_preview_focus = true;
-        cx.notify();
-    }
-
-    fn set_editor_side_preview_content(
-        preview: &Entity<PreviewView>,
-        content: EditorSidePreviewContent,
-        cx: &mut Context<Self>,
-    ) {
-        preview.update(cx, |preview, cx| match content {
-            EditorSidePreviewContent::Markdown(source) => {
-                preview.set_editor_source(source.path, source.language, source.snapshot, cx)
-            }
-            EditorSidePreviewContent::Svg(source) => {
-                preview.set_editor_svg_source(source.path, source.snapshot, cx)
-            }
-            EditorSidePreviewContent::Tabular(source) => {
-                preview.set_editor_tabular_source(source.path, source.snapshot, cx)
-            }
-        });
-    }
-
-    fn update_editor_side_preview_for_source(
-        preview: &Entity<PreviewView>,
-        kind: EditorSidePreviewKind,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        preview.update(cx, |preview, cx| match kind {
-            EditorSidePreviewKind::Markdown => {
-                preview.set_editor_source(source.path, source.language, source.snapshot, cx)
-            }
-            EditorSidePreviewKind::Svg => {
-                preview.set_editor_svg_source(source.path, source.snapshot, cx)
-            }
-            EditorSidePreviewKind::Tabular => {
-                preview.set_editor_tabular_source(source.path, source.snapshot, cx)
-            }
-        });
-    }
-
-    fn open_following_svg_preview(
-        &mut self,
-        editor_tab_id: u64,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        let target = source
-            .path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled.svg".to_string());
-        let name = source
-            .path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled");
-        let title = format!("{name} Following Preview");
-        let existing = self
-            .following_svg_preview
-            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
-        let preview_tab_id = if let Some(preview_tab_id) = existing {
-            self.tabs.update(cx, |tabs, cx| {
-                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
-                tabs.set_url(preview_tab_id, Some(target.clone()), cx);
-                tabs.set_active(preview_tab_id, cx);
-            });
-            preview_tab_id
-        } else {
-            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
-                let preview_tab_id = tabs.open(
-                    TabKind::Preview,
-                    TabData {
-                        url: Some(target),
-                        ..TabData::default()
-                    },
-                    cx,
-                );
-                tabs.set_custom_title(preview_tab_id, Some(title), cx);
-                tabs.set_active(preview_tab_id, cx);
-                preview_tab_id
-            });
-            let theme = self.theme.clone();
-            let view = cx.new(|cx| PreviewView::new(theme, cx));
-            self.previews.insert(preview_tab_id, view);
-            preview_tab_id
-        };
-
-        self.following_svg_preview = Some(preview_tab_id);
-        self.following_svg_editor = Some(editor_tab_id);
-        self.svg_previews
-            .retain(|_, mapped_preview_id| *mapped_preview_id != preview_tab_id);
-        self.update_following_svg_preview_source(source, cx);
-        self.pending_preview_focus = true;
-        cx.notify();
-    }
-
-    fn update_following_svg_preview_for_editor(
-        &mut self,
-        editor_tab_id: u64,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(editor) = self
-            .editors
-            .get(&self.editor_slot_for_tab(editor_tab_id))
-            .cloned()
-        else {
-            return;
-        };
-        self.following_svg_editor = Some(editor_tab_id);
-        self.update_following_svg_preview_source(editor.read(cx).buffer_snapshot(), cx);
-    }
-
-    fn update_following_svg_preview_source(
-        &mut self,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(preview_tab_id) = self.following_svg_preview else {
-            return;
-        };
-        let Some(preview) = self.previews.get(&preview_tab_id).cloned() else {
-            self.following_svg_preview = None;
-            self.following_svg_editor = None;
-            return;
-        };
-        let target = source
-            .path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled.svg".to_string());
-        let title = source
-            .path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .map(|name| format!("{name} Following Preview"))
-            .unwrap_or_else(|| "Untitled Following Preview".to_string());
-        self.tabs.update(cx, |tabs, cx| {
-            tabs.set_custom_title(preview_tab_id, Some(title), cx);
-            tabs.set_url(preview_tab_id, Some(target), cx);
-        });
-        preview.update(cx, |preview, cx| {
-            preview.set_editor_svg_source(source.path, source.snapshot, cx)
-        });
-    }
-
-    fn update_svg_preview_for_editor(
-        &mut self,
-        editor_tab_id: u64,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(preview_tab_id) = self.svg_previews.get(&editor_tab_id).copied() else {
-            return;
-        };
-        let Some(preview) = self.previews.get(&preview_tab_id).cloned() else {
-            self.svg_previews.remove(&editor_tab_id);
-            return;
-        };
-        let target = source
-            .path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled.svg".to_string());
-        let title = source
-            .path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .map(|name| format!("{name} Preview"));
-        self.tabs.update(cx, |tabs, cx| {
-            tabs.set_custom_title(preview_tab_id, title, cx);
-            tabs.set_url(preview_tab_id, Some(target), cx);
-        });
-        preview.update(cx, |preview, cx| {
-            preview.set_editor_svg_source(source.path, source.snapshot, cx)
-        });
-    }
-
-    fn open_following_markdown_preview(
-        &mut self,
-        editor_tab_id: u64,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        let target = source
-            .path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled.md".to_string());
-        let name = source
-            .path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled");
-        let title = format!("{name} Following Preview");
-        let existing = self
-            .following_markdown_preview
-            .filter(|preview_tab_id| self.previews.contains_key(preview_tab_id));
-        let preview_tab_id = if let Some(preview_tab_id) = existing {
-            self.tabs.update(cx, |tabs, cx| {
-                tabs.set_custom_title(preview_tab_id, Some(title.clone()), cx);
-                tabs.set_url(preview_tab_id, Some(target), cx);
-                tabs.set_active(preview_tab_id, cx);
-            });
-            preview_tab_id
-        } else {
-            let preview_tab_id = self.tabs.update(cx, |tabs, cx| {
-                let preview_tab_id = tabs.open(
-                    TabKind::Preview,
-                    TabData {
-                        url: Some(target),
-                        ..TabData::default()
-                    },
-                    cx,
-                );
-                tabs.set_custom_title(preview_tab_id, Some(title), cx);
-                tabs.set_active(preview_tab_id, cx);
-                preview_tab_id
-            });
-            let theme = self.theme.clone();
-            let view = cx.new(|cx| PreviewView::new(theme, cx));
-            self.previews.insert(preview_tab_id, view);
-            preview_tab_id
-        };
-
-        self.following_markdown_preview = Some(preview_tab_id);
-        self.following_markdown_editor = Some(editor_tab_id);
-        self.markdown_previews
-            .retain(|_, mapped_preview_id| *mapped_preview_id != preview_tab_id);
-        self.update_following_markdown_preview_source(source, cx);
-        self.pending_preview_focus = true;
-        cx.notify();
-    }
-
-    fn update_following_markdown_preview_for_editor(
-        &mut self,
-        editor_tab_id: u64,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(editor) = self
-            .editors
-            .get(&self.editor_slot_for_tab(editor_tab_id))
-            .cloned()
-        else {
-            return;
-        };
-        let source = editor.read(cx).buffer_snapshot();
-        self.following_markdown_editor = Some(editor_tab_id);
-        self.update_following_markdown_preview_source(source, cx);
-    }
-
-    fn update_following_markdown_preview_source(
-        &mut self,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(preview_tab_id) = self.following_markdown_preview else {
-            return;
-        };
-        let Some(preview) = self.previews.get(&preview_tab_id).cloned() else {
-            self.following_markdown_preview = None;
-            self.following_markdown_editor = None;
-            return;
-        };
-        let target = source
-            .path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled.md".to_string());
-        let title = source
-            .path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .map(|name| format!("{name} Following Preview"))
-            .unwrap_or_else(|| "Untitled Following Preview".to_string());
-        self.tabs.update(cx, |tabs, cx| {
-            tabs.set_custom_title(preview_tab_id, Some(title), cx);
-            tabs.set_url(preview_tab_id, Some(target), cx);
-        });
-        preview.update(cx, |preview, cx| {
-            preview.set_editor_source(source.path, source.language, source.snapshot, cx)
-        });
-    }
-
-    fn update_markdown_preview_for_editor(
-        &mut self,
-        editor_tab_id: u64,
-        source: EditorBufferSnapshot,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(preview_tab_id) = self.markdown_previews.get(&editor_tab_id).copied() else {
-            return;
-        };
-        let Some(view) = self.previews.get(&preview_tab_id).cloned() else {
-            self.markdown_previews.remove(&editor_tab_id);
-            return;
-        };
-        let title = source
-            .path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .map(|name| format!("{name} Preview"));
-        let target = source
-            .path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled.md".to_string());
-        self.tabs.update(cx, |tabs, cx| {
-            tabs.set_custom_title(preview_tab_id, title, cx);
-            tabs.set_url(preview_tab_id, Some(target), cx);
-        });
-        let language = source.language;
-        let path = source.path;
-        let snapshot = source.snapshot;
-        view.update(cx, |preview, cx| {
-            preview.set_editor_source(path, language, snapshot, cx)
-        });
     }
 
     /// Save the active editor tab (`Cmd-S`).
@@ -3818,28 +3249,8 @@ impl Workspace {
                 return;
             }
             match ev {
-                EditorEvent::MarkdownPreviewRequested(source) => {
-                    this.open_markdown_preview_for_editor(tab_id, source.clone(), cx);
-                }
-                EditorEvent::MarkdownFollowingPreviewRequested(source) => {
-                    this.open_following_markdown_preview(tab_id, source.clone(), cx);
-                }
-                EditorEvent::SvgPreviewRequested(source) => {
-                    this.open_svg_preview_for_editor(tab_id, source.clone(), cx);
-                }
-                EditorEvent::SvgFollowingPreviewRequested(source) => {
-                    this.open_following_svg_preview(tab_id, source.clone(), cx);
-                }
-                EditorEvent::PreviewToSideRequested { content } => {
-                    this.open_editor_preview_to_side(tab_id, content.clone(), cx);
-                }
                 EditorEvent::GroupFocused(group) => {
                     this.on_editor_group_focused(tab_id, *group, cx);
-                }
-                EditorEvent::TabularPreviewRequested(path) => {
-                    this.activate_preview_target(path.to_string_lossy().into_owned(), cx);
-                    this.pending_preview_focus = true;
-                    cx.notify();
                 }
                 EditorEvent::LanguagePickerRequested => {
                     cx.emit(WorkspaceEvent::OpenLanguagePicker);
@@ -3863,28 +3274,6 @@ impl Workspace {
                     for editor in editors {
                         let _ =
                             editor.update(cx, |editor, cx| editor.refresh_project_diagnostics(cx));
-                    }
-                }
-                EditorEvent::BufferChanged(source) => {
-                    this.update_markdown_preview_for_editor(tab_id, source.clone(), cx);
-                    this.update_svg_preview_for_editor(tab_id, source.clone(), cx);
-                    if this.following_markdown_editor == Some(tab_id) {
-                        this.update_following_markdown_preview_source(source.clone(), cx);
-                    }
-                    if this.following_svg_editor == Some(tab_id) {
-                        this.update_following_svg_preview_source(source.clone(), cx);
-                    }
-                    if let Some((preview_pane, kind)) =
-                        this.editor_side_previews.get(&tab_id).copied()
-                    {
-                        if let Some(preview) = this.previews.get(&preview_pane).cloned() {
-                            Self::update_editor_side_preview_for_source(
-                                &preview,
-                                kind,
-                                source.clone(),
-                                cx,
-                            );
-                        }
                     }
                 }
                 _ => {}
@@ -7823,9 +7212,6 @@ impl Render for Workspace {
                 }
             }
         }
-        if std::mem::take(&mut self.pending_preview_focus) {
-            self.focus_active(window, cx);
-        }
         // A failed connection overlay on the active tab also takes focus so
         // Enter can retry it.
         let active_failed = self
@@ -7983,7 +7369,6 @@ fn palette_tab_kind(kind: TabKind) -> labonair_command_palette::PaletteTabKind {
     match kind {
         TabKind::Workspace => K::Workspace,
         TabKind::Editor => K::Editor,
-        TabKind::Preview => K::Preview,
         TabKind::Diff => K::Diff,
         TabKind::Sftp => K::Sftp,
         _ => K::Other,

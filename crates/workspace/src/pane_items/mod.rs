@@ -13,7 +13,7 @@
 //!
 //! Pane ids and tab ids come from one process-wide counter
 //! ([`crate::pane::next_id`]), so the legacy per-id maps on `Workspace`
-//! (`panes`, `editors`, `previews`, `sftp_views`, ...) are now keyed by pane
+//! (`panes`, `editors`, `sftp_views`, ...) are now keyed by pane
 //! id: a tab's first pane simply reuses the tab id as its pane id, further
 //! panes get fresh ids. An editor document is shared between panes: the
 //! first pane owns the document's [`EditorView`] under its id (the *slot*),
@@ -21,7 +21,6 @@
 //! group.
 
 mod editor;
-mod preview;
 mod sftp;
 mod singleton;
 mod terminal;
@@ -114,8 +113,6 @@ impl Workspace {
             PaneKind::Terminal
         } else if self.editors.contains_key(&pane) || self.editor_aliases.contains_key(&pane) {
             PaneKind::Editor
-        } else if self.previews.contains_key(&pane) {
-            PaneKind::Preview
         } else if self.sftp_views.contains_key(&pane) {
             PaneKind::Sftp
         } else {
@@ -239,7 +236,6 @@ impl Workspace {
         match kind {
             PaneKind::Terminal => self.terminal_pane_spec(pane, cx, &mut spec),
             PaneKind::Editor => self.editor_pane_spec(pane, cx, &mut spec),
-            PaneKind::Preview => self.preview_pane_spec(pane, cx, &mut spec),
             PaneKind::Sftp => self.sftp_pane_spec(pane, cx, &mut spec),
             _ => self.singleton_pane_spec(pane, cx, &mut spec),
         }
@@ -263,7 +259,6 @@ impl Workspace {
         match self.pane_kind(pane, cx) {
             PaneKind::Terminal => self.terminal_pane_body(pane, cx),
             PaneKind::Editor => self.editor_pane_body(pane, window, cx),
-            PaneKind::Preview => self.preview_pane_body(pane, cx),
             PaneKind::Sftp => self.sftp_pane_body(pane, cx),
             other => self.singleton_pane_body(pane, other, cx),
         }
@@ -284,12 +279,6 @@ impl Workspace {
                         e.focus_group(group, cx);
                     });
                     editor.read(cx).focus(window);
-                    return;
-                }
-            }
-            PaneKind::Preview => {
-                if let Some(view) = self.previews.get(&pane) {
-                    window.focus(&gpui::Focusable::focus_handle(view.read(cx), cx));
                     return;
                 }
             }
@@ -334,7 +323,6 @@ impl Workspace {
         match kind {
             PaneKind::Terminal => self.clone_terminal_pane(source, new_id, window, cx)?,
             PaneKind::Editor => self.clone_editor_pane(source, new_id, cx)?,
-            PaneKind::Preview => self.clone_preview_pane(source, new_id, cx)?,
             PaneKind::Sftp => self.clone_sftp_pane(source, new_id, cx)?,
             _ => {
                 return Err(SplitCloneError::Unsupported(
@@ -355,7 +343,6 @@ impl Workspace {
         self.zoom.pane_closed(pane);
         self.retire_terminal_pane(pane, cx);
         self.retire_editor_pane(pane, cx);
-        self.retire_preview_pane(pane);
         self.retire_sftp_pane(pane, cx);
         self.pane_meta.remove(pane);
         self.explorer_modes.remove(&pane);

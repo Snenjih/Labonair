@@ -50,8 +50,6 @@ pub enum TabKind {
     Workspace,
     /// A code editor tab (Phase 05).
     Editor,
-    /// A markdown / web preview tab (Phase — native markdown replacement).
-    Preview,
     /// An AI-proposed diff awaiting approval (Phase 10).
     AiDiff,
     /// An SFTP file browser (Phase 07).
@@ -77,7 +75,6 @@ impl TabKind {
         match self {
             TabKind::Workspace => IconName::Terminal,
             TabKind::Editor => IconName::SquarePen,
-            TabKind::Preview => IconName::Globe,
             TabKind::AiDiff => IconName::Sparkles,
             TabKind::Sftp => IconName::FolderOpen,
             TabKind::GitGraph => IconName::GitCompare,
@@ -94,7 +91,6 @@ impl TabKind {
         match self {
             TabKind::Workspace => "Terminals",
             TabKind::Editor => "Editors",
-            TabKind::Preview => "Previews",
             TabKind::AiDiff => "AI Diffs",
             TabKind::Sftp => "SFTP Tabs",
             TabKind::GitGraph => "Git Graphs",
@@ -110,7 +106,6 @@ impl TabKind {
         match self {
             TabKind::Workspace => "Terminal",
             TabKind::Editor => "Untitled",
-            TabKind::Preview => "Preview",
             TabKind::AiDiff => "AI Diff",
             TabKind::Sftp => "SFTP",
             TabKind::GitGraph => "Git Graph",
@@ -139,7 +134,7 @@ pub struct TabData {
     pub host_id: Option<String>,
     /// Repository path (`GitGraph`, `Diff`, `CommitDiff`).
     pub repo_path: Option<String>,
-    /// Target URL (`Preview`).
+    /// Target URL (legacy; no tab kind sets it any more).
     pub url: Option<String>,
 }
 
@@ -728,7 +723,6 @@ mod tests {
     fn plural_labels_match_reference() {
         assert_eq!(TabKind::Workspace.plural_label(), "Terminals");
         assert_eq!(TabKind::Editor.plural_label(), "Editors");
-        assert_eq!(TabKind::Preview.plural_label(), "Previews");
         assert_eq!(TabKind::Sftp.plural_label(), "SFTP Tabs");
         assert_eq!(TabKind::GitGraph.plural_label(), "Git Graphs");
     }
@@ -851,7 +845,7 @@ mod tests {
             store.update(cx, |s, cx| {
                 let first = s.open(TabKind::Workspace, ws(1), cx);
                 let second = s.open(TabKind::Editor, TabData::default(), cx);
-                let only = s.open(TabKind::Preview, TabData::default(), cx);
+                let only = s.open(TabKind::Editor, TabData::default(), cx);
 
                 s.set_current_space(42);
                 let third = s.open(TabKind::Sftp, TabData::default(), cx);

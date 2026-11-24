@@ -17,12 +17,13 @@ Previewing a file was a second capability: a separate `PaneKind::Preview` / `Tab
 - **Sync.** In Preview mode the editor feeds the embedded `PreviewView` the current buffer revision (SVG, Markdown, tables) or reloads it from disk after a file reload (images). Zoom, pan and fit commands (`image_viewer::*`) route to the active editor's preview.
 - **Routing.** All file opens already reach `EditorView::open_path`, which picks the initial mode. Explorer "Open Preview" (`Workspace::open_preview`) opens the file in the Editor and forces Preview mode. Only URLs still reach the legacy Preview pane.
 - **Persisted sessions.** A saved Preview pane for a local file is restored as an Editor pane (`session_v3::migrate_preview_pane`); URL previews stay legacy until removal.
-- **Removed in the follow-up change:** `PaneKind::Preview`/`TabKind::Preview`, `PaneState::Preview`/`TabSnapshot::Preview`, `Workspace::previews` and all `*_previews`/`following_*` state, `pane_items/preview.rs`, `views/preview.rs` shim, the `EditorEvent::*PreviewRequested`/`PreviewToSideRequested` variants and `EditorSidePreviewContent`, the New Preview Tab menu/command, and the legacy `EditorOpen*Preview` command ids.
+- **Removed (done):** `PaneKind::Preview`/`TabKind::Preview`, `PaneState::Preview`/`TabSnapshot::Preview`, `Workspace::previews` and all `*_previews`/`following_*` state, `pane_items/preview.rs`, `views/preview.rs` shim, the `EditorEvent::*PreviewRequested`/`PreviewToSideRequested` variants and `EditorSidePreviewContent`, the New Preview Tab menu/command, and the legacy `EditorOpen*Preview` command ids.
 
 ## Consequences
 
 - Binary images no longer show a "binary file" error; they open as previews in the normal editor tab, dedupe by path and use the normal tab/peek behavior.
 - `labonair-workspace` loses its `image`/`resvg` dependencies; `labonair-editor-ui` gains them (plus `tracing`).
-- The Source/Preview choice is not persisted: reopened tabs use the default mode for their type.
-- Raster zoom is bitmap scaling; SVG is rasterized at a bounded size, not re-rendered per zoom level. There is no transparency checkerboard yet.
-- Windowed behavior (toolbar toggle, keyboard focus in the preview) is unit-tested only at the model level; it has not been verified in a running window.
+- The Source/Preview choice is persisted per editor pane (`EditorPaneState.preview`). Old saved Preview panes for local files restore as Editor panes in Preview mode; saved URL previews are dropped. The legacy wire types `PreviewPaneState`/`PreviewTabSnapshot` stay read-only for that migration.
+- SVG is re-rasterized in a background task (debounced, edge capped at 4096 px) when the zoom changes, so zoomed SVGs stay crisp; raster images scale as bitmaps. A theme-token checkerboard sits behind images.
+- `CommandContext::Preview` stays as the keymap context of the embedded image viewer (`image_viewer::*` zoom bindings). The explorer-host `open_preview` intent stays and now means "open in the Editor's Preview mode".
+- Window behavior (toolbar toggle, keyboard focus in the preview, checkerboard, zoom) is unit-tested only at the model level; it has not been verified in a running window.

@@ -18,9 +18,9 @@ use labonair_terminal::command_provider::TerminalCommandTarget;
 use labonair_terminal::Scroll;
 
 use crate::context::WorkspaceTransition;
-use crate::views::preview::PreviewImageAction;
 use crate::views::project_diff::DiffAction;
 use crate::Workspace;
+use labonair_editor_ui::PreviewImageAction;
 
 /// Stable command metadata contributed by the workspace capability.
 #[derive(Clone, Copy, Debug, Default)]
@@ -214,11 +214,6 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     let workspace_handle = workspace.clone();
     register!(CommandId::NewEditorTab, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.new_editor_tab(window, cx));
-    });
-
-    let workspace_handle = workspace.clone();
-    register!(CommandId::NewPreviewTab, move |window, cx| {
-        workspace_handle.update(cx, |workspace, cx| workspace.new_preview_tab(window, cx));
     });
 
     for (command, action) in [
@@ -707,9 +702,6 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_icon(CommandIcon::Terminal),
             CommandDescriptor::new(CommandId::NewEditorTab, "New Editor Tab", "Layout")
                 .with_default_binding("cmd-e", None)
-                .with_icon(CommandIcon::File),
-            CommandDescriptor::new(CommandId::NewPreviewTab, "New Preview Tab", "Layout")
-                .with_default_binding("cmd-shift-p", None)
                 .with_icon(CommandIcon::File),
             CommandDescriptor::new(
                 CommandId::GitViewUncommittedChanges,

@@ -21,7 +21,7 @@
 
 use std::cell::RefCell;
 
-use gpui::{AppContext, Context, Window};
+use gpui::{Context, Window};
 use labonair_settings::content::terminal::SessionHostMode;
 use labonair_terminal::{DaemonHost, SshHostedHost};
 
@@ -31,11 +31,10 @@ use crate::pane_kind::PaneKind;
 use crate::resume::{self, Resume};
 use crate::session::{HostKind, PaneSessionKind, PaneSessionSnapshot, RestoreResult};
 use crate::session_v3::{
-    restore_tree, EditorPaneState, PaneGroupSnapshot, PaneState, PreviewPaneState, SerializedTree,
-    SessionSnapshotV3, SftpPaneState, SpaceEntryV3, SpacesSnapshotV3,
+    restore_tree, EditorPaneState, PaneGroupSnapshot, PaneState, SerializedTree, SessionSnapshotV3,
+    SftpPaneState, SpaceEntryV3, SpacesSnapshotV3,
 };
 use crate::tabs::{Tab, TabData, TabKind};
-use crate::views::preview::PreviewView;
 use crate::{terminal_settings, PaneEntry, ScrollbackCapture, Workspace};
 use labonair_workspace_storage::StoredTab;
 
@@ -63,7 +62,6 @@ impl Workspace {
                                 .is_some_and(|host| known_hosts.contains(host))
                     }
                     PaneState::Editor(editor) => std::path::Path::new(&editor.path).is_file(),
-                    PaneState::Preview(_) => true,
                     PaneState::Sftp(sftp) => known_hosts.contains(&sftp.host_id),
                 }
         });
@@ -228,11 +226,8 @@ impl Workspace {
                     path,
                     cwd: self.pane_anchors.get(&pane).cloned(),
                     state: Some(editor.session_snapshot()),
+                    preview: editor.view_mode() == labonair_editor_ui::ViewMode::Preview,
                 }))
-            }
-            PaneKind::Preview => {
-                let url = self.previews.get(&pane)?.read(cx).url().to_string();
-                (!url.is_empty()).then_some(PaneState::Preview(PreviewPaneState { url }))
             }
             PaneKind::Sftp => {
                 let view = self.sftp_views.get(&pane)?.read(cx);
@@ -269,7 +264,6 @@ impl Workspace {
                                     .is_some_and(|h| known_hosts.contains(h))
                         }
                         PaneState::Editor(e) => std::path::Path::new(&e.path).is_file(),
-                        PaneState::Preview(_) => true,
                         PaneState::Sftp(s) => known_hosts.contains(&s.host_id),
                     }
             });
@@ -321,13 +315,6 @@ impl Workspace {
                 TabKind::Editor,
                 TabData {
                     path: Some(e.path.clone()),
-                    ..TabData::default()
-                },
-            ),
-            PaneState::Preview(p) => (
-                TabKind::Preview,
-                TabData {
-                    url: Some(p.url.clone()),
                     ..TabData::default()
                 },
             ),
@@ -491,7 +478,6 @@ impl Workspace {
         self.panes.contains_key(&pane)
             || self.editors.contains_key(&pane)
             || self.editor_aliases.contains_key(&pane)
-            || self.previews.contains_key(&pane)
             || self.sftp_views.contains_key(&pane)
     }
 
@@ -597,30 +583,19 @@ impl Workspace {
                 if let Some(state) = e.state {
                     view.update(cx, |editor, _| editor.set_pending_session(state));
                 }
-                view.update(cx, |editor, cx| editor.open_path(path.clone(), cx));
+                let preview = e.preview;
+                view.update(cx, |editor, cx| {
+                    editor.open_path(path.clone(), cx);
+                    if preview && editor.preview_kind().is_some() {
+                        editor.set_view_mode(labonair_editor_ui::ViewMode::Preview, cx);
+                    }
+                });
                 documents.push((e.path.clone(), pane));
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                     if pane == tab_id || self.tab_pane_ids(tab_id).first() == Some(&pane) {
                         let name = name.to_string();
                         self.tabs
                             .update(cx, |s, cx| s.set_custom_title(tab_id, Some(name), cx));
-                    }
-                }
-            }
-            PaneState::Preview(p) => {
-                let theme = self.theme.clone();
-                let view = cx.new(|cx| PreviewView::new(theme, cx));
-                view.update(cx, |v, cx| v.set_url(p.url.clone(), cx));
-                self.previews.insert(pane, view);
-                self.register_pane(pane, PaneKind::Preview);
-                let title = std::path::Path::new(&p.url)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(str::to_string);
-                if let Some(title) = title {
-                    if self.tab_pane_ids(tab_id).first() == Some(&pane) {
-                        self.tabs
-                            .update(cx, |s, cx| s.set_custom_title(tab_id, Some(title), cx));
                     }
                 }
             }

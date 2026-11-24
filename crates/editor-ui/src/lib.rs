@@ -15,7 +15,7 @@ pub mod preview_mode;
 mod status_item;
 mod syntax_theme;
 
-pub use editor::{EditorBufferSnapshot, EditorEvent, EditorSidePreviewContent, EditorView};
+pub use editor::{EditorBufferSnapshot, EditorEvent, EditorView};
 pub use multibuffer::{MultiBufferEvent, MultiBufferView};
 pub use preview::{PreviewImageAction, PreviewView};
 pub use preview_mode::{OpenMode, PreviewKind, ViewMode};

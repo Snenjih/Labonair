@@ -252,9 +252,10 @@ pub fn register_handlers(
         .expect("terminal command handler must have a unique id");
     let restart_target = target.clone();
     registry
-        .register(CommandId::TerminalRestartBackgroundHost, move |_window, cx| {
-            restart_target.restart_background_host(cx)
-        })
+        .register(
+            CommandId::TerminalRestartBackgroundHost,
+            move |_window, cx| restart_target.restart_background_host(cx),
+        )
         .expect("terminal command handler must have a unique id");
     let rename_target = target.clone();
     registry

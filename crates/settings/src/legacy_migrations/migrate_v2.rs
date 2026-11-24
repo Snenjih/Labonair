@@ -1072,7 +1072,6 @@ const SLUG_TO_ACTION: &[(&str, &str)] = &[
     ("command.palette", "command_palette::Toggle"),
     ("shortcuts.open", "settings::OpenShortcuts"),
     ("tab.new", "tab::NewTerminal"),
-    ("tab.newPreview", "tab::NewPreview"),
     ("tab.newEditor", "tab::NewEditor"),
     ("tab.close", "tab::Close"),
     ("tab.next", "tab::Next"),

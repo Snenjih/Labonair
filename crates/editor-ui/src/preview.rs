@@ -259,6 +259,8 @@ enum Content {
 #[derive(Clone)]
 struct PreviewImage {
     image: Arc<Image>,
+    /// Vector source kept so zooming can re-rasterize instead of scaling a bitmap.
+    svg: Option<SvgRaster>,
     width: u32,
     height: u32,
     format: String,
@@ -304,6 +306,35 @@ const MIN_IMAGE_ZOOM: f32 = 0.05;
 const MAX_IMAGE_ZOOM: f32 = 8.0;
 const MAX_SVG_EDGE_PIXELS: f32 = 2_048.0;
 const MAX_SVG_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
+/// Longest edge of a zoom-time SVG raster (bounds texture memory).
+const MAX_SVG_RASTER_EDGE: f32 = 4_096.0;
+/// Assumed device pixel ratio when choosing a raster scale.
+const SVG_RASTER_DPR: f32 = 2.0;
+const SVG_RERASTER_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// The vector source of a rasterized SVG and the density of its bitmap.
+#[derive(Clone)]
+struct SvgRaster {
+    bytes: Arc<[u8]>,
+    /// Scale of the initial raster relative to the SVG's own size (<= 1).
+    base_scale: f32,
+    /// Pixels of the current bitmap per logical image pixel.
+    density: f32,
+}
+
+/// Bitmap density wanted for a view zoom: crisp on `SVG_RASTER_DPR` screens,
+/// never below the logical size and capped by [`MAX_SVG_RASTER_EDGE`].
+fn svg_raster_density(zoom: f32, logical_width: u32, logical_height: u32) -> f32 {
+    let longest = logical_width.max(logical_height).max(1) as f32;
+    (zoom * SVG_RASTER_DPR)
+        .min(MAX_SVG_RASTER_EDGE / longest)
+        .max(1.0)
+}
+
+/// Whether the current density is far enough off to pay for a re-raster.
+fn svg_needs_reraster(current: f32, wanted: f32) -> bool {
+    wanted > current * 1.1 || wanted < current * 0.5
+}
 
 fn fit_image_scale(image_width: u32, image_height: u32, width: f32, height: f32) -> f32 {
     if image_width == 0 || image_height == 0 || width <= 0.0 || height <= 0.0 {
@@ -419,6 +450,7 @@ pub struct PreviewView {
     image_zoom: ImageZoom,
     image_zoom_input: Option<Entity<InputState>>,
     image_pan: Option<ImagePan>,
+    svg_raster_generation: u64,
 }
 
 impl PreviewView {
@@ -441,6 +473,7 @@ impl PreviewView {
             image_zoom: ImageZoom::Fit,
             image_zoom_input: None,
             image_pan: None,
+            svg_raster_generation: 0,
         }
     }
 
@@ -585,7 +618,12 @@ impl PreviewView {
                     return;
                 }
                 match result {
-                    Ok(image) => this.content = Content::Image(image),
+                    Ok(image) => {
+                        this.content = Content::Image(image);
+                        if let ImageZoom::Scale(scale) = this.image_zoom {
+                            this.request_svg_raster(scale, cx);
+                        }
+                    }
                     Err(error) => {
                         let url = this.url.clone();
                         let message: SharedString = format!("Could not render SVG: {error}").into();
@@ -938,12 +976,70 @@ impl PreviewView {
         self.image_scroll
             .set_offset(gpui::point(px(offset_x), px(offset_y)));
         self.image_zoom = ImageZoom::Scale(next);
+        self.request_svg_raster(next, cx);
         cx.notify();
+    }
+
+    /// Re-rasterize a displayed SVG for `zoom` after a short debounce, off the
+    /// UI thread. Superseded or stale requests are dropped.
+    fn request_svg_raster(&mut self, zoom: f32, cx: &mut Context<Self>) {
+        let Content::Image(image) = &self.content else {
+            return;
+        };
+        let Some(svg) = &image.svg else {
+            return;
+        };
+        let wanted = svg_raster_density(zoom, image.width, image.height);
+        if !svg_needs_reraster(svg.density, wanted) {
+            return;
+        }
+        self.svg_raster_generation = self.svg_raster_generation.wrapping_add(1);
+        let generation = self.svg_raster_generation;
+        let load_generation = self.load_generation;
+        let source = svg.clone();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(SVG_RERASTER_DEBOUNCE).await;
+            let still_wanted = this
+                .update(cx, |this, _| {
+                    this.svg_raster_generation == generation
+                        && this.load_generation == load_generation
+                })
+                .unwrap_or(false);
+            if !still_wanted {
+                return;
+            }
+            let bytes = source.bytes.clone();
+            let base_scale = source.base_scale;
+            let result = cx
+                .background_executor()
+                .spawn(async move { rasterize_svg(&bytes, base_scale * wanted) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.svg_raster_generation != generation
+                    || this.load_generation != load_generation
+                {
+                    return;
+                }
+                if let (Ok((image, _, _)), Content::Image(current)) = (result, &mut this.content) {
+                    current.image = image;
+                    if let Some(svg) = current.svg.as_mut() {
+                        svg.density = wanted;
+                    }
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     fn set_image_zoom(&mut self, zoom: ImageZoom, cx: &mut Context<Self>) {
         if matches!(self.content, Content::Image(_)) {
             self.image_zoom = zoom;
+            if let ImageZoom::Scale(scale) = zoom {
+                self.request_svg_raster(scale, cx);
+            } else if zoom == ImageZoom::ActualSize {
+                self.request_svg_raster(1.0, cx);
+            }
             self.image_zoom_input = None;
             self.image_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
             cx.notify();
@@ -1031,6 +1127,55 @@ impl PreviewView {
             cx.notify();
         }
     }
+}
+
+/// Transparency backdrop: two subtle theme tones in alternating tiles,
+/// painted only for the visible part so large zoomed images stay cheap.
+fn checkerboard(a: gpui::Hsla, b: gpui::Hsla) -> impl IntoElement {
+    const TILE: f32 = 12.0;
+    gpui::canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let visible = bounds.intersect(&window.content_mask().bounds);
+            if visible.size.width <= px(0.0) || visible.size.height <= px(0.0) {
+                return;
+            }
+            window.paint_quad(gpui::fill(visible, a));
+            let origin = bounds.origin;
+            let first_x = ((f32::from(visible.origin.x - origin.x)) / TILE)
+                .floor()
+                .max(0.0) as i32;
+            let first_y = ((f32::from(visible.origin.y - origin.y)) / TILE)
+                .floor()
+                .max(0.0) as i32;
+            let end_x = visible.origin.x + visible.size.width;
+            let end_y = visible.origin.y + visible.size.height;
+            let mut iy = first_y;
+            loop {
+                let y = origin.y + px(iy as f32 * TILE);
+                if y >= end_y {
+                    break;
+                }
+                let mut ix = first_x;
+                loop {
+                    let x = origin.x + px(ix as f32 * TILE);
+                    if x >= end_x {
+                        break;
+                    }
+                    if (ix + iy) % 2 != 0 {
+                        let tile =
+                            gpui::Bounds::new(gpui::point(x, y), gpui::size(px(TILE), px(TILE)))
+                                .intersect(&visible);
+                        window.paint_quad(gpui::fill(tile, b));
+                    }
+                    ix += 1;
+                }
+                iy += 1;
+            }
+        },
+    )
+    .absolute()
+    .size_full()
 }
 
 fn resolve(url: &str) -> Content {
@@ -1177,6 +1322,7 @@ fn load_image(path: &str) -> Result<PreviewImage, String> {
         .write_to(&mut out, image::ImageFormat::Png)
         .map_err(|e| e.to_string())?;
     Ok(PreviewImage {
+        svg: None,
         image: Arc::new(Image::from_bytes(ImageFormat::Png, out.into_inner())),
         width,
         height,
@@ -1215,33 +1361,63 @@ fn render_svg(bytes: &[u8]) -> Result<PreviewImage, String> {
             MAX_SVG_SOURCE_BYTES / (1024 * 1024)
         ));
     }
-    let mut options = resvg::usvg::Options::default();
-    // Do not let a document read local or remote files through <image href>.
-    // Embedded data URLs remain supported by the default data resolver.
-    options.image_href_resolver.resolve_string = Box::new(|_, _| None);
-    let tree = resvg::usvg::Tree::from_data(bytes, &options).map_err(|error| error.to_string())?;
+    let tree =
+        resvg::usvg::Tree::from_data(bytes, &svg_options()).map_err(|error| error.to_string())?;
     let size = tree.size();
     let scale = (MAX_SVG_EDGE_PIXELS / size.width())
         .min(MAX_SVG_EDGE_PIXELS / size.height())
         .min(1.0);
-    let width = (size.width() * scale).round().max(1.0) as u32;
-    let height = (size.height() * scale).round().max(1.0) as u32;
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
-        .ok_or_else(|| "SVG has invalid or unsupported dimensions".to_string())?;
-    resvg::render(
-        &tree,
-        resvg::tiny_skia::Transform::default(),
-        &mut pixmap.as_mut(),
-    );
-    let png = pixmap.encode_png().map_err(|error| error.to_string())?;
+    let (image, width, height) = rasterize_svg_tree(&tree, scale)?;
     Ok(PreviewImage {
-        image: Arc::new(Image::from_bytes(ImageFormat::Png, png)),
+        image,
+        svg: Some(SvgRaster {
+            bytes: Arc::from(bytes),
+            base_scale: scale,
+            density: 1.0,
+        }),
         width,
         height,
         format: "SVG".to_string(),
         bits_per_pixel: 32,
         byte_len: bytes.len(),
     })
+}
+
+fn svg_options() -> resvg::usvg::Options<'static> {
+    let mut options = resvg::usvg::Options::default();
+    // Do not let a document read local or remote files through <image href>.
+    // Embedded data URLs remain supported by the default data resolver.
+    options.image_href_resolver.resolve_string = Box::new(|_, _| None);
+    options
+}
+
+/// Rasterize `bytes` at `scale` times the SVG's own size.
+fn rasterize_svg(bytes: &[u8], scale: f32) -> Result<(Arc<Image>, u32, u32), String> {
+    let tree =
+        resvg::usvg::Tree::from_data(bytes, &svg_options()).map_err(|error| error.to_string())?;
+    rasterize_svg_tree(&tree, scale)
+}
+
+fn rasterize_svg_tree(
+    tree: &resvg::usvg::Tree,
+    scale: f32,
+) -> Result<(Arc<Image>, u32, u32), String> {
+    let size = tree.size();
+    let width = (size.width() * scale).round().max(1.0) as u32;
+    let height = (size.height() * scale).round().max(1.0) as u32;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .ok_or_else(|| "SVG has invalid or unsupported dimensions".to_string())?;
+    resvg::render(
+        tree,
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    let png = pixmap.encode_png().map_err(|error| error.to_string())?;
+    Ok((
+        Arc::new(Image::from_bytes(ImageFormat::Png, png)),
+        width,
+        height,
+    ))
 }
 
 /// Hand `target` (a path or URL) to the OS "open" handler.
@@ -1383,11 +1559,15 @@ impl Render for PreviewView {
                         }),
                     );
                 let image_body = match self.image_zoom {
-                    ImageZoom::Fit => container.overflow_hidden().child(
-                        img(image.image.clone())
-                            .object_fit(ObjectFit::Contain)
-                            .size_full(),
-                    ),
+                    ImageZoom::Fit => container
+                        .relative()
+                        .overflow_hidden()
+                        .child(checkerboard(c.bg, c.muted_bg))
+                        .child(
+                            img(image.image.clone())
+                                .object_fit(ObjectFit::Contain)
+                                .size_full(),
+                        ),
                     zoom => {
                         let scale = image_zoom_scale(zoom, 1.0);
                         let image_width = image.width as f32 * scale;
@@ -1402,10 +1582,13 @@ impl Render for PreviewView {
                                 element.items_center().justify_center()
                             });
                         container.child(
-                            img(image.image.clone())
+                            div()
+                                .relative()
                                 .w(px(image_width))
                                 .h(px(image_height))
-                                .flex_none(),
+                                .flex_none()
+                                .child(checkerboard(c.bg, c.muted_bg))
+                                .child(img(image.image.clone()).size_full().flex_none()),
                         )
                     }
                 };
@@ -2073,6 +2256,24 @@ mod tests {
     #[test]
     fn svg_preview_rejects_malformed_documents() {
         assert!(render_svg(b"<svg><rect></svg>").is_err());
+    }
+
+    #[test]
+    fn svg_raster_density_follows_zoom_within_the_texture_cap() {
+        assert_eq!(svg_raster_density(0.25, 100, 100), 1.0);
+        assert_eq!(svg_raster_density(2.0, 100, 100), 4.0);
+        // 1000 px logical edge: capped at 4096 / 1000.
+        assert!((svg_raster_density(8.0, 1000, 500) - 4.096).abs() < 1e-3);
+        assert!(svg_needs_reraster(1.0, 4.0));
+        assert!(!svg_needs_reraster(4.0, 4.2));
+        assert!(svg_needs_reraster(4.0, 1.0));
+    }
+
+    #[test]
+    fn svg_rasterizes_at_the_requested_density() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="red"/></svg>"#;
+        let (_, w, h) = rasterize_svg(svg, 3.0).expect("renders");
+        assert_eq!((w, h), (60, 30));
     }
 
     #[test]

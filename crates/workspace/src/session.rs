@@ -123,7 +123,7 @@ pub enum TabSnapshot {
     Workspace(WorkspaceTabSnapshot),
     /// A local code-editor tab (untitled editors are not persisted).
     Editor(EditorTabSnapshot),
-    /// A markdown / web preview tab.
+    /// Legacy markdown / web preview tab (read only; migrated, ADR 0015).
     Preview(PreviewTabSnapshot),
     /// An SFTP dual-pane browser.
     Sftp(SftpTabSnapshot),
@@ -384,8 +384,6 @@ pub enum RestoreAction {
         path: String,
         state: Option<labonair_editor::EditorSessionSnapshot>,
     },
-    /// Re-open a native preview tab for `url` (path or URL).
-    Preview { url: String },
     /// Re-open an SFTP browser for `host_id`.
     Sftp {
         host_id: String,
@@ -431,7 +429,16 @@ pub fn plan_restore(
                     }
                 }
             }
-            TabSnapshot::Preview(p) => RestoreAction::Preview { url: p.url.clone() },
+            TabSnapshot::Preview(p) if !p.url.contains("://") && file_exists(&p.url) => {
+                RestoreAction::Editor {
+                    path: p.url.clone(),
+                    state: None,
+                }
+            }
+            TabSnapshot::Preview(p) => RestoreAction::Skip {
+                title: p.url.clone(),
+                reason: "Preview tabs no longer exist".to_string(),
+            },
             TabSnapshot::Sftp(s) => {
                 let title = s.title.clone().unwrap_or_else(|| s.host_id.clone());
                 if host_exists(&s.host_id) {
@@ -768,7 +775,8 @@ mod tests {
         let dir = tmp_dir();
         let path = dir.join("session.json");
         let legacy = r#"{"version":1,"savedAt":0,"activeTabIndex":0,
-            "tabs":[{"kind":"preview","url":"https://x"}]}"#;
+            "tabs":[{"kind":"preview","url":"https://x"},
+                     {"kind":"preview","url":"/notes/a.md"}]}"#;
         std::fs::write(&path, legacy).unwrap();
 
         let loaded = load_from(&path).expect("legacy file migrates instead of being discarded");
@@ -776,7 +784,7 @@ mod tests {
         assert_eq!(loaded.active_space_index, 0);
         assert_eq!(loaded.spaces.len(), 1);
         assert_eq!(loaded.spaces[0].name, "Default");
-        // The flat file's preview tab became a one-leaf preview pane group.
+        // The URL preview is dropped; the local-file preview became an editor leaf (ADR 0015).
         let tabs = &loaded.spaces[0].session.tabs;
         assert_eq!(tabs.len(), 1);
         assert_eq!(tabs[0].tree.leaf_count(), 1);
@@ -1022,8 +1030,8 @@ mod tests {
             "missing file"
         );
         assert!(
-            matches!(actions[5], RestoreAction::Preview { .. }),
-            "preview"
+            matches!(actions[5], RestoreAction::Skip { .. }),
+            "URL preview is dropped"
         );
         assert_eq!(
             actions[6],
