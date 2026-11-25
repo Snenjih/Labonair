@@ -1482,10 +1482,17 @@ where
         // T20-001: the shared token snapshot, so the `Kbd` chips below are
         // built from the same `Palette` every other primitive uses.
         let c = Palette::from_theme(t);
-        let mut card = t.card();
+        // Popover layer (not Card): it stays ~0.94–0.97 opaque under Glassy,
+        // so rows remain readable on any desktop; the user opacity scales it.
+        let mut card = c.popover;
         card.a *= opacity;
+        // GPUI paints a shadow quad under the whole box, which would darken a
+        // glass card through its fill — glass keeps only the rim.
+        let is_glass = c.popover.a < 0.999;
         let sel_fill = t.selected_fill();
         let hover_fill = t.accent();
+        // Subtle tint for the footer so it reads as a separate bar.
+        let footer_bg = c.muted_bg.opacity(0.35);
 
         let rows = self.visible_rows(cx);
         let result_count = rows
@@ -1500,8 +1507,8 @@ where
             .flex()
             .flex_col()
             .gap(px(2.0 * k))
-            .p(px(4.0 * k))
-            .max_h(px(400.0 * k))
+            .p(px(6.0 * k))
+            .max_h(px(420.0 * k))
             .overflow_y_scroll();
         if result_count == 0 {
             list = list.child(
@@ -1517,14 +1524,24 @@ where
         let mut last_section: Option<String> = None;
         for (i, row) in rows.iter().enumerate() {
             if last_section.as_deref() != Some(row.section.as_str()) {
+                // A hairline between sections (not before the first one).
+                if i > 0 {
+                    list = list.child(
+                        div()
+                            .h(px(1.0))
+                            .mx(px(6.0 * k))
+                            .mt(px(6.0 * k))
+                            .bg(border.opacity(0.5)),
+                    );
+                }
                 list = list.child(
                     div()
-                        .px(px(8.0 * k))
-                        .pt(px(if i == 0 { 2.0 * k } else { 8.0 * k }))
-                        .pb(px(2.0 * k))
+                        .px(px(12.0 * k))
+                        .pt(px(if i == 0 { 4.0 * k } else { 8.0 * k }))
+                        .pb(px(4.0 * k))
                         .text_size(px(10.0 * k))
                         .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(muted.opacity(0.7))
+                        .text_color(muted.opacity(0.85))
                         .child(SharedString::from(row.section.to_uppercase())),
                 );
                 last_section = Some(row.section.clone());
@@ -1542,21 +1559,28 @@ where
                 .id(("palette-row", i))
                 .flex()
                 .items_center()
-                .gap(px(8.0 * k))
-                .px(px(8.0 * k))
-                .h(px(34.0 * k))
-                .rounded(px(6.0 * k))
+                .gap(px(12.0 * k))
+                .px(px(12.0 * k))
+                .h(px(36.0 * k))
+                .rounded(px(8.0 * k))
                 .text_color(fg)
-                // Ciel §8: the selected row is a sunken fill + semibold label,
-                // not an accent bar.
-                .when(is_sel, |d| {
-                    d.bg(sel_fill).font_weight(gpui::FontWeight::SEMIBOLD)
-                })
+                // Ciel §8: the selected row is a sunken fill, not an accent
+                // bar. No weight change — it would make the title jitter.
+                .when(is_sel, |d| d.bg(sel_fill))
                 .when(actionable && !is_sel, |d| d.hover(|s| s.bg(hover_fill)));
 
-            if let Some(icon) = row.icon {
-                r = r.child(icon.svg(muted).size(px(14.0 * k)).flex_none());
-            }
+            // Fixed icon slot (also when the row has no icon) so every title
+            // starts at the same x.
+            r = r.child(
+                div()
+                    .w(px(16.0 * k))
+                    .h(px(16.0 * k))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .children(row.icon.map(|icon| icon.svg(muted).size(px(16.0 * k)))),
+            );
 
             let mut text_col = div()
                 .flex()
@@ -1583,22 +1607,42 @@ where
             }
             r = r.child(text_col);
 
-            let mut right = div().flex().items_center().gap(px(4.0 * k)).flex_none();
+            let mut right = div().flex().items_center().gap(px(6.0 * k)).flex_none();
             if let Some(label) = &row.right_label {
+                // State badge: always a pill so ON / OFF / active line up.
                 let on = label == "ON" || label == "active";
                 right = right.child(
                     div()
+                        .px(px(6.0 * k))
+                        .h(px(18.0 * k))
+                        .flex()
+                        .items_center()
+                        .rounded(px(4.0 * k))
+                        .bg(if on {
+                            success.opacity(0.15)
+                        } else {
+                            c.muted_bg
+                        })
                         .text_size(px(10.0 * k))
                         .text_color(if on { success } else { muted })
                         .child(SharedString::from(label.to_uppercase())),
                 );
             }
-            for k in &row.keys {
-                right = right.child(kbd(k.clone(), c));
+            for key in &row.keys {
+                right = right.child(kbd(key.clone(), c));
             }
-            if row.has_sub {
-                right = right.child(IconName::ChevronRight.svg(muted).size(px(12.0 * k)));
-            }
+            // Fixed chevron slot (empty for leaf rows) so keys/badges align
+            // across rows with and without a sub-page.
+            right = right.child(
+                div()
+                    .w(px(12.0 * k))
+                    .flex_none()
+                    .flex()
+                    .justify_center()
+                    .when(row.has_sub, |d| {
+                        d.child(IconName::ChevronRight.svg(muted).size(px(12.0 * k)))
+                    }),
+            );
             r = r.child(right);
 
             if actionable {
@@ -1612,11 +1656,11 @@ where
 
         // ── header (breadcrumb or search icon + input) ───────────────────────
         let mut header = div()
-            .h(px(44.0 * k))
+            .h(px(52.0 * k))
             .flex()
             .items_center()
-            .gap(px(8.0 * k))
-            .px(px(12.0 * k))
+            .gap(px(12.0 * k))
+            .px(px(18.0 * k))
             .border_b_1()
             .border_color(border);
         if self.pages.len() > 1 {
@@ -1653,14 +1697,14 @@ where
             }
             header = header.child(crumbs);
         } else {
-            header = header.child(IconName::Search.svg(muted).size(px(14.0 * k)).flex_none());
+            header = header.child(IconName::Search.svg(muted).size(px(16.0 * k)).flex_none());
         }
         let query_input = self
             .query_input
             .as_ref()
             .map(|input| {
                 search_input(input, c)
-                    .text_size(px(14.0 * k))
+                    .text_size(px(15.0 * k))
                     .into_any_element()
             })
             .unwrap_or_else(|| div().into_any_element());
@@ -1680,7 +1724,7 @@ where
         );
 
         // ── footer ───────────────────────────────────────────────────────────
-        let mut hints = div().flex().items_center().gap(px(8.0 * k)).ml_auto();
+        let mut hints = div().flex().items_center().gap(px(12.0 * k)).ml_auto();
         hints = hints
             .child(keybinding_hint("navigate", ["\u{2191}\u{2193}"], c))
             .child(keybinding_hint("select", ["\u{21b5}"], c));
@@ -1696,13 +1740,14 @@ where
         }
         hints = hints.child(keybinding_hint("close", ["Esc"], c));
         let footer = div()
+            .h(px(40.0 * k))
             .flex()
             .items_center()
-            .gap(px(8.0 * k))
-            .px(px(8.0 * k))
-            .py(px(4.0 * k))
+            .gap(px(10.0 * k))
+            .px(px(14.0 * k))
             .border_t_1()
             .border_color(border)
+            .bg(footer_bg)
             .child(
                 button(
                     "palette-search-mode",
@@ -1760,16 +1805,16 @@ where
                 div()
                     .id("palette-card")
                     .occlude()
-                    .w(px(560.0 * k).min(viewport.width - px(32.0)))
-                    .max_h((px(500.0 * k)).min(viewport.height - px(64.0)))
+                    .w(px(620.0 * k).min(viewport.width - px(32.0)))
+                    .max_h((px(560.0 * k)).min(viewport.height - px(64.0)))
                     .flex()
                     .flex_col()
                     .overflow_hidden()
-                    .rounded(px(12.0 * k))
+                    .rounded(px(14.0 * k))
                     .bg(card)
                     .border_1()
                     .border_color(border.opacity(0.6))
-                    .shadow(c.modal_shadow())
+                    .when(!is_glass, |d| d.shadow(c.modal_shadow()))
                     .child(header)
                     .child(div().flex().flex_col().min_h_0().child(list))
                     .child(footer)
@@ -2047,7 +2092,7 @@ mod tests {
         palette.update_in(cx, |p, w, cx| p.open(w, cx));
         cx.run_until_parked();
         events.borrow_mut().clear();
-        cx.simulate_click(gpui::point(px(900.0), px(120.0)), gpui::Modifiers::none());
+        cx.simulate_click(gpui::point(px(900.0), px(140.0)), gpui::Modifiers::none());
         cx.run_until_parked();
         let (open, pages) = palette.read_with(cx, |p, _| (p.open, p.pages.clone()));
         assert!(open && pages == [Page::Root, Page::ColorMode]);
