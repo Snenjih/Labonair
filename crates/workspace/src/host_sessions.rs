@@ -16,9 +16,6 @@ use crate::pane::WorkspaceLayout;
 use crate::pane_kind::PaneKind;
 use crate::{terminal_settings, PaneEntry, Workspace};
 
-/// Notification action that opens the found sessions as tabs.
-pub(crate) const RECOVER_ACTION: &str = "terminal:recover-background-sessions";
-
 /// A client for an already running daemon, if there is one. Never starts it.
 fn running_host(cx: &App) -> Option<DaemonHost> {
     DaemonHost::connect(
@@ -146,25 +143,11 @@ impl Workspace {
             .collect()
     }
 
-    /// Startup: offer unclaimed background sessions with one notification.
-    pub(crate) fn announce_background_sessions(&self, cx: &mut Context<Self>) {
-        let found = self.recoverable_sessions(cx);
-        if found.is_empty() {
-            return;
+    /// Startup: open every unclaimed background session as a tab, no prompt.
+    pub(crate) fn open_background_sessions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for session in self.recoverable_sessions(cx) {
+            self.open_adopted_tab(&session, window, cx);
         }
-        notification_center(cx).update(cx, |center, cx| {
-            center.push(
-                Notification::info(
-                    host_restore::found_title(found.len()),
-                    "They kept running after the app closed.",
-                )
-                .source("terminal")
-                .action(RECOVER_ACTION, "Open as tabs")
-                .dedupe_key("terminal:background-sessions-found")
-                .toast_for(Duration::from_secs(8)),
-                cx,
-            );
-        });
     }
 
     /// `Terminal: Recover Background Sessions`: open every unclaimed session

@@ -23,7 +23,15 @@ impl Workspace {
         } else if self.pane_ssh_host(pane).is_some() {
             spec.icon = self.pane_tile(pane, cx).glyph;
         }
-        if let Some(ssh) = self.ssh_tabs.get(&entry.session_id) {
+        // Clear program name wins over the raw shell/OSC title and the cwd name.
+        let clear_name = self
+            .agents
+            .get(&pane)
+            .map(|a| a.agent.label())
+            .or_else(|| self.program_names.get(&pane).copied());
+        if let Some(name) = clear_name {
+            spec.title = SharedString::from(name);
+        } else if let Some(ssh) = self.ssh_tabs.get(&entry.session_id) {
             let host = self
                 .host_view
                 .host_name(&ssh.host_id, cx)

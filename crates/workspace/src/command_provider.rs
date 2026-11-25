@@ -23,6 +23,29 @@ use crate::views::project_diff::DiffAction;
 use crate::Workspace;
 use labonair_editor_ui::PreviewImageAction;
 
+/// Terminal font-size bounds, px (`None` delta resets to the default).
+const TERMINAL_FONT_RANGE: (u32, u32) = (8, 48);
+const TERMINAL_FONT_DEFAULT: u32 = 14;
+
+fn step_terminal_font_size(delta: Option<i32>, cx: &mut App) {
+    use labonair_settings::SettingsStore;
+    if !cx.has_global::<SettingsStore>() {
+        return;
+    }
+    let _ = cx.global_mut::<SettingsStore>().update_user_settings(|c| {
+        let cur = c
+            .terminal
+            .terminal_font_size
+            .unwrap_or(TERMINAL_FONT_DEFAULT);
+        c.terminal.terminal_font_size = Some(match delta {
+            Some(d) => cur
+                .saturating_add_signed(d)
+                .clamp(TERMINAL_FONT_RANGE.0, TERMINAL_FONT_RANGE.1),
+            None => TERMINAL_FONT_DEFAULT,
+        });
+    });
+}
+
 /// Stable command metadata contributed by the workspace capability.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WorkspaceCommandProvider;
@@ -430,9 +453,40 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     });
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::RestartTerminalShell, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.restart_terminal_shell(window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::ResetPaneSizes, move |_window, cx| {
         workspace_handle.update(cx, |workspace, cx| workspace.reset_pane_sizes(cx));
     });
+
+    for (id, dir) in [
+        (CommandId::ResizePaneLeft, crate::pane::SplitDirection::Left),
+        (
+            CommandId::ResizePaneRight,
+            crate::pane::SplitDirection::Right,
+        ),
+        (CommandId::ResizePaneUp, crate::pane::SplitDirection::Up),
+        (CommandId::ResizePaneDown, crate::pane::SplitDirection::Down),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |_window, cx| {
+            workspace_handle.update(cx, |workspace, cx| workspace.resize_pane_dir(dir, cx));
+        });
+    }
+
+    // Terminal font size: write through user settings; the theme layer applies it.
+    for (id, delta) in [
+        (CommandId::TerminalFontIncrease, Some(1)),
+        (CommandId::TerminalFontDecrease, Some(-1)),
+        (CommandId::TerminalFontReset, None),
+    ] {
+        register!(id, move |_window, cx| step_terminal_font_size(delta, cx));
+    }
 
     let workspace_handle = workspace.clone();
     register!(CommandId::ClosePane, move |window, cx| {
@@ -452,13 +506,6 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     });
 
     let workspace_handle = workspace.clone();
-    let workspace_handle = workspace.clone();
-    register!(CommandId::RestartTerminalShell, move |window, cx| {
-        workspace_handle.update(cx, |workspace, cx| {
-            workspace.restart_terminal_shell(window, cx)
-        });
-    });
-
     register!(CommandId::OpenProjectSettings, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| {
             workspace.open_or_create_project_settings(window, cx);
@@ -1008,6 +1055,44 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_icon(CommandIcon::SplitDown),
             CommandDescriptor::new(CommandId::ResetPaneSizes, "Reset Pane Sizes", "Layout")
                 .with_contexts(PANE_CONTEXTS),
+            CommandDescriptor::new(CommandId::ResizePaneLeft, "Move Divider Left", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-ctrl-left", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::ResizePaneRight, "Move Divider Right", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-ctrl-right", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::ResizePaneUp, "Move Divider Up", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-ctrl-up", Some(CommandContext::Pane)),
+            CommandDescriptor::new(CommandId::ResizePaneDown, "Move Divider Down", "Layout")
+                .with_contexts(PANE_CONTEXTS)
+                .with_default_binding("cmd-ctrl-down", Some(CommandContext::Pane)),
+            CommandDescriptor::new(
+                CommandId::TerminalFontIncrease,
+                "Increase Terminal Font Size",
+                "Terminal",
+            )
+            .with_contexts(&[CommandContext::Terminal, CommandContext::SshTerminal])
+            .with_default_binding("cmd-=", Some(CommandContext::Terminal))
+            .with_default_binding("cmd-+", Some(CommandContext::Terminal))
+            .with_default_binding("cmd-=", Some(CommandContext::SshTerminal))
+            .with_default_binding("cmd-+", Some(CommandContext::SshTerminal)),
+            CommandDescriptor::new(
+                CommandId::TerminalFontDecrease,
+                "Decrease Terminal Font Size",
+                "Terminal",
+            )
+            .with_contexts(&[CommandContext::Terminal, CommandContext::SshTerminal])
+            .with_default_binding("cmd--", Some(CommandContext::Terminal))
+            .with_default_binding("cmd--", Some(CommandContext::SshTerminal)),
+            CommandDescriptor::new(
+                CommandId::TerminalFontReset,
+                "Reset Terminal Font Size",
+                "Terminal",
+            )
+            .with_contexts(&[CommandContext::Terminal, CommandContext::SshTerminal])
+            .with_default_binding("cmd-0", Some(CommandContext::Terminal))
+            .with_default_binding("cmd-0", Some(CommandContext::SshTerminal)),
             CommandDescriptor::new(CommandId::ClosePane, "Close Active Pane", "Layout")
                 .with_contexts(PANE_CONTEXTS)
                 .with_default_binding("cmd-shift-w", Some(CommandContext::Pane))
@@ -1047,6 +1132,13 @@ impl CommandProvider for WorkspaceCommandProvider {
             .with_contexts(PANE_CONTEXTS),
             CommandDescriptor::new(CommandId::CloseOtherPanes, "Close Other Panes", "Layout")
                 .with_contexts(PANE_CONTEXTS),
+            CommandDescriptor::new(
+                CommandId::RestartTerminalShell,
+                "Restart Terminal Shell",
+                "Terminal",
+            )
+            .with_contexts(&[CommandContext::Terminal, CommandContext::SshTerminal])
+            .with_icon(CommandIcon::Refresh),
         ]);
 
         commands
@@ -1132,13 +1224,6 @@ mod tests {
             assert!(command.default_bindings.iter().any(|candidate| {
                 candidate.keystrokes == binding && candidate.context == Some(context)
             }));
-            CommandDescriptor::new(
-                CommandId::RestartTerminalShell,
-                "Restart Terminal Shell",
-                "Terminal",
-            )
-            .with_contexts(&[CommandContext::Terminal, CommandContext::SshTerminal])
-            .with_icon(CommandIcon::Refresh),
         }
         let reset = commands
             .iter()

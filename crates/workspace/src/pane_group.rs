@@ -158,6 +158,26 @@ impl Member {
             .any(|m| m.set_boundary(axis_id, boundary, frac))
     }
 
+    /// Shift the divider next to `pane` on the innermost `axis` by `delta`
+    /// (fraction of that axis).
+    fn nudge(&mut self, pane: PaneId, axis: SplitAxis, delta: f32) -> bool {
+        let Member::Axis(ax) = self else {
+            return false;
+        };
+        let Some(i) = ax.members.iter().position(|m| m.contains(pane)) else {
+            return false;
+        };
+        if ax.members[i].nudge(pane, axis, delta) {
+            return true;
+        }
+        if ax.axis != axis {
+            return false;
+        }
+        let boundary = i.min(ax.members.len() - 2);
+        let frac = ax.flexes[..=boundary].iter().sum::<f32>() + delta;
+        ax.set_boundary(boundary, frac)
+    }
+
     fn reset_axis(&mut self, axis_id: PaneId) -> bool {
         let Member::Axis(ax) = self else {
             return false;
@@ -454,6 +474,13 @@ impl PaneGroup {
             .is_some_and(|m| m.set_boundary(axis_id, boundary, frac))
     }
 
+    /// Move the divider next to `pane` along `axis` by `delta` (axis fraction).
+    pub fn nudge(&mut self, pane: PaneId, axis: SplitAxis, delta: f32) -> bool {
+        self.root
+            .as_mut()
+            .is_some_and(|m| m.nudge(pane, axis, delta))
+    }
+
     /// Reset axis `axis_id` to an even split.
     pub fn reset_axis(&mut self, axis_id: PaneId) -> bool {
         self.root.as_mut().is_some_and(|m| m.reset_axis(axis_id))
@@ -563,6 +590,11 @@ impl WorkspaceLayout {
     /// Move a resize boundary — see [`PaneGroup::set_boundary`].
     pub fn set_boundary(&mut self, axis_id: PaneId, boundary: usize, frac: f32) -> bool {
         self.group.set_boundary(axis_id, boundary, frac)
+    }
+
+    /// Move the divider next to `pane` — see [`PaneGroup::nudge`].
+    pub fn nudge(&mut self, pane: PaneId, axis: SplitAxis, delta: f32) -> bool {
+        self.group.nudge(pane, axis, delta)
     }
 
     /// Reset an axis to an even split.
@@ -684,6 +716,17 @@ mod tests {
         assert!(ax.flexes.iter().all(|f| (*f - 0.25).abs() < 1e-4));
 
         assert!(!g.set_boundary(999, 0, 0.5));
+    }
+
+    #[test]
+    fn nudge_moves_the_divider_next_to_the_pane() {
+        let mut layout = WorkspaceLayout::new(1);
+        layout.split(100, 2, SplitDirection::Right);
+        assert!(layout.nudge(1, SplitAxis::Horizontal, 0.1));
+        assert!(layout.nudge(2, SplitAxis::Horizontal, 0.1)); // last pane: same divider
+        let root = layout.group.root.as_ref().expect("root");
+        assert!((axis_at(root, 100).unwrap().flexes[0] - 0.7).abs() < 1e-4);
+        assert!(!layout.nudge(1, SplitAxis::Vertical, 0.1));
     }
 
     #[test]

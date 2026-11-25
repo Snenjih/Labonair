@@ -164,7 +164,7 @@ impl crate::Workspace {
 
         self.apply_space_switch(local_active, cx);
         self.cleanup_scrollback(cx);
-        self.announce_background_sessions(cx);
+        self.open_background_sessions(window, cx);
         self.start_shared_sync(cx);
         cx.notify();
     }
@@ -783,7 +783,7 @@ impl crate::Workspace {
             self.select_tab(id, window, cx);
         }
         self.apply_space_switch(join.target_local_id, cx);
-        self.announce_background_sessions(cx);
+        self.open_background_sessions(window, cx);
         if join.conflict {
             labonair_notifications::notification_center(cx).update(cx, |center, cx| {
                 center.push(

@@ -846,6 +846,8 @@ pub struct Workspace {
     pub(crate) agent_notification_targets: HashMap<u64, PaneId>,
     /// Foreground-program tile per terminal pane (no entry = idle shell).
     pub(crate) programs: HashMap<PaneId, labonair_ui_kit::TabTileSpec>,
+    /// Clear name of each pane's foreground program (pane header title).
+    pub(crate) program_names: HashMap<PaneId, &'static str>,
     /// Kind / title / dirty metadata of every pane (the pure half of the
     /// `PaneId`-keyed store; the views live in the maps below).
     pub(crate) pane_meta: crate::pane_kind::PaneMetaStore,
@@ -1266,6 +1268,7 @@ impl Workspace {
             agents: HashMap::new(),
             agent_notification_targets: HashMap::new(),
             programs: HashMap::new(),
+            program_names: HashMap::new(),
             editors: HashMap::new(),
             project_search_owner: None,
             project_search_task: None,
@@ -1418,8 +1421,8 @@ impl Workspace {
         // after restore has re-registered the panes it could bring back.
         this.cleanup_scrollback(cx);
         this.save_session_soon(cx);
-        // Detached session host (ADR 0009): offer sessions no pane claimed.
-        this.announce_background_sessions(cx);
+        // Detached session host (ADR 0009): open sessions no pane claimed.
+        this.open_background_sessions(window, cx);
         cx.subscribe_in(
             &labonair_notifications::notification_center(cx),
             window,
@@ -1433,8 +1436,6 @@ impl Workspace {
                     cx.emit(WorkspaceEvent::OpenForwardPrompt(labonair_ssh::ForwardId(
                         id.to_string(),
                     )));
-                } else if event.action_id == host_sessions::RECOVER_ACTION {
-                    this.recover_background_sessions(window, cx);
                 } else if event.action_id == agent_integration::OPEN_RESULT_ACTION {
                     this.open_agent_result(event.notification_id, window, cx);
                 }
@@ -5369,7 +5370,6 @@ impl Workspace {
         }
     }
 
-    /// Tear down one pane's session + content view.
     /// `Restart Terminal Shell`: restart the shell of the focused terminal
     /// pane (local or SSH). SSH panes open a fresh connection; local panes
     /// get a new shell in the pane's tab cwd. Non-terminal panes are ignored.
@@ -5415,6 +5415,7 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Tear down one pane's session + content view.
     fn retire_pane(&mut self, pane_id: PaneId) {
         if let Some(entry) = self.panes.remove(&pane_id) {
             self.registry.close(entry.session_id);

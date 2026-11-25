@@ -106,6 +106,12 @@ impl Workspace {
             let program = foreground
                 .as_ref()
                 .and_then(|p| crate::program_tile::program_tile(&p.name));
+            match foreground.as_ref().and_then(|p| {
+                crate::program_tile::program_label(&p.name, &view.shell_title().unwrap_or_default())
+            }) {
+                Some(l) => changed |= self.program_names.insert(id, l) != Some(l),
+                None => changed |= self.program_names.remove(&id).is_some(),
+            }
             match program {
                 Some(tile) => changed |= self.programs.insert(id, tile) != Some(tile),
                 None => changed |= self.programs.remove(&id).is_some(),

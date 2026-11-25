@@ -63,6 +63,112 @@ fn known_look(name: &str) -> Option<(IconName, u32, u32)> {
     Some(look)
 }
 
+/// Human-readable name of a known foreground program for the pane header
+/// (`None` = keep the shell/OSC title). Agents are named by `Agent::label`.
+pub(crate) fn program_label(process: &str, title: &str) -> Option<&'static str> {
+    let name = normalize_process_name(process.trim_start_matches('-'));
+    let base = base_label(&name)?;
+    Some(refine(&name, title).unwrap_or(base))
+}
+
+/// Narrower name from the shell title (OSC 0/2), which shells often set to the
+/// running command line. Falls back to the base label when it has no hint.
+// ponytail: title-word match, only as good as the shell's title; read the
+// process args (needs a daemon-protocol change + ADR) if this proves too vague.
+fn refine(name: &str, title: &str) -> Option<&'static str> {
+    let t = title.to_ascii_lowercase();
+    let has = |w: &str| {
+        t.split(|c: char| !c.is_alphanumeric() && c != '-')
+            .any(|x| x == w)
+    };
+    Some(match name {
+        "git" if has("log") || has("show") || has("blame") => "Git History",
+        "git" if has("push") || has("pull") || has("fetch") || has("clone") => "Git Sync",
+        "git" if has("rebase") || has("merge") => "Git Merge",
+        "npm" | "pnpm" | "yarn" | "bun" if has("dev") || has("start") || has("serve") => {
+            "Dev Server"
+        }
+        "npm" | "pnpm" | "yarn" | "bun" if has("test") => "Tests",
+        "npm" | "pnpm" | "yarn" | "bun" if has("build") => "Build",
+        "npm" | "pnpm" | "yarn" | "bun" if has("install") || has("add") => "Installing Packages",
+        "cargo" if has("test") || has("nextest") => "Tests",
+        "cargo" if has("build") || has("check") || has("clippy") => "Build",
+        "cargo" if has("run") => "Cargo Run",
+        "docker" if has("compose") => "Docker Compose",
+        "docker" if has("build") => "Docker Build",
+        "python" | "python3" if has("runserver") => "Django Server",
+        "python" | "python3" if has("pytest") => "Tests",
+        "node" if has("vite") => "Vite",
+        "node" if has("next") => "Next.js",
+        _ => return None,
+    })
+}
+
+fn base_label(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "aider" => "Aider",
+        "gemini" => "Gemini CLI",
+        "ollama" => "Ollama",
+        "terraform" | "tofu" => "Terraform",
+        "aws" => "AWS CLI",
+        "gcloud" => "Google Cloud CLI",
+        "az" => "Azure CLI",
+        "gradle" | "gradlew" => "Gradle",
+        "mvn" => "Maven",
+        "cmake" => "CMake",
+        "zed" => "Zed",
+        "code" => "VS Code",
+        "nc" | "telnet" => "Network Session",
+        "vite" => "Vite",
+        "pytest" => "Tests",
+        "git" => "Git Changes",
+        "lazygit" => "Lazygit",
+        "tig" => "Git History",
+        "gh" => "GitHub CLI",
+        "vim" | "vi" | "view" => "Vim",
+        "nvim" => "Neovim",
+        "hx" => "Helix",
+        "emacs" => "Emacs",
+        "nano" => "Nano",
+        "micro" => "Micro",
+        "top" => "Process Monitor",
+        "htop" => "Htop",
+        "btop" => "Btop",
+        "ssh" | "mosh" => "SSH",
+        "docker" => "Docker",
+        "lazydocker" => "Lazydocker",
+        "kubectl" | "k9s" => "Kubernetes",
+        "psql" => "PostgreSQL",
+        "mysql" => "MySQL",
+        "redis-cli" => "Redis",
+        "sqlite3" => "SQLite",
+        "tmux" => "tmux",
+        "make" => "Make",
+        "cargo" => "Cargo",
+        "rustc" => "Rust Compiler",
+        "node" => "Node.js",
+        "deno" => "Deno",
+        "bun" => "Bun",
+        "npm" => "npm",
+        "pnpm" => "pnpm",
+        "yarn" => "Yarn",
+        "python" | "python3" => "Python",
+        "ipython" => "IPython",
+        "go" => "Go",
+        "ruby" | "irb" => "Ruby",
+        "less" => "Pager",
+        "man" => "Manual",
+        "ranger" | "yazi" | "mc" | "nnn" => "File Manager",
+        "fzf" => "Fuzzy Finder",
+        "watch" => "Watch",
+        "tail" => "Log Viewer",
+        "ping" => "Ping",
+        "curl" | "wget" => "Download",
+        "scp" | "sftp" | "rsync" => "File Transfer",
+        _ => return None,
+    })
+}
+
 /// Tile colour for a program without a dedicated look: a deterministic pick
 /// derived from the name so a given program always keeps its colour.
 fn fallback_colour(name: &str) -> u32 {
@@ -108,6 +214,25 @@ mod tests {
         assert_eq!(node.glyph, IconName::Hexagon);
         assert_eq!(program_tile("python3.exe"), program_tile("python"));
         assert_eq!(program_tile("btop").unwrap().glyph, IconName::Activity);
+    }
+
+    #[test]
+    fn labels_use_normalised_name() {
+        assert_eq!(program_label("/usr/bin/git", ""), Some("Git Changes"));
+        assert_eq!(program_label("nvim", ""), Some("Neovim"));
+        assert_eq!(program_label("zsh", ""), None);
+        assert_eq!(program_label("frobnicate", ""), None);
+    }
+
+    #[test]
+    fn title_refines_label() {
+        assert_eq!(
+            program_label("git", "git log --oneline"),
+            Some("Git History")
+        );
+        assert_eq!(program_label("pnpm", "pnpm run dev"), Some("Dev Server"));
+        assert_eq!(program_label("cargo", "cargo test -p x"), Some("Tests"));
+        assert_eq!(program_label("cargo", "~/proj"), Some("Cargo"));
     }
 
     #[test]

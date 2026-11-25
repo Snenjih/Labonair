@@ -56,14 +56,6 @@ pub(crate) fn orphans<'a>(
         .collect()
 }
 
-/// Title of the "found" notification.
-pub(crate) fn found_title(count: usize) -> String {
-    match count {
-        1 => "1 background session found".to_string(),
-        n => format!("{n} background sessions found"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,11 +121,5 @@ mod tests {
         let found = orphans(&alive, &[5]);
         let ids: Vec<u64> = found.iter().map(|s| s.id).collect();
         assert_eq!(ids, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn found_title_counts() {
-        assert_eq!(found_title(1), "1 background session found");
-        assert_eq!(found_title(3), "3 background sessions found");
     }
 }

@@ -318,6 +318,25 @@ impl Workspace {
         }
     }
 
+    /// Move the divider next to the focused pane one step towards `dir`.
+    pub fn resize_pane_dir(&mut self, dir: SplitDirection, cx: &mut Context<Self>) {
+        const STEP: f32 = 0.05;
+        let Some((tab, pane)) = self.active_pane(cx) else {
+            return;
+        };
+        let delta = match dir {
+            SplitDirection::Left | SplitDirection::Up => -STEP,
+            SplitDirection::Right | SplitDirection::Down => STEP,
+        };
+        if self
+            .layouts
+            .get_mut(&tab)
+            .is_some_and(|l| l.nudge(pane, dir.axis(), delta))
+        {
+            cx.notify();
+        }
+    }
+
     /// Cycle focus through the panes of the active tab.
     pub fn focus_pane_cycle(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some((tab, pane)) = self.active_pane(cx) else {
