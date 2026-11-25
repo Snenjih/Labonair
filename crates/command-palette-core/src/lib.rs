@@ -264,6 +264,7 @@ pub enum CommandId {
     TerminalPasteText,
     TerminalShowCharacterPalette,
     TerminalRename,
+    RestartTerminalShell,
     // Detached session host (ADR 0009).
     TerminalRecoverBackgroundSessions,
     TerminalQuitAndStopAllSessions,
@@ -956,6 +957,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (
         CommandId::TerminalQuitAndStopAllSessions,
         "terminal::QuitAndStopAllSessions",
+    (CommandId::RestartTerminalShell, "terminal::RestartShell"),
     ),
     (
         CommandId::TerminalRestartBackgroundHost,

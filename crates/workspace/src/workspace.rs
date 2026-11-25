@@ -5370,6 +5370,51 @@ impl Workspace {
     }
 
     /// Tear down one pane's session + content view.
+    /// `Restart Terminal Shell`: restart the shell of the focused terminal
+    /// pane (local or SSH). SSH panes open a fresh connection; local panes
+    /// get a new shell in the pane's tab cwd. Non-terminal panes are ignored.
+    pub fn restart_terminal_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((tab_id, pane_id)) = self.active_pane(cx) else {
+            return;
+        };
+        let Some(old_session) = self.panes.get(&pane_id).map(|e| e.session_id) else {
+            return;
+        };
+        if self.ssh_tabs.values().any(|t| t.pane_id == pane_id) {
+            self.reconnect_ssh_pane(pane_id, window, cx);
+            return;
+        }
+        let cwd = self
+            .tabs
+            .read(cx)
+            .get(tab_id)
+            .and_then(|t| t.data.cwd.clone());
+        let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd.clone(), None, cx)
+        else {
+            return;
+        };
+        self.registry.close(old_session);
+        let view = self.new_terminal_view(handle, window, cx);
+        self.panes.insert(
+            pane_id,
+            PaneEntry {
+                session_id,
+                view,
+                scrollback_id,
+            },
+        );
+        self.tabs.update(cx, |s, cx| {
+            if s.get(tab_id)
+                .is_some_and(|t| t.data.session_id == Some(old_session))
+            {
+                s.set_session(tab_id, session_id, cwd, cx);
+            }
+        });
+        self.focus_active(window, cx);
+        self.save_session_soon(cx);
+        cx.notify();
+    }
+
     fn retire_pane(&mut self, pane_id: PaneId) {
         if let Some(entry) = self.panes.remove(&pane_id) {
             self.registry.close(entry.session_id);

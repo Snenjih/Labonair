@@ -452,6 +452,13 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     });
 
     let workspace_handle = workspace.clone();
+    let workspace_handle = workspace.clone();
+    register!(CommandId::RestartTerminalShell, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.restart_terminal_shell(window, cx)
+        });
+    });
+
     register!(CommandId::OpenProjectSettings, move |window, cx| {
         workspace_handle.update(cx, |workspace, cx| {
             workspace.open_or_create_project_settings(window, cx);
@@ -1125,6 +1132,13 @@ mod tests {
             assert!(command.default_bindings.iter().any(|candidate| {
                 candidate.keystrokes == binding && candidate.context == Some(context)
             }));
+            CommandDescriptor::new(
+                CommandId::RestartTerminalShell,
+                "Restart Terminal Shell",
+                "Terminal",
+            )
+            .with_contexts(&[CommandContext::Terminal, CommandContext::SshTerminal])
+            .with_icon(CommandIcon::Refresh),
         }
         let reset = commands
             .iter()
