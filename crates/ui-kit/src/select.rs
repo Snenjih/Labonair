@@ -434,7 +434,10 @@ impl RenderOnce for SearchableSelect {
         let nav_options = options.clone();
         let (nav_dismiss, nav_select) = (dismiss.clone(), on_select.clone());
         let nav_list = list_state.clone();
+        // Fixed width: an input inside a content-sized popup has no definite
+        // width, which left the caret floating mid-field.
         let content = div()
+            .w(c.space(280.0))
             .flex()
             .flex_col()
             .gap(c.space(4.0))
@@ -545,5 +548,47 @@ mod tests {
             |_, _| {},
             |_, _, _| {},
         );
+    }
+
+    struct SearchHost {
+        opts: Vec<SelectOption>,
+        picked: std::rc::Rc<std::cell::RefCell<Option<String>>>,
+    }
+
+    impl gpui::Render for SearchHost {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let picked = self.picked.clone();
+            div().size_full().child(select_popover(
+                SelectPopoverAnchor::new(
+                    "sel",
+                    Point::new(px(20.0), px(20.0)),
+                    ListState::new(0, gpui::ListAlignment::Top, px(320.0)),
+                ),
+                test_palette(),
+                &self.opts,
+                "",
+                |_, _| {},
+                move |t, _, _| *picked.borrow_mut() = Some(t.to_string()),
+            ))
+        }
+    }
+
+    #[gpui::test]
+    fn searchable_select_accepts_typing_and_filters(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let picked = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let opts: Vec<SelectOption> = (0..150)
+            .map(|i| (format!("t{i}").into(), format!("Item {i}").into()))
+            .collect();
+        let host = picked.clone();
+        let (_root, cx) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|_| SearchHost { opts, picked: host });
+            gpui_component::Root::new(view, window, cx)
+        });
+        cx.run_until_parked();
+        cx.simulate_input("Item 137");
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        assert_eq!(picked.borrow().as_deref(), Some("t137"));
     }
 }

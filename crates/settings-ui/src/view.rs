@@ -27,6 +27,7 @@ pub use labonair_ui_kit::{
     select_trigger, select_trigger_disabled, text_field, text_field_surface, text_input, v_stack,
     ButtonSize, ButtonVariant, IconButtonShape, IconName, InputEvent, InputState, Palette,
     SegmentSize, SegmentVariant, SelectOption, SelectPopoverAnchor, TextFieldState,
+    SELECT_SEARCH_THRESHOLD,
 };
 pub use labonair_ui_kit::{
     category_chip, preview_tile, preview_tile_group, settings_group, settings_row, slider_control,
@@ -1543,6 +1544,15 @@ impl SettingsView {
         // A full-page owner surface (Hosts) handles its own keys; only Escape
         // (when the surface left it unhandled) is Settings navigation.
         if key != "escape" && self.full_page_active() {
+            return;
+        }
+        // A searchable dropdown owns its keyboard (typing, arrows, Enter, Esc);
+        // swallowing keys here would block text entry into its search field.
+        if self
+            .dropdown
+            .as_ref()
+            .is_some_and(|m| m.options.len() > SELECT_SEARCH_THRESHOLD)
+        {
             return;
         }
         if self.dropdown.is_some() {
