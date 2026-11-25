@@ -1797,6 +1797,27 @@ pub fn all_fields() -> Vec<AnyField> {
             "Keep-alive max failures",
             "Fallback missed-ping tolerance for hosts that don't set their own."
         ),
+        field!(
+            connections.forwards_default_listen_host,
+            "forwardsDefaultListenHost",
+            Text,
+            "Default listen address",
+            "Address new port forwards listen on (127.0.0.1 keeps them local)."
+        ),
+        field!(
+            connections.forwards_auto_reconnect,
+            "forwardsAutoReconnect",
+            Switch,
+            "Reconnect automatically",
+            "Re-establish port forwards when their SSH connection drops."
+        ),
+        field!(
+            connections.forwards_confirm_public_bind,
+            "forwardsConfirmPublicBind",
+            Switch,
+            "Confirm public bind",
+            "Ask for confirmation before a forward listens on a non-loopback address."
+        ),
     ];
     // The background session host is unix-only.
     #[cfg(not(unix))]

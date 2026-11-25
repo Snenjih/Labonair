@@ -51,6 +51,12 @@ Built-in themes ship with the app. The icon-theme catalog contains Labonair (`de
 
 Panels register identity, title, icon, supported docks, and a view factory. Status items register identity, placement metadata, badge behavior, and a view factory. The shell hosts the surface; feature modules own content and actions. Contracts live in `labonair-panel`.
 
+Port forwards ([ADR 0016](adr/0016-multi-hop-jump-routes-and-port-forwards.md)) contribute:
+
+- Status item `forwards` (`labonair-forwards-ui`): right side, group 1, order 15, show-on-demand (`is_empty` while no forward exists, like Transfers); popover lists forwards grouped by host.
+- Palette commands (category `Connections`): `Port Forwards: New…` (`forwards::New`), `Port Forwards: Start Saved…` (`forwards::StartSaved`), `Port Forwards: Stop…` (`forwards::Stop`), `Port Forwards: Stop All` (`forwards::StopAll`), `Port Forwards: Manage` (`forwards::Manage`), `Jump Hosts: Edit Route…` (`connections::EditJumpRoute`) and `Open SSH via…`. Submenu rows come from the owner's `ForwardsCommandProvider`; the query also accepts the ssh quick syntax (`-L`/`-R`/`-D`).
+- Typed handler contribution: the forwards view emits `labonair_forwards::ForwardsUiEvent` (`New`, `Close`, `Restart`, `Toggle`, `StopAll`, `Manage`, `EditRoute`, `CopyAddress`, `OpenInBrowser`, prompt answer); the shell subscribes once and routes it to the workspace and Settings. No shell-side command table.
+
 ## Activity registry
 
 `labonair-activity::ActivityRegistry` is the sole owner of "work is running" state shown in the statusbar. A feature announces work with `ActivityCenter::begin` and clears it with `finish`; a failure with no other surface begins as `ActivityKind::Failure` and stays until dismissed. Entries may carry a `key` (one language server shared by many editors announces once), a `show_after` delay (short runs never flash the bar), progress, and data-only cancel/click action ids interpreted by the owner via `ActivityActionEvent`; closures are never stored. Failures that already publish a notification do not also publish an activity. Transfers are excluded and keep their badge.

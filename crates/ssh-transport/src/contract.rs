@@ -3,15 +3,15 @@
 
 //! Concrete transport adapters for the UI-free SSH capability contracts.
 
-use super::{client, config_parser, pty, sftp as remote, tunnels};
+use super::{client, config_parser, forwards::ForwardRegistry, pty, sftp as remote};
 use labonair_errors::LabonairError;
 use labonair_events::{EventBus, EventChannel, RawEvent};
 use labonair_ssh::{
-    ActiveTunnel, BoxFuture, ImportConflict, SharedSshEventSink, SshConfigEntry, SshConfigService,
-    SshConnectRequest, SshConnectionEvent, SshConnectionService, SshConnectionTester,
-    SshEventReceiver, SshEventSource, SshExecOutput, SshExecService, SshPtyService,
+    BoxFuture, ForwardId, ForwardInfo, ForwardOpenRequest, ImportConflict, PromptAnswer,
+    PromptRequestId, SharedSshEventSink, SshConfigEntry, SshConfigService, SshConnectRequest,
+    SshConnectionEvent, SshConnectionService, SshConnectionTester, SshEventReceiver,
+    SshEventSource, SshExecOutput, SshExecService, SshForwardService, SshPtyService,
     SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId, SshTestResult,
-    SshTunnelService,
 };
 use serde::Deserialize;
 
@@ -19,6 +19,7 @@ use serde::Deserialize;
 pub struct SshConnectionServiceAdapter {
     state: super::SshState,
     trust: super::TrustState,
+    prompts: super::prompts::PromptBroker,
     hosts_db: labonair_persistence::Database,
     secrets: std::sync::Arc<labonair_secrets::SecretsState>,
     events: EventBus,
@@ -28,6 +29,7 @@ impl SshConnectionServiceAdapter {
     pub fn new(
         state: super::SshState,
         trust: super::TrustState,
+        prompts: super::prompts::PromptBroker,
         hosts_db: labonair_persistence::Database,
         secrets: std::sync::Arc<labonair_secrets::SecretsState>,
         events: EventBus,
@@ -35,6 +37,7 @@ impl SshConnectionServiceAdapter {
         Self {
             state,
             trust,
+            prompts,
             hosts_db,
             secrets,
             events,
@@ -77,30 +80,19 @@ impl SshConfigServiceAdapter {
     }
 }
 
+/// Port-forward capability over the shared [`ForwardRegistry`].
 #[derive(Clone)]
-pub struct SshTunnelServiceAdapter {
-    tunnel_state: tunnels::TunnelState,
-    hosts_db: labonair_persistence::Database,
-    secrets: std::sync::Arc<labonair_secrets::SecretsState>,
-    trust: super::TrustState,
-    events: EventBus,
+pub struct SshForwardServiceAdapter {
+    registry: ForwardRegistry,
 }
 
-impl SshTunnelServiceAdapter {
-    pub fn new(
-        tunnel_state: tunnels::TunnelState,
-        hosts_db: labonair_persistence::Database,
-        secrets: std::sync::Arc<labonair_secrets::SecretsState>,
-        trust: super::TrustState,
-        events: EventBus,
-    ) -> Self {
-        Self {
-            tunnel_state,
-            hosts_db,
-            secrets,
-            trust,
-            events,
-        }
+impl SshForwardServiceAdapter {
+    pub fn new(registry: ForwardRegistry) -> Self {
+        Self { registry }
+    }
+
+    pub fn set_reconnect_policy(&self, policy: super::forwards::ReconnectPolicy) {
+        self.registry.set_reconnect_policy(policy);
     }
 }
 
@@ -232,6 +224,19 @@ fn decode_connection_event(raw: &RawEvent) -> Option<SshConnectionEvent> {
                     is_mismatch: payload.is_mismatch,
                 })
         }
+        "hop_prompt" => {
+            #[derive(Deserialize)]
+            struct HopPromptPayload {
+                session_id: String,
+                pending: labonair_ssh::PendingPrompt,
+            }
+            serde_json::from_value::<HopPromptPayload>(raw.payload.clone())
+                .ok()
+                .map(|p| SshConnectionEvent::HopPrompt {
+                    session_id: p.session_id,
+                    pending: p.pending,
+                })
+        }
         "auth_required" => serde_json::from_value::<AuthRequiredPayload>(raw.payload.clone())
             .ok()
             .map(|payload| SshConnectionEvent::AuthRequired {
@@ -298,6 +303,7 @@ impl From<config_parser::SshConfigEntry> for SshConfigEntry {
             auth_method: entry.auth_method,
             private_key_path: entry.private_key_path,
             proxy_jump: entry.proxy_jump,
+            forwards: entry.forwards,
         }
     }
 }
@@ -312,6 +318,7 @@ impl From<SshConfigEntry> for config_parser::SshConfigEntry {
             auth_method: entry.auth_method,
             private_key_path: entry.private_key_path,
             proxy_jump: entry.proxy_jump,
+            forwards: entry.forwards,
         }
     }
 }
@@ -347,6 +354,10 @@ impl SshConnectionService for SshConnectionServiceAdapter {
         let hosts_db = self.hosts_db.clone();
         let secrets = self.secrets.clone();
         let event_bus = self.events.clone();
+        let prompts = super::prompts::HopPrompts {
+            broker: self.prompts.clone(),
+            sink: std::sync::Arc::new(super::prompts::EventBusPromptSink(event_bus.clone())),
+        };
         Box::pin(async move {
             let session_id = request.session_id.into();
             let on_event = EventChannel::new(move |event: pty::SshPtyEvent| match event {
@@ -369,6 +380,8 @@ impl SshConnectionService for SshConnectionServiceAdapter {
                 request.connect_timeout_secs,
                 request.keepalive_interval_secs,
                 request.keepalive_max_failures,
+                Some(prompts),
+                request.route_override,
             )
             .await
         })
@@ -387,6 +400,22 @@ impl SshConnectionService for SshConnectionServiceAdapter {
     ) -> BoxFuture<'a, Result<(), String>> {
         let trust = self.trust.clone();
         Box::pin(async move { client::ssh_trust_host(session_id.into(), accepted, &trust).await })
+    }
+
+    fn answer_prompt<'a>(
+        &'a self,
+        _session_id: SshSessionId,
+        request_id: labonair_ssh::PromptRequestId,
+        answer: labonair_ssh::PromptAnswer,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        let delivered = self.prompts.answer(&request_id, answer);
+        Box::pin(async move {
+            if delivered {
+                Ok(())
+            } else {
+                Err("no pending prompt for this request".to_string())
+            }
+        })
     }
 }
 
@@ -570,41 +599,81 @@ impl SshConfigService for SshConfigServiceAdapter {
     }
 }
 
-impl SshTunnelService for SshTunnelServiceAdapter {
-    fn start<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
-        let tunnel_state = self.tunnel_state.clone();
-        let hosts_db = self.hosts_db.clone();
-        let secrets = self.secrets.clone();
-        let trust = self.trust.clone();
-        let events = self.events.clone();
-        Box::pin(async move {
-            tunnels::ssh_start_tunnels(
-                host_id,
-                &tunnel_state,
-                &hosts_db,
-                &secrets,
-                &trust,
-                events,
-                None,
-            )
-            .await
-        })
+impl SshForwardService for SshForwardServiceAdapter {
+    fn set_reconnect_policy(&self, enabled: bool) {
+        self.registry
+            .set_reconnect_policy(super::forwards::ReconnectPolicy {
+                enabled,
+                ..Default::default()
+            });
     }
 
-    fn stop<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
-        let tunnel_state = self.tunnel_state.clone();
-        Box::pin(async move { tunnels::ssh_stop_tunnels(host_id, &tunnel_state).await })
+    fn open<'a>(&'a self, request: ForwardOpenRequest) -> BoxFuture<'a, Result<ForwardId, String>> {
+        Box::pin(self.registry.open(request))
     }
 
-    fn active(&self) -> Vec<ActiveTunnel> {
-        tunnels::active_tunnels(&self.tunnel_state)
-            .into_iter()
-            .map(|tunnel| ActiveTunnel {
-                host_id: tunnel.host_id,
-                local_port: tunnel.local_port,
-                remote_host: tunnel.remote_host,
-                remote_port: tunnel.remote_port,
-            })
-            .collect()
+    fn close<'a>(&'a self, id: ForwardId) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(self.registry.close(id))
+    }
+
+    fn restart<'a>(&'a self, id: ForwardId) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(self.registry.restart(id))
+    }
+
+    fn answer_prompt<'a>(
+        &'a self,
+        id: ForwardId,
+        request_id: PromptRequestId,
+        answer: PromptAnswer,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move { self.registry.answer_prompt(id, request_id, answer) })
+    }
+
+    fn attach_host<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(self.registry.attach_host(host_id))
+    }
+
+    fn detach_host<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(self.registry.detach_host(host_id))
+    }
+
+    fn list(&self) -> Vec<ForwardInfo> {
+        self.registry.list()
+    }
+
+    fn revision(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.registry.revision()
+    }
+}
+
+#[cfg(test)]
+mod forward_adapter_tests {
+    use super::*;
+    use crate::forwards::{ForwardPrompts, ForwardSession, HostSessionFactory};
+    use std::sync::Arc;
+
+    struct NoHosts;
+
+    impl HostSessionFactory for NoHosts {
+        fn connect<'a>(
+            &'a self,
+            _: &'a str,
+            _: ForwardPrompts,
+        ) -> BoxFuture<'a, Result<Arc<dyn ForwardSession>, String>> {
+            Box::pin(async { Err("no hosts".into()) })
+        }
+
+        fn saved(&self, _: &str) -> Vec<labonair_forwards::SavedForward> {
+            Vec::new()
+        }
+    }
+
+    #[tokio::test]
+    async fn adapter_delegates_to_registry() {
+        let adapter = SshForwardServiceAdapter::new(ForwardRegistry::new(Arc::new(NoHosts)));
+        assert!(adapter.list().is_empty());
+        assert!(adapter.attach_host("h".into()).await.is_ok());
+        assert!(adapter.detach_host("h".into()).await.is_ok());
+        assert!(adapter.close(ForwardId("nope".into())).await.is_err());
     }
 }

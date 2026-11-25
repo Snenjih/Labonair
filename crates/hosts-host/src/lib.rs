@@ -5,7 +5,7 @@
 //!
 //! The workspace needs to read the host catalog (ids, names, jump-host labels,
 //! picker rows) and push two live snapshots back (connection status, active
-//! tunnels). Before this crate existed it held an `Entity<HostManagerView>`
+//! forward states). Before this crate existed it held an `Entity<HostManagerView>`
 //! and called that view's methods directly, coupling the workspace to the
 //! Hosts *UI* crate. [`HostView`] replaces that entity with a narrow set of
 //! injected callbacks, mirroring `labonair-explorer-host` /
@@ -14,8 +14,20 @@
 
 use std::rc::Rc;
 
+use std::collections::HashMap;
+
 use gpui::App;
+use labonair_forwards::SavedForward;
 use labonair_hosts::HostPickerRow;
+use labonair_ssh::{ForwardId, ForwardState};
+
+/// Live state of one running forward, as the Hosts forwards tab shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForwardLive {
+    pub state: ForwardState,
+    /// Actual listen port (differs from the saved one for port 0).
+    pub bound_port: Option<u16>,
+}
 
 /// Live connection status for a saved host, tracked off the SSH event stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -39,33 +51,28 @@ impl HostStatus {
     }
 }
 
-/// One running port-forward, as shown in the host manager's active-tunnel
-/// panel. Built by the workspace from the SSH tunnel capability snapshot.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActiveTunnelRow {
-    pub host_label: String,
-    pub local_port: u16,
-    pub remote_host: String,
-    pub remote_port: u16,
-}
-
 type HostIdsFn = Rc<dyn Fn(&App) -> Vec<String>>;
+type RouteLabelsFn = Rc<dyn Fn(&str, &App) -> Vec<String>>;
 type HostNameFn = Rc<dyn Fn(&str, &App) -> Option<String>>;
 type PickerRowsFn = Rc<dyn Fn(&App) -> Vec<HostPickerRow>>;
 type RecentPickerRowsFn = Rc<dyn Fn(usize, &App) -> Vec<HostPickerRow>>;
 type SetStatusFn = Rc<dyn Fn(&str, HostStatus, &mut App)>;
-type SetActiveTunnelsFn = Rc<dyn Fn(Vec<ActiveTunnelRow>, &mut App)>;
+type SetForwardStatesFn = Rc<dyn Fn(HashMap<ForwardId, ForwardLive>, &mut App)>;
+type SavedForwardsFn = Rc<dyn Fn(&str, &App) -> Vec<SavedForward>>;
+type SaveForwardFn = Rc<dyn Fn(&str, SavedForward, &mut App)>;
 
 /// Narrow composition contract between the workspace and the Hosts UI.
 #[derive(Clone)]
 pub struct HostView {
     host_ids: HostIdsFn,
     host_name: HostNameFn,
-    jump_host_label: HostNameFn,
+    route_labels: RouteLabelsFn,
     picker_rows: PickerRowsFn,
     recent_picker_rows: RecentPickerRowsFn,
     set_status: SetStatusFn,
-    set_active_tunnels: SetActiveTunnelsFn,
+    set_forward_states: SetForwardStatesFn,
+    saved_forwards: SavedForwardsFn,
+    save_forward: SaveForwardFn,
 }
 
 impl HostView {
@@ -73,20 +80,24 @@ impl HostView {
     pub fn new(
         host_ids: impl Fn(&App) -> Vec<String> + 'static,
         host_name: impl Fn(&str, &App) -> Option<String> + 'static,
-        jump_host_label: impl Fn(&str, &App) -> Option<String> + 'static,
+        route_labels: impl Fn(&str, &App) -> Vec<String> + 'static,
         picker_rows: impl Fn(&App) -> Vec<HostPickerRow> + 'static,
         recent_picker_rows: impl Fn(usize, &App) -> Vec<HostPickerRow> + 'static,
         set_status: impl Fn(&str, HostStatus, &mut App) + 'static,
-        set_active_tunnels: impl Fn(Vec<ActiveTunnelRow>, &mut App) + 'static,
+        set_forward_states: impl Fn(HashMap<ForwardId, ForwardLive>, &mut App) + 'static,
+        saved_forwards: impl Fn(&str, &App) -> Vec<SavedForward> + 'static,
+        save_forward: impl Fn(&str, SavedForward, &mut App) + 'static,
     ) -> Self {
         Self {
             host_ids: Rc::new(host_ids),
             host_name: Rc::new(host_name),
-            jump_host_label: Rc::new(jump_host_label),
+            route_labels: Rc::new(route_labels),
             picker_rows: Rc::new(picker_rows),
             recent_picker_rows: Rc::new(recent_picker_rows),
             set_status: Rc::new(set_status),
-            set_active_tunnels: Rc::new(set_active_tunnels),
+            set_forward_states: Rc::new(set_forward_states),
+            saved_forwards: Rc::new(saved_forwards),
+            save_forward: Rc::new(save_forward),
         }
     }
 
@@ -95,11 +106,13 @@ impl HostView {
         Self::new(
             |_| Vec::new(),
             |_, _| None,
-            |_, _| None,
+            |_, _| Vec::new(),
             |_| Vec::new(),
             |_, _| Vec::new(),
             |_, _, _| {},
             |_, _| {},
+            |_, _| Vec::new(),
+            |_, _, _| {},
         )
     }
 
@@ -113,9 +126,9 @@ impl HostView {
         (self.host_name)(host_id, cx)
     }
 
-    /// The jump-host chain label for a host id, if any.
-    pub fn jump_host_label(&self, host_id: &str, cx: &App) -> Option<String> {
-        (self.jump_host_label)(host_id, cx)
+    /// Jump-host names for a host id, outermost first (empty = direct).
+    pub fn route_labels(&self, host_id: &str, cx: &App) -> Vec<String> {
+        (self.route_labels)(host_id, cx)
     }
 
     /// Canonical host rows for command-palette / new-tab pickers.
@@ -133,8 +146,18 @@ impl HostView {
         (self.set_status)(host_id, status, cx);
     }
 
-    /// Replace the active-tunnel snapshot in the host manager panel.
-    pub fn set_active_tunnels(&self, rows: Vec<ActiveTunnelRow>, cx: &mut App) {
-        (self.set_active_tunnels)(rows, cx);
+    /// Upsert a saved forward into a host's `tunnels` column (Hosts owns the write).
+    pub fn save_forward(&self, host_id: &str, forward: SavedForward, cx: &mut App) {
+        (self.save_forward)(host_id, forward, cx);
+    }
+
+    /// Replace the live forward-state snapshot (running forwards by id).
+    pub fn set_forward_states(&self, states: HashMap<ForwardId, ForwardLive>, cx: &mut App) {
+        (self.set_forward_states)(states, cx);
+    }
+
+    /// Typed saved forwards of a host (from the hosts catalog).
+    pub fn saved_forwards(&self, host_id: &str, cx: &App) -> Vec<SavedForward> {
+        (self.saved_forwards)(host_id, cx)
     }
 }

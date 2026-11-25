@@ -49,6 +49,8 @@ labonair-panel = { path = "../panel" }
 labonair-explorer-host = { path = "../explorer-host" }
 labonair-workspace = { path = "../workspace" }
 labonair-hosts = { path = "../hosts" }
+labonair-forwards = { path = "../forwards" }
+labonair-forwards-ui = { path = "../forwards-ui" }
 labonair-hosts-host = { path = "../hosts-host" }
 labonair-hosts-ui = { path = "../hosts-ui" }
 labonair-editor = { path = "../editor" }

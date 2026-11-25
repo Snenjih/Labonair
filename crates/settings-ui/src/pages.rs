@@ -744,6 +744,14 @@ const TERMINAL_MAIN: &[Group] = &[
             "sshKeepaliveMaxFailures"
         ),
     ),
+    (
+        "Port forwards",
+        paths!("connections":
+            "forwardsDefaultListenHost",
+            "forwardsAutoReconnect",
+            "forwardsConfirmPublicBind"
+        ),
+    ),
     ("Advanced", &[">advanced"]),
 ];
 

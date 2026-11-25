@@ -35,9 +35,9 @@ use std::time::Duration;
 use labonair_events::{EventBus, RawEvent};
 use labonair_sftp::{SftpBrowserService, SftpSessionHandle, SftpSessionService};
 use labonair_ssh::{
-    SharedSshEventSink, SshConnectRequest, SshConnectionService, SshEventSink, SshExecService,
-    SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId,
-    SshTunnelService,
+    ForwardId, ForwardInfo, ForwardOrigin, SharedSshEventSink, SshConnectRequest,
+    SshConnectionService, SshEventSink, SshExecService, SshForwardService, SshPtyService,
+    SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId,
 };
 use labonair_terminal_core::{TermDimensions, TerminalColors, TerminalEmulator};
 use labonair_transfers::{
@@ -49,7 +49,8 @@ use serde_json::{json, Value};
 use super::{lock, Attachments, Outbox, Session, Source, SshCmd, SshSource, State, Status};
 use crate::protocol::{
     Message, RpcCall, RpcValue, SshConnectParams, SshHostSnapshot, SshSessionInfo, TransferConfig,
-    WireError, WireTransferSnapshot,
+    WireError, WireTransferSnapshot, FORWARDS_PROTO, FORWARD_CHANGED, FORWARD_REMOVED,
+    FORWARD_RESET,
 };
 
 /// Keepalive defaults when the connect request leaves them open: on.
@@ -62,6 +63,7 @@ const DEFAULT_SSH_ROWS: u32 = 50;
 const FORWARDED_EVENTS: &[&str] = &[
     "ssh_connect_log",
     "known_hosts_warning",
+    "hop_prompt",
     "auth_required",
     "passphrase_required",
     "session_established",
@@ -87,7 +89,7 @@ pub struct HostServices {
     pub remote_command: Arc<dyn SshRemoteCommandService>,
     pub remote_file: Arc<dyn SshRemoteFileService>,
     pub exec: Arc<dyn SshExecService>,
-    pub tunnels: Arc<dyn SshTunnelService>,
+    pub forwards: Arc<dyn SshForwardService>,
     pub sftp_session: Arc<dyn SftpSessionService>,
     pub sftp_browser: Arc<dyn SftpBrowserService>,
     pub transfers: Arc<dyn TransferService>,
@@ -142,6 +144,8 @@ struct Hub {
     connections: HashMap<String, ConnState>,
     /// The conflict policy the user configured (before the unattended clamp).
     configured_policy: Option<String>,
+    /// Per-connection forward diff pushers (v3 subscribers).
+    forward_pushers: HashMap<u64, tokio::task::JoinHandle<()>>,
 }
 
 pub(super) struct SshRuntime {
@@ -159,6 +163,9 @@ impl SshRuntime {
 
     pub(super) fn jobs_active(&self) -> bool {
         !lock(&self.hub).live_jobs.is_empty()
+            // A forward that is starting, up, reconnecting or waiting for an
+            // answer keeps the daemon alive like a running job.
+            || self.services.forwards.list().iter().any(ForwardInfo::is_running)
     }
 
     pub(super) fn forget_session(&self, ssh_id: &str) {
@@ -248,7 +255,7 @@ impl SshRuntime {
                 });
                 return;
             }
-            "auth_required" | "passphrase_required" => {
+            "auth_required" | "passphrase_required" | "hop_prompt" => {
                 let Some(sid) = sid else { return };
                 if let Some((_, outbox)) = self.owner_subscriber(&sid) {
                     outbox.push_control(&Message::BusEvent {
@@ -770,6 +777,31 @@ impl SshRuntime {
         Self::replay(&hub, conn, proto_version, outbox, true);
         // Finished jobs were handed to the UI; do not replay them forever.
         hub.registry.clear_completed();
+        if let Some(old) = hub.forward_pushers.remove(&conn) {
+            old.abort();
+        }
+        if proto_version >= FORWARDS_PROTO {
+            // Replay and live pushes share one task start so no change is
+            // lost in between (the receiver is marked before the first read).
+            let forwards = Arc::clone(&self.services.forwards);
+            let mut rx = forwards.revision();
+            rx.borrow_and_update();
+            outbox.push_control(&Message::BusEvent {
+                name: FORWARD_RESET.into(),
+                payload: Value::Null,
+            });
+            let mut last = HashMap::new();
+            push_forward_diff(&*forwards, outbox, &mut last);
+            let outbox = Arc::clone(outbox);
+            hub.forward_pushers.insert(
+                conn,
+                tokio::spawn(async move {
+                    while rx.changed().await.is_ok() {
+                        push_forward_diff(&*forwards, &outbox, &mut last);
+                    }
+                }),
+            );
+        }
         drop(hub);
         self.apply_policy();
     }
@@ -779,6 +811,9 @@ impl SshRuntime {
     pub(super) fn unsubscribe(&self, conn: u64) {
         let mut hub = lock(&self.hub);
         hub.subscribers.retain(|(id, _, _)| *id != conn);
+        if let Some(pusher) = hub.forward_pushers.remove(&conn) {
+            pusher.abort();
+        }
         let orphaned = hub
             .pending_trust
             .iter()
@@ -823,6 +858,42 @@ impl SshRuntime {
         lock(&self.hub).configured_policy = Some(config.default_conflict_resolution);
         self.apply_policy();
     }
+}
+
+/// Send only what changed since `last` (the forwards this connection already
+/// knows). `origin` is `Daemon` on the wire whatever the service says.
+fn push_forward_diff(
+    service: &dyn SshForwardService,
+    outbox: &Outbox,
+    last: &mut HashMap<ForwardId, ForwardInfo>,
+) {
+    let now = wire_forwards(service);
+    for id in last.keys().filter(|id| !now.contains_key(*id)) {
+        outbox.push_control(&Message::BusEvent {
+            name: FORWARD_REMOVED.into(),
+            payload: json!({ "id": id.0 }),
+        });
+    }
+    for (id, info) in &now {
+        if last.get(id) != Some(info) {
+            outbox.push_control(&Message::BusEvent {
+                name: FORWARD_CHANGED.into(),
+                payload: serde_json::to_value(info).unwrap_or_default(),
+            });
+        }
+    }
+    *last = now;
+}
+
+fn wire_forwards(service: &dyn SshForwardService) -> HashMap<ForwardId, ForwardInfo> {
+    service
+        .list()
+        .into_iter()
+        .map(|mut info| {
+            info.origin = ForwardOrigin::Daemon;
+            (info.spec.id.clone(), info)
+        })
+        .collect()
 }
 
 fn hosted(state: &State, ssh_id: &str) -> Option<Arc<Session>> {
@@ -1029,6 +1100,7 @@ async fn connect(
         keepalive_max_failures: params
             .keepalive_max_failures
             .or(Some(DEFAULT_KEEPALIVE_MAX_FAILURES)),
+        route_override: params.route_override,
     };
     drop(session);
     match runtime.services.connection.connect(request, sink).await {
@@ -1179,6 +1251,60 @@ async fn dispatch(
             .map(|()| RpcValue::Unit)
             .map_err(WireError::plain),
 
+        RpcCall::SshAnswerPrompt {
+            session_id,
+            prompt_request_id,
+            answer,
+        } => {
+            if lock(&runtime.hub).prompt_owners.get(&session_id) != Some(&conn) {
+                return Err(WireError::plain(
+                    "only the SSH connection owner may answer this prompt".to_string(),
+                ));
+            }
+            unit(
+                services
+                    .connection
+                    .answer_prompt(sid(session_id), prompt_request_id, answer)
+                    .await,
+            )
+        }
+
+        RpcCall::SshForwardOpen { request, host } => {
+            (services.install_host)(&host).map_err(WireError::plain)?;
+            services
+                .forwards
+                .open(request)
+                .await
+                .map(|id| RpcValue::Text(id.0))
+                .map_err(WireError::plain)
+        }
+        RpcCall::SshForwardClose { id } => unit(services.forwards.close(id).await),
+        RpcCall::SshForwardRestart { id } => unit(services.forwards.restart(id).await),
+        RpcCall::SshForwardAnswerPrompt {
+            id,
+            prompt_request_id,
+            answer,
+        } => unit(
+            services
+                .forwards
+                .answer_prompt(id, prompt_request_id, answer)
+                .await,
+        ),
+        RpcCall::SshForwardAttachHost { host_id, host } => {
+            (services.install_host)(&host).map_err(WireError::plain)?;
+            unit(services.forwards.attach_host(host_id).await)
+        }
+        RpcCall::SshForwardDetachHost { host_id } => {
+            unit(services.forwards.detach_host(host_id).await)
+        }
+        RpcCall::SshForwardSetPolicy { auto_reconnect } => {
+            services.forwards.set_reconnect_policy(auto_reconnect);
+            Ok(RpcValue::Unit)
+        }
+        RpcCall::SshForwardList => Ok(RpcValue::Forwards(
+            wire_forwards(&*services.forwards).into_values().collect(),
+        )),
+
         RpcCall::SshPtyWrite { session_id, data } => match hosted(state, &session_id) {
             Some(session) => session
                 .send_external_input(data.into_bytes())
@@ -1273,13 +1399,6 @@ async fn dispatch(
                     .await,
             )
         }
-
-        RpcCall::SshTunnelStart { host_id, host } => {
-            (services.install_host)(&host).map_err(WireError::plain)?;
-            unit(services.tunnels.start(host_id).await)
-        }
-        RpcCall::SshTunnelStop { host_id } => unit(services.tunnels.stop(host_id).await),
-        RpcCall::SshTunnelsActive => Ok(RpcValue::Tunnels(services.tunnels.active())),
 
         RpcCall::SftpOpen { ssh_session } => services
             .sftp_session

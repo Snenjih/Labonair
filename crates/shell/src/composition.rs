@@ -15,7 +15,8 @@ use labonair_mcp_server::McpState;
 use labonair_persistence::Database;
 use labonair_secrets::SecretsState;
 use labonair_snippets_ssh::exec::SnippetRunState;
-use labonair_ssh_transport::tunnels::TunnelState;
+use labonair_ssh_transport::forwards::{ForwardRegistry, SshSessionFactory};
+use labonair_ssh_transport::prompts::PromptBroker;
 use labonair_ssh_transport::{SshState, TrustState};
 use labonair_transfers::{ConflictMap, TransferSettings, TransferWorkerState, WorkerMessage};
 
@@ -25,7 +26,8 @@ struct AppCompositionInner {
     secrets: Arc<SecretsState>,
     ssh: SshState,
     trust: TrustState,
-    tunnels: TunnelState,
+    prompts: PromptBroker,
+    forwards: ForwardRegistry,
     snippet_run: Arc<SnippetRunState>,
     mcp: McpState,
     transfer: TransferWorkerState,
@@ -58,13 +60,17 @@ impl AppComposition {
     pub fn ssh(&self) -> &SshState {
         &self.0.ssh
     }
+    /// Prompt broker for interactive jump-hop prompts.
+    pub fn prompts(&self) -> &PromptBroker {
+        &self.0.prompts
+    }
     /// SSH host-key trust state.
     pub fn trust(&self) -> &TrustState {
         &self.0.trust
     }
-    /// SSH tunnel state.
-    pub fn tunnels(&self) -> &TunnelState {
-        &self.0.tunnels
+    /// SSH port-forward registry.
+    pub fn forwards(&self) -> &ForwardRegistry {
+        &self.0.forwards
     }
     /// Silent snippet-run state.
     pub fn snippet_run(&self) -> &Arc<SnippetRunState> {
@@ -96,13 +102,24 @@ impl AppComposition {
             settings,
         };
 
+        let events = EventBus::new();
+        let secrets = Arc::new(SecretsState::new(data_dir.to_path_buf()));
+        let trust = TrustState::default();
+        let forwards = ForwardRegistry::new(Arc::new(SshSessionFactory {
+            hosts_db: db.clone(),
+            secrets: secrets.clone(),
+            trust_state: trust.clone(),
+            events: events.clone(),
+            connect_timeout_secs: None,
+        }));
         Ok(Self(Arc::new(AppCompositionInner {
-            events: EventBus::new(),
+            events,
             db,
-            secrets: Arc::new(SecretsState::new(data_dir.to_path_buf())),
+            secrets,
             ssh: SshState::default(),
-            trust: TrustState::default(),
-            tunnels: TunnelState::default(),
+            trust,
+            prompts: PromptBroker::default(),
+            forwards,
             snippet_run: Arc::new(SnippetRunState::default()),
             mcp: McpState::default(),
             transfer,

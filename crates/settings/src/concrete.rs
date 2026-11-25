@@ -1082,6 +1082,21 @@ impl ConnectionsSettings {
     pub fn keepalive_max_failures(&self) -> u32 {
         self.0.ssh_keepalive_max_failures.unwrap_or(3)
     }
+
+    pub fn forwards_default_listen_host(&self) -> String {
+        self.0
+            .forwards_default_listen_host
+            .clone()
+            .unwrap_or_else(|| "127.0.0.1".into())
+    }
+
+    pub fn forwards_auto_reconnect(&self) -> bool {
+        self.0.forwards_auto_reconnect.unwrap_or(true)
+    }
+
+    pub fn forwards_confirm_public_bind(&self) -> bool {
+        self.0.forwards_confirm_public_bind.unwrap_or(true)
+    }
 }
 
 /// Explorer settings in the `file_manager` area: indent guides, sticky

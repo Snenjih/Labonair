@@ -18,9 +18,10 @@ use labonair_sftp::{
     BoxFuture, RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService,
 };
 use labonair_ssh::{
-    ActiveTunnel, SharedSshEventSink, SshConnectRequest, SshConnectionService, SshExecOutput,
-    SshExecService, SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionEvent,
-    SshSessionId, SshTunnelService,
+    ForwardId, ForwardInfo, ForwardOpenRequest, ForwardState, PromptAnswer, PromptRequestId,
+    SharedSshEventSink, SshConnectRequest, SshConnectionService, SshExecOutput, SshExecService,
+    SshForwardService, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
+    SshSessionEvent, SshSessionId,
 };
 use labonair_terminal_core::{TermDimensions, TerminalColors, TerminalEmulator, TerminalEvent};
 use labonair_terminal_host::protocol::*;
@@ -50,12 +51,26 @@ struct Fake {
     trust_calls: Mutex<Vec<(String, bool)>>,
     trust_waiters: Mutex<HashMap<String, oneshot::Sender<bool>>>,
     disconnects: Mutex<Vec<String>>,
+    answers: Mutex<Vec<(String, String, labonair_ssh::PromptAnswer)>>,
+    answer_waiters: Mutex<HashMap<String, oneshot::Sender<()>>>,
     installed: Mutex<Vec<SshHostSnapshot>>,
     resolutions: Mutex<Vec<(String, TransferResolution)>>,
     resolve_waiters: Mutex<HashMap<String, oneshot::Sender<()>>>,
     finish: Arc<Notify>,
     jobs: AtomicUsize,
     settings: Arc<TransferSettings>,
+    fwd: Mutex<Vec<ForwardInfo>>,
+    fwd_rev: Rev,
+    fwd_calls: Mutex<Vec<String>>,
+    policies: Mutex<Vec<bool>>,
+}
+
+struct Rev(tokio::sync::watch::Sender<u64>);
+
+impl Default for Rev {
+    fn default() -> Self {
+        Self(tokio::sync::watch::channel(0).0)
+    }
 }
 
 impl Fake {
@@ -78,7 +93,7 @@ impl Fake {
             remote_command: self.clone(),
             remote_file: self.clone(),
             exec: self.clone(),
-            tunnels: self.clone(),
+            forwards: self.clone(),
             sftp_session: self.clone(),
             sftp_browser: self.clone(),
             transfers: self.clone(),
@@ -92,6 +107,21 @@ impl Fake {
         let sink = self.sinks.lock().unwrap().get(ssh_id).cloned().unwrap();
         sink.send(SshSessionEvent::Output { data: text.into() })
             .unwrap();
+    }
+
+    /// Add or replace a forward (as the engine would) and bump the revision.
+    fn set_forward(&self, info: ForwardInfo) {
+        {
+            let mut all = self.fwd.lock().unwrap();
+            all.retain(|f| f.spec.id != info.spec.id);
+            all.push(info);
+        }
+        self.fwd_rev.0.send_modify(|rev| *rev += 1);
+    }
+
+    fn remove_forward(&self, id: &str) {
+        self.fwd.lock().unwrap().retain(|f| f.spec.id.0 != id);
+        self.fwd_rev.0.send_modify(|rev| *rev += 1);
     }
 
     fn job(id: &str, status: TransferStatus) -> TransferJob {
@@ -118,6 +148,24 @@ impl SshConnectionService for Fake {
     ) -> BoxFuture<'a, Result<(), LabonairError>> {
         Box::pin(async move {
             let sid = request.session_id.as_str().to_string();
+            if request.host_id == "hop-host" {
+                let (tx, rx) = oneshot::channel();
+                self.answer_waiters.lock().unwrap().insert(sid.clone(), tx);
+                self.events
+                    .emit(
+                        "hop_prompt",
+                        serde_json::json!({
+                            "session_id": sid,
+                            "pending": {
+                                "request_id": "req-1",
+                                "kind": "Password",
+                                "hop": {"index": 1, "total": 2, "label": "bastion"}
+                            }
+                        }),
+                    )
+                    .unwrap();
+                let _ = rx.await;
+            }
             if request.host_id == "prompt-host" {
                 let (tx, rx) = oneshot::channel();
                 self.trust_waiters.lock().unwrap().insert(sid.clone(), tx);
@@ -157,6 +205,26 @@ impl SshConnectionService for Fake {
                 .lock()
                 .unwrap()
                 .push(session_id.as_str().to_string());
+            Ok(())
+        })
+    }
+
+    fn answer_prompt<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        request_id: labonair_ssh::PromptRequestId,
+        answer: labonair_ssh::PromptAnswer,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let sid = session_id.as_str().to_string();
+            self.answers.lock().unwrap().push((
+                sid.clone(),
+                request_id.as_str().to_string(),
+                answer,
+            ));
+            if let Some(tx) = self.answer_waiters.lock().unwrap().remove(&sid) {
+                let _ = tx.send(());
+            }
             Ok(())
         })
     }
@@ -275,22 +343,110 @@ impl SshExecService for Fake {
     }
 }
 
-impl SshTunnelService for Fake {
-    fn start<'a>(&'a self, _: String) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async { Ok(()) })
+impl SshForwardService for Fake {
+    fn set_reconnect_policy(&self, enabled: bool) {
+        self.policies.lock().unwrap().push(enabled);
     }
 
-    fn stop<'a>(&'a self, _: String) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async { Ok(()) })
+    fn open<'a>(&'a self, request: ForwardOpenRequest) -> BoxFuture<'a, Result<ForwardId, String>> {
+        Box::pin(async move {
+            let id = request.spec.id.clone();
+            self.fwd_calls
+                .lock()
+                .unwrap()
+                .push(format!("open:{}", id.0));
+            self.set_forward(forward(&id.0, "h", ForwardState::Active));
+            Ok(id)
+        })
     }
 
-    fn active(&self) -> Vec<ActiveTunnel> {
-        vec![ActiveTunnel {
-            host_id: "h".into(),
-            local_port: 1,
-            remote_host: "r".into(),
-            remote_port: 2,
-        }]
+    fn close<'a>(&'a self, id: ForwardId) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.fwd_calls
+                .lock()
+                .unwrap()
+                .push(format!("close:{}", id.0));
+            self.remove_forward(&id.0);
+            Ok(())
+        })
+    }
+
+    fn restart<'a>(&'a self, id: ForwardId) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.fwd_calls
+                .lock()
+                .unwrap()
+                .push(format!("restart:{}", id.0));
+            Ok(())
+        })
+    }
+
+    fn answer_prompt<'a>(
+        &'a self,
+        id: ForwardId,
+        _: PromptRequestId,
+        _: PromptAnswer,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.fwd_calls
+                .lock()
+                .unwrap()
+                .push(format!("answer:{}", id.0));
+            Ok(())
+        })
+    }
+
+    fn attach_host<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.fwd_calls
+                .lock()
+                .unwrap()
+                .push(format!("attach:{host_id}"));
+            Ok(())
+        })
+    }
+
+    fn detach_host<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.fwd_calls
+                .lock()
+                .unwrap()
+                .push(format!("detach:{host_id}"));
+            Ok(())
+        })
+    }
+
+    fn list(&self) -> Vec<ForwardInfo> {
+        self.fwd.lock().unwrap().clone()
+    }
+
+    fn revision(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.fwd_rev.0.subscribe()
+    }
+}
+
+/// A forward as the engine reports it (origin `App`: the daemon must
+/// overwrite it on the wire).
+fn forward(id: &str, host: &str, state: ForwardState) -> ForwardInfo {
+    ForwardInfo {
+        spec: labonair_ssh::ForwardSpec {
+            id: ForwardId(id.into()),
+            host_id: host.into(),
+            kind: labonair_ssh::ForwardKind::Local,
+            name: None,
+            listen_host: "127.0.0.1".into(),
+            listen_port: 8080,
+            target_host: "db".into(),
+            target_port: 5432,
+        },
+        state,
+        lifetime: labonair_ssh::ForwardLifetime::Pinned,
+        origin: labonair_ssh::ForwardOrigin::App,
+        bound_port: Some(8080),
+        connections: 0,
+        bytes_in: 0,
+        bytes_out: 0,
+        saved: false,
     }
 }
 
@@ -1239,10 +1395,6 @@ async fn sftp_and_remote_calls_map_one_to_one_with_typed_errors() {
         panic!("size");
     };
     assert_eq!(size, "size of /x");
-    assert!(matches!(
-        ui.rpc(RpcCall::SshTunnelsActive).await,
-        Ok(RpcValue::Tunnels(t)) if t.len() == 1
-    ));
     // The cleanup call deletes a local file: relative paths are refused.
     let err = ui
         .rpc(RpcCall::SshCleanupRemoteEditTemp {
@@ -1349,7 +1501,7 @@ async fn proxy(host: &Harness) -> (DaemonServices, EventBus) {
     let bus = EventBus::new();
     let ctx = ProxyContext {
         bus: bus.clone(),
-        hosts: Arc::new(|id| Ok(snapshot_for(id))),
+        hosts: Arc::new(|id, _route| Ok(snapshot_for(id))),
         transfer_config: Arc::new(|| TransferConfig {
             max_concurrent: 3,
             chunk_size: 4096,
@@ -1373,6 +1525,7 @@ fn request(tab: &str, host: &str) -> SshConnectRequest {
         connect_timeout_secs: None,
         keepalive_interval_secs: None,
         keepalive_max_failures: None,
+        route_override: None,
     }
 }
 
@@ -1633,7 +1786,7 @@ async fn routed_services_keep_app_and_daemon_sessions_apart_and_fall_back_on_fai
             pty: local.clone(),
             remote_command: local.clone(),
             remote_file: local.clone(),
-            tunnels: local.clone(),
+            forwards: local.clone(),
             sftp_session: local.clone(),
             sftp_browser: local.clone(),
             transfers: local.clone(),
@@ -1729,5 +1882,420 @@ async fn routed_services_keep_app_and_daemon_sessions_apart_and_fall_back_on_fai
         .unwrap();
     assert!(local.sinks.lock().unwrap().contains_key("tab-fb"));
     assert_eq!(fallbacks.lock().unwrap().as_slice(), ["helper missing"]);
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn hop_prompt_reaches_the_client_and_answer_reaches_the_service() {
+    let fake = Fake::new();
+    let host = Harness::start(Some(fake.services())).await;
+    let mut ui = host.ui_client().await;
+    let req = ui.send_rpc(connect_call("tab-h", "hop-host")).await;
+    let prompt = ui.wait_event("hop_prompt").await;
+    assert_eq!(prompt["session_id"], "tab-h");
+
+    let answer = labonair_ssh::PromptAnswer::Secret(Some("hunter2".into()));
+    let call = RpcCall::SshAnswerPrompt {
+        session_id: "tab-h".into(),
+        prompt_request_id: labonair_ssh::PromptRequestId::new("req-1"),
+        answer: answer.clone(),
+    };
+    assert!(!format!("{call:?}").contains("hunter2"));
+    assert!(!format!(
+        "{:?}",
+        Message::Rpc {
+            req_id: 1,
+            call: call.clone()
+        }
+    )
+    .contains("hunter2"));
+
+    // Only the connection owner may answer.
+    let mut intruder = host.client().await;
+    assert!(intruder.rpc(call.clone()).await.is_err());
+    ui.rpc(call).await.unwrap();
+    assert!(matches!(
+        ui.reply(req).await,
+        Ok(RpcValue::SshConnected { .. })
+    ));
+    {
+        let answers = fake.answers.lock().unwrap();
+        assert_eq!(answers.len(), 1);
+        assert_eq!(answers[0].0, "tab-h");
+        assert_eq!(answers[0].1, "req-1");
+        assert_eq!(answers[0].2, answer);
+    }
+    host.shutdown().await;
+}
+
+// ── Port forwards (R12 F6) ───────────────────────────────────────────────────
+
+/// Wait for the next `forward_changed` of `id` and return it.
+async fn changed_forward(client: &mut Client, id: &str) -> ForwardInfo {
+    loop {
+        let payload = client.wait_event("forward_changed").await;
+        let info: ForwardInfo = serde_json::from_value(payload).unwrap();
+        if info.spec.id.0 == id {
+            return info;
+        }
+    }
+}
+
+fn forward_events(client: &Client, name: &str) -> usize {
+    client.events.iter().filter(|(n, _)| n == name).count()
+}
+
+#[tokio::test]
+async fn forwards_are_replayed_then_only_changes_are_pushed_with_daemon_origin() {
+    let fake = Fake::new();
+    fake.set_forward(forward("f1", "h", ForwardState::Active));
+    fake.set_forward(forward("f2", "h", ForwardState::Starting));
+    let host = Harness::start(Some(fake.services())).await;
+
+    // Replay on subscribe: reset, then every forward once, origin Daemon.
+    let mut ui = host.ui_client().await;
+    assert_eq!(forward_events(&ui, FORWARD_RESET), 1);
+    assert_eq!(forward_events(&ui, FORWARD_CHANGED), 2);
+    for (name, payload) in &ui.events {
+        if name == FORWARD_CHANGED {
+            assert_eq!(payload["origin"], "Daemon");
+        }
+    }
+    ui.events.clear();
+
+    // A second client gets the same replay.
+    let late = host.ui_client().await;
+    assert_eq!(forward_events(&late, FORWARD_CHANGED), 2);
+
+    // Diff: change f1 only, then remove f2. f2 is never re-sent.
+    let mut busy = forward("f1", "h", ForwardState::Active);
+    busy.connections = 3;
+    fake.set_forward(busy);
+    let info = changed_forward(&mut ui, "f1").await;
+    assert_eq!(info.connections, 3);
+    assert_eq!(info.origin, labonair_ssh::ForwardOrigin::Daemon);
+    fake.remove_forward("f2");
+    let removed = ui.wait_event(FORWARD_REMOVED).await;
+    assert_eq!(removed["id"], "f2");
+    assert_eq!(
+        forward_events(&ui, FORWARD_CHANGED),
+        0,
+        "only changes are pushed"
+    );
+
+    // RPCs dispatch to the service with the host snapshot installed.
+    let host_snapshot = snapshot_for("h");
+    let request = labonair_ssh::ForwardOpenRequest {
+        spec: forward("f3", "h", ForwardState::Active).spec,
+        lifetime: labonair_ssh::ForwardLifetime::Pinned,
+    };
+    let Ok(RpcValue::Text(id)) = ui
+        .rpc(RpcCall::SshForwardOpen {
+            request,
+            host: host_snapshot.clone(),
+        })
+        .await
+    else {
+        panic!("open");
+    };
+    assert_eq!(id, "f3");
+    assert_eq!(fake.installed.lock().unwrap().last(), Some(&host_snapshot));
+    let Ok(RpcValue::Forwards(all)) = ui.rpc(RpcCall::SshForwardList).await else {
+        panic!("list");
+    };
+    assert_eq!(all.len(), 2);
+    assert!(all
+        .iter()
+        .all(|f| f.origin == labonair_ssh::ForwardOrigin::Daemon));
+    ui.rpc(RpcCall::SshForwardClose {
+        id: ForwardId("f3".into()),
+    })
+    .await
+    .unwrap();
+    assert_eq!(ui.wait_event(FORWARD_REMOVED).await["id"], "f3");
+    ui.rpc(RpcCall::SshForwardAttachHost {
+        host_id: "h".into(),
+        host: host_snapshot,
+    })
+    .await
+    .unwrap();
+    ui.rpc(RpcCall::SshForwardDetachHost {
+        host_id: "h".into(),
+    })
+    .await
+    .unwrap();
+    assert!(fake
+        .fwd_calls
+        .lock()
+        .unwrap()
+        .ends_with(&["attach:h".to_string(), "detach:h".to_string()]));
+
+    // A v2 subscriber is left alone.
+    let mut old = host.client_with_protocol(2).await;
+    old.rpc(RpcCall::SubscribeEvents).await.unwrap();
+    assert_eq!(
+        forward_events(&old, FORWARD_RESET) + forward_events(&old, FORWARD_CHANGED),
+        0
+    );
+    host.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_running_forward_keeps_the_daemon_alive_until_it_stops() {
+    let fake = Fake::new();
+    fake.set_forward(forward(
+        "f1",
+        "h",
+        ForwardState::Reconnecting { attempt: 1 },
+    ));
+    let mut host = Harness::start_with(Some(fake.services()), |cfg| {
+        cfg.idle_timeout = Duration::from_millis(200);
+    })
+    .await;
+    sleep(Duration::from_millis(900)).await;
+    assert!(!host.task.is_finished(), "a live forward is busy");
+
+    // Failed / Stopped forwards do not count.
+    fake.set_forward(forward("f1", "h", ForwardState::Stopped));
+    let reason = timeout(WAIT, &mut host.task)
+        .await
+        .expect("idle exit")
+        .unwrap();
+    assert_eq!(reason, ExitReason::Idle);
+}
+
+fn routed_over(
+    local: &Arc<Fake>,
+    daemon: &DaemonServices,
+    detached: &Arc<std::sync::atomic::AtomicBool>,
+) -> RoutedServices {
+    let (d1, d2) = (daemon.clone(), daemon.clone());
+    RoutedServices::new(
+        LocalServices {
+            connection: local.clone(),
+            pty: local.clone(),
+            remote_command: local.clone(),
+            remote_file: local.clone(),
+            forwards: local.clone(),
+            sftp_session: local.clone(),
+            sftp_browser: local.clone(),
+            transfers: local.clone(),
+        },
+        DaemonAccess {
+            peek: Arc::new(move || Some(d1.clone())),
+            connect: Arc::new(move |_| Ok(d2.clone())),
+        },
+        {
+            let detached = detached.clone();
+            Arc::new(move || detached.load(Ordering::SeqCst))
+        },
+        Arc::new(|_| {}),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn routed_forwards_follow_origin_and_the_session_host_policy() {
+    let remote = Fake::new();
+    remote.set_forward(forward("f-daemon", "h", ForwardState::Active));
+    let host = Harness::start(Some(remote.services())).await;
+    let (daemon, _bus) = proxy(&host).await;
+    // The replay fills the proxy cache.
+    eventually("replayed forward", || daemon.list().len() == 1).await;
+    assert_eq!(daemon.list()[0].origin, labonair_ssh::ForwardOrigin::Daemon);
+
+    // A brand-new router (app restart) never saw the id but finds it by origin.
+    let local = Fake::new();
+    local.set_forward(forward("f-local", "h", ForwardState::Active));
+    let detached = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let routed = routed_over(&local, &daemon, &detached);
+    let mut revision = routed.revision();
+    let listed = routed.list();
+    assert_eq!(listed.len(), 2);
+    let origin = |id: &str| {
+        listed
+            .iter()
+            .find(|f| f.spec.id.0 == id)
+            .map(|f| f.origin)
+            .unwrap()
+    };
+    assert_eq!(origin("f-local"), labonair_ssh::ForwardOrigin::App);
+    assert_eq!(origin("f-daemon"), labonair_ssh::ForwardOrigin::Daemon);
+
+    SshForwardService::close(&routed, ForwardId("f-daemon".into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        remote.fwd_calls.lock().unwrap().as_slice(),
+        ["close:f-daemon"]
+    );
+    assert!(local.fwd_calls.lock().unwrap().is_empty());
+    // The merged revision wakes up on the daemon's change, and the row is gone.
+    timeout(WAIT, revision.changed()).await.unwrap().unwrap();
+    eventually("daemon forward removed", || routed.list().len() == 1).await;
+    routed.restart(ForwardId("f-local".into())).await.unwrap();
+    assert_eq!(
+        local.fwd_calls.lock().unwrap().as_slice(),
+        ["restart:f-local"]
+    );
+    // The local engine's changes reach the same receiver.
+    revision.borrow_and_update();
+    local.set_forward(forward("f-local", "h", ForwardState::Stopped));
+    timeout(WAIT, revision.changed()).await.unwrap().unwrap();
+
+    // Policy: app mode opens locally; detached mode opens in the daemon and
+    // detach follows the attach.
+    let open = |id: &str| labonair_ssh::ForwardOpenRequest {
+        spec: forward(id, "h", ForwardState::Active).spec,
+        lifetime: labonair_ssh::ForwardLifetime::Pinned,
+    };
+    routed.attach_host("h".into()).await.unwrap();
+    SshForwardService::open(&routed, open("n-local"))
+        .await
+        .unwrap();
+    detached.store(true, Ordering::SeqCst);
+    routed.attach_host("h".into()).await.unwrap();
+    SshForwardService::open(&routed, open("n-daemon"))
+        .await
+        .unwrap();
+    detached.store(false, Ordering::SeqCst); // detach must not follow the policy
+    routed.detach_host("h".into()).await.unwrap();
+    routed.detach_host("h".into()).await.unwrap();
+    let local_calls = local.fwd_calls.lock().unwrap().clone();
+    let remote_calls = remote.fwd_calls.lock().unwrap().clone();
+    assert!(local_calls.contains(&"open:n-local".to_string()));
+    assert!(remote_calls.contains(&"open:n-daemon".to_string()));
+    assert_eq!(
+        local_calls
+            .iter()
+            .filter(|c| c.starts_with("attach:") || c.starts_with("detach:"))
+            .count(),
+        2
+    );
+    assert_eq!(
+        remote_calls
+            .iter()
+            .filter(|c| c.starts_with("attach:") || c.starts_with("detach:"))
+            .count(),
+        2
+    );
+    assert_eq!(remote_calls.last().map(String::as_str), Some("detach:h"));
+    host.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn forward_calls_against_a_v2_daemon_ask_for_a_restart() {
+    // A minimal daemon that only answers the handshake, as a v2 host would.
+    let dir = PathBuf::from(format!(
+        "/tmp/lhs-v2-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    ));
+    let _cleanup = DirGuard(dir.clone());
+    let paths = HostPaths::new(&dir);
+    std::fs::create_dir_all(&paths.dir).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(&paths.socket).unwrap();
+    std::thread::spawn(move || {
+        use std::io::Write;
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let _ = read_frame_blocking(&mut stream);
+        let ack = HelloAck {
+            proto_version: 2,
+            min_compat: 1,
+            build_id: "old".into(),
+            pid: 1,
+            compatible: true,
+            session_count: 0,
+        };
+        let _ = stream.write_all(&control_frame(&Message::HelloAck(ack)).unwrap());
+        while matches!(read_frame_blocking(&mut stream), Ok(Some(_))) {}
+    });
+
+    let client = HostClient::new(dir.clone(), Hello::current("proxy-test", None));
+    let c = client.clone();
+    tokio::task::spawn_blocking(move || c.reconnect())
+        .await
+        .unwrap()
+        .expect("client connects");
+    let ctx = ProxyContext {
+        bus: EventBus::new(),
+        hosts: Arc::new(|id, _route| Ok(snapshot_for(id))),
+        transfer_config: Arc::new(|| unreachable!()),
+        connected: Arc::new(|_| {}),
+    };
+    let daemon = DaemonServices::new(client, ctx);
+    let message = "Restart the background host to use port forwards";
+    let request = labonair_ssh::ForwardOpenRequest {
+        spec: forward("f", "h", ForwardState::Active).spec,
+        lifetime: labonair_ssh::ForwardLifetime::Pinned,
+    };
+    assert_eq!(
+        SshForwardService::open(&daemon, request).await.unwrap_err(),
+        message
+    );
+    assert_eq!(
+        SshForwardService::close(&daemon, ForwardId("f".into()))
+            .await
+            .unwrap_err(),
+        message
+    );
+    assert_eq!(daemon.attach_host("h".into()).await.unwrap_err(), message);
+    assert!(daemon.list().is_empty());
+    // The policy push is skipped for a pre-v3 daemon, without error.
+    SshForwardService::set_reconnect_policy(&daemon, false);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reconnect_policy_reaches_local_and_daemon_and_is_resent_on_link() {
+    let remote = Fake::new();
+    let host = Harness::start(Some(remote.services())).await;
+    let (daemon, _bus) = proxy(&host).await;
+    let local = Fake::new();
+
+    // No daemon known yet: only local gets it, and nothing is started.
+    let known = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (d1, d2, k) = (daemon.clone(), daemon.clone(), known.clone());
+    let routed = RoutedServices::new(
+        LocalServices {
+            connection: local.clone(),
+            pty: local.clone(),
+            remote_command: local.clone(),
+            remote_file: local.clone(),
+            forwards: local.clone(),
+            sftp_session: local.clone(),
+            sftp_browser: local.clone(),
+            transfers: local.clone(),
+        },
+        DaemonAccess {
+            peek: Arc::new(move || k.load(Ordering::SeqCst).then(|| d1.clone())),
+            connect: Arc::new(move |_| Ok(d2.clone())),
+        },
+        Arc::new(|| false),
+        Arc::new(|_| {}),
+    );
+    SshForwardService::set_reconnect_policy(&routed, false);
+    assert_eq!(local.policies.lock().unwrap().as_slice(), [false]);
+    sleep(Duration::from_millis(200)).await;
+    assert!(remote.policies.lock().unwrap().is_empty());
+
+    // The daemon is joined later (app restart): it receives the stored value.
+    known.store(true, Ordering::SeqCst);
+    let r = routed.clone();
+    tokio::task::spawn_blocking(move || r.attach_running_daemon())
+        .await
+        .unwrap();
+    eventually("policy on link", || {
+        remote.policies.lock().unwrap().as_slice() == [false]
+    })
+    .await;
+
+    // A later change reaches both.
+    SshForwardService::set_reconnect_policy(&routed, true);
+    assert_eq!(local.policies.lock().unwrap().as_slice(), [false, true]);
+    eventually("policy on change", || {
+        remote.policies.lock().unwrap().as_slice() == [false, true]
+    })
+    .await;
     host.shutdown().await;
 }

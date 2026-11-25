@@ -41,6 +41,8 @@ pub mod file_finder;
 mod host_restore;
 mod host_sessions;
 pub use host_sessions::list_background_sessions;
+pub(crate) mod forward_attachments;
+pub(crate) mod forward_notify;
 pub mod frame_insets;
 pub mod layout;
 pub mod live_bridge;
@@ -129,8 +131,8 @@ use labonair_mcp_core::{
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
     SshConnectRequest, SshConnectionEvent, SshConnectionService, SshEventSink, SshEventSource,
-    SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId,
-    SshTunnelService,
+    SshForwardService, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
+    SshSessionEvent, SshSessionId,
 };
 use labonair_terminal::{
     DaemonHost, RemoteFeed, RemoteResizer, RemoteWriter, Scroll, SessionHandle, SessionId,
@@ -165,7 +167,7 @@ use labonair_editor::{
 use labonair_editor_ui::PreviewImageAction;
 use labonair_editor_ui::{EditorEvent, EditorView};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
-use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
+use labonair_hosts_host::{ForwardLive, HostStatus, HostView};
 use labonair_hosts_ui::HostManagerView;
 use labonair_keymap_ui::KeymapManagementView;
 use labonair_panel_git_graph::GitGraphView;
@@ -319,9 +321,6 @@ fn is_supported_external_document_link(uri: &str) -> bool {
     }
     false
 }
-
-/// Interval for draining backend SSH events into the workspace.
-const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);
 
 /// Which surface the `Cmd+F` search overlay (T18-002) drives for the active tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -492,12 +491,14 @@ enum McpTabOp {
     },
 }
 
-/// Title for an SSH terminal tab, annotated with the bastion when the
-/// connection is routed through a jump host (task T07-002, item 5).
-fn ssh_tab_title(host_label: &str, jump_label: Option<&str>) -> String {
-    match jump_label {
-        Some(j) => format!("{host_label}  \u{2192} {j}"),
-        None => host_label.to_string(),
+/// Title for an SSH terminal tab, annotated with the jump route (outermost
+/// hop first): `host  ⇢ a › b`, or `host  ⇢ N hops` for three or more.
+fn ssh_route_title(host_label: &str, route: &[String]) -> String {
+    match route {
+        [] => host_label.to_string(),
+        [a] => format!("{host_label}  \u{21e2} {a}"),
+        [a, b] => format!("{host_label}  \u{21e2} {a} \u{203a} {b}"),
+        _ => format!("{host_label}  \u{21e2} {} hops", route.len()),
     }
 }
 
@@ -532,6 +533,12 @@ enum SshPrompt {
         ssh_id: String,
         buffer: String,
     },
+    /// Prompt raised by a jump hop; answered via `answer_prompt` (R12 J5b).
+    Hop {
+        ssh_id: String,
+        pending: labonair_ssh::PendingPrompt,
+        buffer: String,
+    },
 }
 
 impl SshPrompt {
@@ -539,8 +546,72 @@ impl SshPrompt {
         match self {
             SshPrompt::Trust { ssh_id, .. }
             | SshPrompt::Password { ssh_id, .. }
-            | SshPrompt::Passphrase { ssh_id, .. } => ssh_id,
+            | SshPrompt::Passphrase { ssh_id, .. }
+            | SshPrompt::Hop { ssh_id, .. } => ssh_id,
         }
+    }
+
+    /// Text buffer for secret prompts (None for trust prompts).
+    fn buffer_mut(&mut self) -> Option<&mut String> {
+        match self {
+            SshPrompt::Password { buffer, .. } | SshPrompt::Passphrase { buffer, .. } => {
+                Some(buffer)
+            }
+            SshPrompt::Hop {
+                pending, buffer, ..
+            } if !matches!(pending.kind, labonair_ssh::PromptKind::HostKey { .. }) => Some(buffer),
+            _ => None,
+        }
+    }
+
+    fn buffer_len(&self) -> Option<usize> {
+        match self {
+            SshPrompt::Password { buffer, .. } | SshPrompt::Passphrase { buffer, .. } => {
+                Some(buffer.chars().count())
+            }
+            SshPrompt::Hop {
+                pending, buffer, ..
+            } if !matches!(pending.kind, labonair_ssh::PromptKind::HostKey { .. }) => {
+                Some(buffer.chars().count())
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Whether a forward's state change should pop the prompt dialog: only for
+/// forwards the user started, and only for a prompt not already seen.
+pub(crate) fn should_auto_prompt(
+    user_started: bool,
+    previous: Option<&labonair_ssh::ForwardState>,
+    new: &labonair_ssh::ForwardState,
+) -> bool {
+    use labonair_ssh::ForwardState::AwaitingInput;
+    let AwaitingInput(now) = new else {
+        return false;
+    };
+    user_started
+        && !matches!(previous, Some(AwaitingInput(before)) if before.request_id == now.request_id)
+}
+
+/// Card title for a hop prompt: `Hop {index}/{total}: {label}: {what}`.
+fn hop_title(hop: Option<&labonair_ssh::HopInfo>, what: &str) -> String {
+    match hop {
+        Some(h) => format!("Hop {}/{}: {}: {what}", h.index, h.total, h.label),
+        None => what.to_string(),
+    }
+}
+
+/// Builds the answer for a hop prompt; `submit == false` is Esc/Reject.
+fn hop_answer(
+    kind: &labonair_ssh::PromptKind,
+    buffer: String,
+    submit: bool,
+) -> labonair_ssh::PromptAnswer {
+    use labonair_ssh::{PromptAnswer, PromptKind};
+    match kind {
+        PromptKind::HostKey { .. } => PromptAnswer::Trust(submit),
+        _ => PromptAnswer::Secret(submit.then_some(buffer)),
     }
 }
 
@@ -688,9 +759,21 @@ pub enum WorkspaceEvent {
     /// Ask the application shell to open the palette's language page for the
     /// active editor.
     OpenLanguagePicker,
+    /// Ask the application shell to present the port-forward editor modal.
+    OpenForwardEditor {
+        host_id: Option<String>,
+        quick: Option<labonair_forwards::QuickSpec>,
+        /// A saved forward to edit; saving upserts by its id.
+        edit: Option<labonair_forwards::SavedForward>,
+    },
     /// The DiffView cursor moved into this repo-relative file; the Source
     /// Control panel selects the matching entry.
     DiffCursorFile(String),
+    /// Ask the shell to open the forwards popover (or the editor when there
+    /// are no forwards).
+    ManageForwards,
+    /// Ask the shell to present the prompt dialog of an `AwaitingInput` forward.
+    OpenForwardPrompt(labonair_ssh::ForwardId),
 }
 
 /// The tabbed, split-pane workspace shell.
@@ -895,7 +978,15 @@ pub struct Workspace {
     pub(crate) ssh_pty: Arc<dyn SshPtyService>,
     pub(crate) ssh_remote: Arc<dyn SshRemoteCommandService>,
     pub(crate) ssh_remote_file: Arc<dyn SshRemoteFileService>,
-    pub(crate) ssh_tunnels: Arc<dyn SshTunnelService>,
+    pub(crate) ssh_forwards: Arc<dyn SshForwardService>,
+    forward_attachments: crate::forward_attachments::ForwardAttachments,
+    /// Snapshot of the forward engine's `list()`, refreshed on revision change.
+    forwards: Vec<labonair_ssh::ForwardInfo>,
+    /// Forwards the user started in this workspace; only these auto-open the
+    /// prompt dialog when they enter `AwaitingInput`.
+    user_started_forwards: std::collections::HashSet<labonair_ssh::ForwardId>,
+    /// Open forward notification per forward (dismissed on recovery/replace).
+    forward_notices: HashMap<labonair_ssh::ForwardId, u64>,
     pub(crate) sftp_session: Arc<dyn SftpSessionService>,
     pub(crate) sftp_browser: Arc<dyn SftpBrowserService>,
     pub(crate) git: Arc<dyn GitService>,
@@ -918,6 +1009,9 @@ pub struct Workspace {
     /// Host ids queued by the host manager for connection, drained in `render`
     /// (where a `&mut Window` is available).
     pub(crate) pending_connect: Vec<String>,
+    /// One-off jump routes by SSH session id (`Open SSH via…`); consulted on
+    /// every (re)connect of that tab and never persisted.
+    route_overrides: HashMap<String, Vec<String>>,
     /// The active connect prompt (trust / password / passphrase), if any.
     pub(crate) ssh_prompt: Option<SshPrompt>,
     pub(crate) prompt_focus: FocusHandle,
@@ -1003,7 +1097,7 @@ impl Workspace {
         ssh_pty: Arc<dyn SshPtyService>,
         ssh_remote: Arc<dyn SshRemoteCommandService>,
         ssh_remote_file: Arc<dyn SshRemoteFileService>,
-        ssh_tunnels: Arc<dyn SshTunnelService>,
+        ssh_forwards: Arc<dyn SshForwardService>,
         sftp_session: Arc<dyn SftpSessionService>,
         sftp_browser: Arc<dyn SftpBrowserService>,
         git: Arc<dyn GitService>,
@@ -1026,8 +1120,11 @@ impl Workspace {
         cx.observe(&tabs, |_, _, cx| cx.notify()).detach();
         cx.observe(&spaces, |_, _, cx| cx.notify()).detach();
         if cx.has_global::<labonair_settings::SettingsStore>() {
-            cx.observe_global::<labonair_settings::SettingsStore>(|_, cx| cx.notify())
-                .detach();
+            cx.observe_global::<labonair_settings::SettingsStore>(|this, cx| {
+                this.sync_forward_policy(cx);
+                cx.notify()
+            })
+            .detach();
         }
         cx.subscribe(&tabs, |this, _, ev: &crate::tabs::ActiveTabChanged, cx| {
             if let Some(editor) = this.editors.get(&this.editor_slot_for_tab(ev.0)).cloned() {
@@ -1070,12 +1167,17 @@ impl Workspace {
             cx.new(|cx| McpEventBridge::new(mcp_event_source, workspace, cx))
         };
 
+        // tokio's watch receiver is executor-agnostic, so GPUI can await it directly.
+        let mut forwards_rx = ssh_forwards.revision();
         let ssh_poll = cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(SSH_POLL_INTERVAL).await;
-            let ok = this
+            if this
                 .update(cx, |this, cx| this.refresh_active_tunnels(cx))
-                .is_ok();
-            if !ok {
+                .is_err()
+            {
+                break;
+            }
+            // Err = sender dropped: stop instead of busy-looping.
+            if forwards_rx.changed().await.is_err() {
                 break;
             }
         });
@@ -1225,13 +1327,18 @@ impl Workspace {
             ssh_pty,
             ssh_remote,
             ssh_remote_file,
-            ssh_tunnels,
+            ssh_forwards,
+            forward_attachments: Default::default(),
+            forwards: Vec::new(),
+            user_started_forwards: Default::default(),
+            forward_notices: Default::default(),
             sftp_session,
             sftp_browser,
             tokio,
             host_view,
             ssh_tabs: HashMap::new(),
             pending_connect: Vec::new(),
+            route_overrides: HashMap::new(),
             ssh_prompt: None,
             prompt_focus: cx.focus_handle(),
             prompt_shown: false,
@@ -1317,7 +1424,16 @@ impl Workspace {
             &labonair_notifications::notification_center(cx),
             window,
             |this, _, event: &labonair_notifications::NotificationActionEvent, window, cx| {
-                if event.action_id == host_sessions::RECOVER_ACTION {
+                if event.action_id == forward_notify::SHOW_ACTION {
+                    cx.emit(WorkspaceEvent::ManageForwards);
+                } else if let Some(id) = event
+                    .action_id
+                    .strip_prefix(forward_notify::AUTH_ACTION_PREFIX)
+                {
+                    cx.emit(WorkspaceEvent::OpenForwardPrompt(labonair_ssh::ForwardId(
+                        id.to_string(),
+                    )));
+                } else if event.action_id == host_sessions::RECOVER_ACTION {
                     this.recover_background_sessions(window, cx);
                 } else if event.action_id == agent_integration::OPEN_RESULT_ACTION {
                     this.open_agent_result(event.notification_id, window, cx);
@@ -1325,6 +1441,7 @@ impl Workspace {
             },
         )
         .detach();
+        this.sync_forward_policy(cx);
         this
     }
 
@@ -3942,6 +4059,308 @@ impl Workspace {
         labonair_command_palette::context_of(palette_tab_kind(kind), is_ssh)
     }
 
+    /// Forwards known to the forward service with their host names — feeds
+    /// the palette's forward pickers.
+    pub fn palette_forward_rows(&self, cx: &App) -> Vec<labonair_forwards::ForwardRow> {
+        let hosts = self.saved_forwards_by_host(cx);
+        labonair_forwards::forward_rows(&hosts, self.ssh_forwards.list(), |id| {
+            self.host_view
+                .host_name(id, cx)
+                .unwrap_or_else(|| id.to_string())
+        })
+    }
+
+    /// Saved forwards of every known host (typed, from the hosts catalog).
+    pub fn saved_forwards_by_host(&self, cx: &App) -> Vec<labonair_forwards::HostForwards> {
+        self.host_view
+            .host_ids(cx)
+            .into_iter()
+            .filter_map(|id| {
+                let forwards = self.host_view.saved_forwards(&id, cx);
+                (!forwards.is_empty()).then(|| labonair_forwards::HostForwards {
+                    host_name: self
+                        .host_view
+                        .host_name(&id, cx)
+                        .unwrap_or_else(|| id.clone()),
+                    host_id: id,
+                    forwards,
+                })
+            })
+            .collect()
+    }
+
+    /// Ask the shell to present the forward editor for a host, prefilled from
+    /// a saved forward when `edit` is set.
+    pub fn request_forward_editor(
+        &mut self,
+        host_id: String,
+        edit: Option<labonair_forwards::SavedForward>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.emit(WorkspaceEvent::OpenForwardEditor {
+            host_id: Some(host_id),
+            quick: None,
+            edit,
+        });
+    }
+
+    /// Start (when not running) or stop a saved forward by id, across all hosts.
+    fn toggle_saved_forward(&mut self, forward_id: String, cx: &mut Context<Self>) {
+        let service = self.ssh_forwards.clone();
+        let id = labonair_ssh::ForwardId(forward_id.clone());
+        if service
+            .list()
+            .iter()
+            .any(|f| f.spec.id == id && f.is_running())
+        {
+            self.tokio.spawn(async move {
+                if let Err(error) = service.close(id).await {
+                    tracing::warn!(%error, "closing port forward failed");
+                }
+            });
+            return;
+        }
+        let Some((host_id, saved)) = self.saved_forwards_by_host(cx).into_iter().find_map(|h| {
+            let f = h.forwards.into_iter().find(|f| f.id == forward_id)?;
+            Some((h.host_id, f))
+        }) else {
+            tracing::debug!(%forward_id, "toggle of unknown saved forward");
+            return;
+        };
+        self.open_forward(
+            labonair_ssh::ForwardOpenRequest {
+                spec: saved.into_spec(&host_id),
+                lifetime: labonair_ssh::ForwardLifetime::Pinned,
+            },
+            cx,
+        );
+    }
+
+    /// Open a forward; a failure goes to Notifications.
+    fn open_forward(&mut self, request: labonair_ssh::ForwardOpenRequest, cx: &mut Context<Self>) {
+        self.user_started_forwards.insert(request.spec.id.clone());
+        let service = self.ssh_forwards.clone();
+        let task = self.tokio.spawn(async move { service.open(request).await });
+        cx.spawn(async move |_, cx| {
+            let error = match task.await {
+                Ok(Ok(_)) => return,
+                Ok(Err(error)) => error,
+                Err(error) => error.to_string(),
+            };
+            cx.update(|cx| {
+                let title = if error.contains(forward_notify::RESTART_HOST_HINT) {
+                    "Background host needs a restart"
+                } else {
+                    "Port forward failed"
+                };
+                labonair_notifications::notify_err::<()>(title, Err(error), cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// A host's saved forwards were persisted: reconcile its running forwards
+    /// (only when it has any, so editing an idle host never opens anything).
+    /// Runs from the Hosts view's `ForwardsSaved` event (form autosave and
+    /// `save_forward`), the single point where saved forwards change.
+    pub fn apply_saved_forwards(
+        &mut self,
+        host_id: &str,
+        saved: &[labonair_forwards::SavedForward],
+        cx: &mut Context<Self>,
+    ) {
+        use labonair_forwards::Change;
+        let running: Vec<_> = self
+            .ssh_forwards
+            .list()
+            .into_iter()
+            .filter(|f| f.spec.host_id == host_id && f.is_running())
+            .collect();
+        if running.is_empty() {
+            return;
+        }
+        for change in labonair_forwards::plan_forward_changes(saved, &running) {
+            match change {
+                Change::Close(id) => self.close_forward(id),
+                Change::Open(f) => self.open_saved(
+                    host_id,
+                    f,
+                    labonair_ssh::ForwardLifetime::WithConnection,
+                    cx,
+                ),
+                Change::Restart(f) => {
+                    // Closing is async; open after it finishes so the id is free.
+                    let service = self.ssh_forwards.clone();
+                    let id = labonair_ssh::ForwardId(f.id.clone());
+                    let request = labonair_ssh::ForwardOpenRequest {
+                        spec: f.into_spec(host_id),
+                        lifetime: labonair_ssh::ForwardLifetime::WithConnection,
+                    };
+                    let close = self.tokio.spawn(async move { service.close(id).await });
+                    cx.spawn(async move |this, cx| {
+                        if let Ok(Err(error)) = close.await {
+                            tracing::warn!(%error, "closing port forward failed");
+                        }
+                        this.update(cx, |this, cx| this.open_forward(request, cx))
+                            .ok();
+                    })
+                    .detach();
+                }
+            }
+        }
+    }
+
+    fn close_forward(&self, id: labonair_ssh::ForwardId) {
+        let service = self.ssh_forwards.clone();
+        self.tokio.spawn(async move {
+            if let Err(error) = service.close(id).await {
+                tracing::warn!(%error, "closing port forward failed");
+            }
+        });
+    }
+
+    fn open_saved(
+        &mut self,
+        host_id: &str,
+        saved: labonair_forwards::SavedForward,
+        lifetime: labonair_ssh::ForwardLifetime,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_forward(
+            labonair_ssh::ForwardOpenRequest {
+                spec: saved.into_spec(host_id),
+                lifetime,
+            },
+            cx,
+        );
+    }
+
+    /// Perform a typed forwards request. Close/Restart/StopAll go through the
+    /// forward service; the editor, saved-toggle and manage flows are
+    /// consumed by the forwards UI (R12 U2/U3/U4) and only log for now.
+    pub fn handle_forwards_event(
+        &mut self,
+        event: labonair_forwards::ForwardsUiEvent,
+        cx: &mut Context<Self>,
+    ) {
+        use labonair_forwards::ForwardsUiEvent as E;
+        let service = self.ssh_forwards.clone();
+        match event {
+            E::Close(id) => {
+                self.tokio.spawn(async move {
+                    if let Err(error) = service.close(id).await {
+                        tracing::warn!(%error, "closing port forward failed");
+                    }
+                });
+            }
+            E::Restart(id) => {
+                self.user_started_forwards.insert(id.clone());
+                self.tokio.spawn(async move {
+                    if let Err(error) = service.restart(id).await {
+                        tracing::warn!(%error, "restarting port forward failed");
+                    }
+                });
+            }
+            E::StopAll => {
+                let running: Vec<_> = service
+                    .list()
+                    .into_iter()
+                    .filter(|f| f.is_running())
+                    .map(|f| f.spec.id)
+                    .collect();
+                self.tokio.spawn(async move {
+                    for id in running {
+                        if let Err(error) = service.close(id).await {
+                            tracing::warn!(%error, "closing port forward failed");
+                        }
+                    }
+                });
+            }
+            // The Hosts page consumes the route editor in U4; open the page.
+            E::EditRoute { host_id } => {
+                tracing::debug!(%host_id, "edit jump route requested");
+                self.open_hosts_settings(cx);
+            }
+            E::CopyAddress(address) => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(address));
+            }
+            E::OpenInBrowser(url) => cx.open_url(&url),
+            E::New { host_id, quick } => {
+                cx.emit(WorkspaceEvent::OpenForwardEditor {
+                    host_id,
+                    quick,
+                    edit: None,
+                });
+            }
+            E::Toggle(id) => self.toggle_saved_forward(id.0, cx),
+            E::Manage { .. } => cx.emit(WorkspaceEvent::ManageForwards),
+            E::Prompt(id) => cx.emit(WorkspaceEvent::OpenForwardPrompt(id)),
+        }
+    }
+
+    /// Answer a forward's pending prompt through the service (off the UI thread).
+    pub fn answer_forward_prompt(
+        &mut self,
+        id: labonair_ssh::ForwardId,
+        request_id: labonair_ssh::PromptRequestId,
+        answer: labonair_ssh::PromptAnswer,
+    ) {
+        let service = self.ssh_forwards.clone();
+        self.tokio.spawn(async move {
+            if let Err(error) = service.answer_prompt(id, request_id, answer).await {
+                tracing::warn!(%error, "answering forward prompt failed");
+            }
+        });
+    }
+
+    /// `(id, name)` of every known host — feeds the forward editor's picker.
+    pub fn forward_editor_hosts(&self, cx: &App) -> Vec<(String, String)> {
+        self.host_view
+            .picker_rows(cx)
+            .into_iter()
+            .map(|row| (row.id, row.name))
+            .collect()
+    }
+
+    /// Perform a forward-editor submit: persist into the host (Hosts owns the
+    /// write), then open the forward. Open errors go to Notifications.
+    pub fn submit_forward_editor(
+        &mut self,
+        event: labonair_forwards::ForwardEditorEvent,
+        cx: &mut Context<Self>,
+    ) {
+        use labonair_forwards::SubmitAction;
+        for action in labonair_forwards::plan_submit(event) {
+            match action {
+                SubmitAction::Save { host_id, forward } => {
+                    self.host_view.save_forward(&host_id, forward, cx);
+                }
+                SubmitAction::Open(request) => {
+                    self.user_started_forwards.insert(request.spec.id.clone());
+                    let service = self.ssh_forwards.clone();
+                    let task = self.tokio.spawn(async move { service.open(request).await });
+                    cx.spawn(async move |_, cx| {
+                        let error = match task.await {
+                            Ok(Ok(_)) => return,
+                            Ok(Err(error)) => error,
+                            Err(error) => error.to_string(),
+                        };
+                        cx.update(|cx| {
+                            labonair_notifications::notify_err::<()>(
+                                "Port forward failed",
+                                Err(error),
+                                cx,
+                            );
+                        })
+                        .ok();
+                    })
+                    .detach();
+                }
+            }
+        }
+    }
+
     /// Canonical rows for every known host — feeds palette host choices.
     pub fn host_picker_rows(&self, cx: &App) -> Vec<HostPickerRow> {
         self.host_view.picker_rows(cx)
@@ -3977,7 +4396,9 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         match request.mode {
-            HostOpenMode::Ssh => self.open_ssh_tab(request.host_id, window, cx),
+            HostOpenMode::Ssh => {
+                let _ = self.connect_host_with(request.host_id, request.route_override, window, cx);
+            }
             HostOpenMode::Sftp => self.open_sftp_tab(request.host_id, window, cx),
         }
     }
@@ -4997,11 +5418,11 @@ impl Workspace {
         };
         self.ssh_connection
             .update(cx, |s, cx| s.remove(&t.ssh_id, cx));
+        self.route_overrides.remove(&t.ssh_id);
         let mcp_access = self.mcp_access.clone();
         let ssh = self.ssh.clone();
-        let tunnels = self.ssh_tunnels.clone();
+        self.stop_tunnels(&t.ssh_id);
         let ssh_id = t.ssh_id.clone();
-        let host_id = t.host_id.clone();
         let tab_key = t.tab_id.to_string();
         self.tokio.spawn(async move {
             // Closing a tab revokes any MCP bridge grant that followed it.
@@ -5016,7 +5437,6 @@ impl Workspace {
                 })
                 .await;
             let _ = ssh.disconnect(SshSessionId::new(ssh_id)).await;
-            let _ = tunnels.stop(host_id).await;
         });
         if let Some(p) = &self.ssh_prompt {
             if p.ssh_id() == t.ssh_id {
@@ -5065,7 +5485,7 @@ impl Workspace {
                 host_id.clone(),
                 label.clone(),
                 ConnectionKind::Sftp,
-                None,
+                Vec::new(),
                 cx,
             );
         });
@@ -5079,6 +5499,16 @@ impl Workspace {
     fn on_sftp_event(&mut self, ev: &SftpEvent, cx: &mut Context<Self>) {
         match ev {
             SftpEvent::ConnResult { session_id, error } => {
+                if error.is_none() {
+                    if let Some(host_id) = self
+                        .ssh_connection
+                        .read(cx)
+                        .get(session_id)
+                        .map(|e| e.host_id.clone())
+                    {
+                        self.start_tunnels(session_id, &host_id, cx);
+                    }
+                }
                 self.ssh_connection.update(cx, |s, cx| match error {
                     None => s.set_state(session_id, ConnectionState::Connected, cx),
                     Some(msg) => {
@@ -5443,14 +5873,39 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<String> {
+        self.connect_host_with(host_id, None, window, cx)
+    }
+
+    /// [`Self::connect_host`] with an optional one-off jump route (outermost
+    /// hop first) replacing the stored chain; kept per tab for reconnects,
+    /// never persisted.
+    fn connect_host_with(
+        &mut self,
+        host_id: String,
+        route_override: Option<Vec<String>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
         let (ssh_id, session_id, feed, handle) = self.new_ssh_session(&host_id, cx)?;
-        let (host_label, jump_label) = (
-            self.host_view
-                .host_name(&host_id, cx)
-                .unwrap_or_else(|| host_id.clone()),
-            self.host_view.jump_host_label(&host_id, cx),
-        );
-        let tab_title = ssh_tab_title(&host_label, jump_label.as_deref());
+        let host_label = self
+            .host_view
+            .host_name(&host_id, cx)
+            .unwrap_or_else(|| host_id.clone());
+        let route = match &route_override {
+            Some(ids) => ids
+                .iter()
+                .map(|id| {
+                    self.host_view
+                        .host_name(id, cx)
+                        .unwrap_or_else(|| id.clone())
+                })
+                .collect(),
+            None => self.host_view.route_labels(&host_id, cx),
+        };
+        if let Some(ids) = route_override {
+            self.route_overrides.insert(ssh_id.clone(), ids);
+        }
+        let tab_title = ssh_route_title(&host_label, &route);
         let pane_id = self.alloc_pane();
         let tab_id = self.tabs.update(cx, |s, cx| {
             let id = s.open(
@@ -5626,11 +6081,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (host_label, jump_label) = (
+        let (host_label, route) = (
             self.host_view
                 .host_name(&host_id, cx)
                 .unwrap_or_else(|| host_id.clone()),
-            self.host_view.jump_host_label(&host_id, cx),
+            self.host_view.route_labels(&host_id, cx),
         );
         let view = self.new_terminal_view(handle, window, cx);
         view.update(cx, |v, _| v.set_reconnectable(true));
@@ -5667,7 +6122,7 @@ impl Workspace {
                 host_id.clone(),
                 host_label.clone(),
                 ConnectionKind::Terminal,
-                jump_label.clone(),
+                route.clone(),
                 cx,
             );
         });
@@ -5710,6 +6165,7 @@ impl Workspace {
             return;
         };
         self.ssh_tabs.remove(&old_session);
+        self.stop_tunnels(&old_ssh_id);
         self.ssh_connection
             .update(cx, |s, cx| s.remove(&old_ssh_id, cx));
         self.registry.close(old_session);
@@ -5740,6 +6196,7 @@ impl Workspace {
         let ssh = self.ssh.clone();
         let event_sink = Arc::new(WorkspaceSshEventSink(feed));
         let connect_id = ssh_id.clone();
+        let route_override = self.route_overrides.get(&ssh_id).cloned();
         let conns = connections_settings(cx);
         let (connect_timeout_secs, keepalive_interval_secs, keepalive_max_failures) = (
             conns.connect_timeout_secs(),
@@ -5759,6 +6216,7 @@ impl Workspace {
                     connect_timeout_secs: Some(connect_timeout_secs),
                     keepalive_interval_secs: Some(keepalive_interval_secs),
                     keepalive_max_failures: Some(keepalive_max_failures),
+                    route_override,
                 },
                 event_sink,
             )
@@ -5807,35 +6265,162 @@ impl Workspace {
     /// Bring up this host's configured local port-forwards on a dedicated
     /// background SSH connection (ref-counted per host by the backend). Mirrors
     /// the reference app's `ssh_start_tunnels` call on `session_established`.
-    fn start_tunnels(&self, host_id: &str, cx: &mut Context<Self>) {
-        let tunnels = self.ssh_tunnels.clone();
+    fn start_tunnels(&mut self, key: &str, host_id: &str, cx: &mut Context<Self>) {
+        if !self.forward_attachments.attach(key, host_id) {
+            return;
+        }
+        let forwards = self.ssh_forwards.clone();
         let hid = host_id.to_string();
-        let jh = self.tokio.spawn(async move { tunnels.start(hid).await });
-        cx.spawn(async move |this, cx| {
+        let jh = self
+            .tokio
+            .spawn(async move { forwards.attach_host(hid).await });
+        cx.spawn(async move |_, _| {
             if let Ok(Err(e)) = jh.await {
                 tracing::warn!(%e, "failed to start SSH tunnels");
             }
-            let _ = this.update(cx, |this, cx| this.refresh_active_tunnels(cx));
         })
         .detach();
     }
 
+    /// Release the forward-engine attachment held by `key`, if any (exactly once).
+    pub(crate) fn stop_tunnels(&mut self, key: &str) {
+        if let Some(host_id) = self.forward_attachments.detach(key) {
+            let forwards = self.ssh_forwards.clone();
+            self.tokio.spawn(async move {
+                let _ = forwards.detach_host(host_id).await;
+            });
+        }
+    }
+
+    /// Latest snapshot of the forward engine's forwards.
+    pub fn forwards(&self) -> &[labonair_ssh::ForwardInfo] {
+        &self.forwards
+    }
+
+    /// Host display name and jump route (outermost first) for the forwards UI.
+    pub fn forward_host_label(&self, host_id: &str, cx: &App) -> (String, Vec<String>) {
+        (
+            self.host_view
+                .host_name(host_id, cx)
+                .unwrap_or_else(|| host_id.to_string()),
+            self.host_view.route_labels(host_id, cx),
+        )
+    }
+
     /// Push the current set of running forwards into the host manager panel.
-    fn refresh_active_tunnels(&self, cx: &mut Context<Self>) {
-        let raw = self.ssh_tunnels.active();
-        let rows: Vec<ActiveTunnelRow> = raw
-            .into_iter()
-            .map(|t| ActiveTunnelRow {
-                host_label: self
-                    .host_view
-                    .host_name(&t.host_id, cx)
-                    .unwrap_or(t.host_id),
-                local_port: t.local_port,
-                remote_host: t.remote_host,
-                remote_port: t.remote_port,
+    /// Publish/replace/resolve forward notifications for state transitions
+    /// between the previous snapshot and `new` (registry only).
+    fn publish_forward_notices(
+        &mut self,
+        new: &[labonair_ssh::ForwardInfo],
+        cx: &mut Context<Self>,
+    ) {
+        use forward_notify::{forward_notification, ForwardNotice as N};
+        use labonair_notifications::{notification_center, Notification};
+        if !cx.has_global::<labonair_notifications::GlobalNotificationCenter>() {
+            return;
+        }
+        let center = notification_center(cx);
+        for f in new {
+            let id = &f.spec.id;
+            let prev = self
+                .forwards
+                .iter()
+                .find(|p| p.spec.id == *id)
+                .map(|p| &p.state);
+            let Some(notice) =
+                forward_notification(prev, &f.state, self.user_started_forwards.contains(id))
+            else {
+                continue;
+            };
+            let old = self.forward_notices.remove(id);
+            if let Some(old) = old {
+                center.update(cx, |c, cx| c.dismiss(old, cx));
+            }
+            let label = labonair_forwards::route_label(&f.spec);
+            let note = match &notice {
+                N::Recovered => continue,
+                N::Failed { reason } => {
+                    Notification::error("Port forward failed", format!("{label}: {reason}"))
+                        .action(forward_notify::SHOW_ACTION, "Show")
+                }
+                N::Lost { reason } => {
+                    Notification::error("Port forward lost", format!("{label}: {reason}"))
+                        .action(forward_notify::SHOW_ACTION, "Show")
+                }
+                N::NeedsInput => Notification::warning("Port forward needs input", label).action(
+                    format!("{}{}", forward_notify::AUTH_ACTION_PREFIX, id.0),
+                    "Authenticate",
+                ),
+            }
+            .dedupe_key(notice.key(&id.0));
+            if let Some(nid) = center.update(cx, |c, cx| c.push(note, cx)) {
+                self.forward_notices.insert(id.clone(), nid);
+            }
+        }
+        // Recovery (and removal) resolves what is still open.
+        for f in new {
+            if matches!(f.state, labonair_ssh::ForwardState::Active) {
+                if let Some(old) = self.forward_notices.remove(&f.spec.id) {
+                    center.update(cx, |c, cx| c.dismiss(old, cx));
+                }
+            }
+        }
+        self.forward_notices
+            .retain(|id, _| new.iter().any(|f| f.spec.id == *id));
+    }
+
+    /// Feed `forwards.autoReconnect` into the forward engine.
+    pub(crate) fn sync_forward_policy(&self, cx: &App) {
+        self.ssh_forwards
+            .set_reconnect_policy(connections_settings(cx).forwards_auto_reconnect());
+    }
+
+    /// Editor defaults from the current `connections` settings.
+    pub fn forward_editor_defaults(&self, cx: &App) -> labonair_forwards::EditorDefaults {
+        let s = connections_settings(cx);
+        labonair_forwards::EditorDefaults::from_settings(
+            s.forwards_default_listen_host(),
+            s.forwards_confirm_public_bind(),
+        )
+    }
+
+    fn refresh_active_tunnels(&mut self, cx: &mut Context<Self>) {
+        let new = self.ssh_forwards.list();
+        let prompt = new
+            .iter()
+            .find(|f| {
+                let previous = self
+                    .forwards
+                    .iter()
+                    .find(|p| p.spec.id == f.spec.id)
+                    .map(|p| &p.state);
+                should_auto_prompt(
+                    self.user_started_forwards.contains(&f.spec.id),
+                    previous,
+                    &f.state,
+                )
             })
-            .collect();
-        self.host_view.set_active_tunnels(rows, cx);
+            .map(|f| f.spec.id.clone());
+        // A settled forward no longer needs the user-started marker.
+        self.user_started_forwards.retain(|id| {
+            !new.iter().any(|f| {
+                f.spec.id == *id
+                    && matches!(
+                        f.state,
+                        labonair_ssh::ForwardState::Active
+                            | labonair_ssh::ForwardState::Failed { .. }
+                    )
+            })
+        });
+        self.publish_forward_notices(&new, cx);
+        self.forwards = new;
+        if let Some(id) = prompt {
+            cx.emit(WorkspaceEvent::OpenForwardPrompt(id));
+        }
+        self.host_view
+            .set_forward_states(forward_states(&self.forwards), cx);
+        cx.notify();
     }
 
     fn retry_ssh(
@@ -5873,6 +6458,9 @@ impl Workspace {
                 host,
                 is_mismatch,
             } => {
+                let session_id = labonair_ssh::split_hop_session_id(&session_id)
+                    .0
+                    .to_string();
                 self.ssh_connection.update(cx, |s, cx| {
                     s.set_trust(&session_id, fingerprint.clone(), is_mismatch, cx)
                 });
@@ -5887,6 +6475,9 @@ impl Workspace {
                 prompt_message,
                 is_2fa,
             } => {
+                let session_id = labonair_ssh::split_hop_session_id(&session_id)
+                    .0
+                    .to_string();
                 self.ssh_connection.update(cx, |s, cx| {
                     s.set_auth_prompt(&session_id, prompt_message.clone(), is_2fa, cx)
                 });
@@ -5896,6 +6487,9 @@ impl Workspace {
                 });
             }
             SshConnectionEvent::PassphraseRequired { session_id } => {
+                let session_id = labonair_ssh::split_hop_session_id(&session_id)
+                    .0
+                    .to_string();
                 self.ssh_connection
                     .update(cx, |s, cx| s.set_passphrase(&session_id, cx));
                 self.ssh_prompt = Some(SshPrompt::Passphrase {
@@ -5914,7 +6508,7 @@ impl Workspace {
                     .map(|t| t.host_id.clone())
                 {
                     self.set_host_status(&host, HostStatus::Connected, cx);
-                    self.start_tunnels(&host, cx);
+                    self.start_tunnels(&session_id, &host, cx);
                 }
                 if self.ssh_prompt.as_ref().map(|p| p.ssh_id()) == Some(session_id.as_str()) {
                     self.ssh_prompt = None;
@@ -5932,6 +6526,46 @@ impl Workspace {
                     }
                 }
             }
+            SshConnectionEvent::HopPrompt {
+                session_id,
+                pending,
+            } => {
+                let ssh_id = labonair_ssh::split_hop_session_id(&session_id)
+                    .0
+                    .to_string();
+                let title = |what: &str| hop_title(pending.hop.as_ref(), what);
+                match &pending.kind {
+                    labonair_ssh::PromptKind::HostKey {
+                        host,
+                        fingerprint,
+                        is_mismatch,
+                    } => {
+                        let (fp, mm) = (fingerprint.clone(), *is_mismatch);
+                        let line = title(&format!("host key for {host}"));
+                        self.ssh_connection.update(cx, |s, cx| {
+                            s.set_trust(&ssh_id, fp, mm, cx);
+                            s.push_log(&ssh_id, &line, cx);
+                        });
+                    }
+                    labonair_ssh::PromptKind::Password => {
+                        let msg = title("password required");
+                        self.ssh_connection
+                            .update(cx, |s, cx| s.set_auth_prompt(&ssh_id, msg, false, cx));
+                    }
+                    labonair_ssh::PromptKind::Passphrase => {
+                        let msg = title("key passphrase required");
+                        self.ssh_connection.update(cx, |s, cx| {
+                            s.set_auth_prompt(&ssh_id, msg, false, cx);
+                            s.set_passphrase(&ssh_id, cx);
+                        });
+                    }
+                }
+                self.ssh_prompt = Some(SshPrompt::Hop {
+                    ssh_id,
+                    pending,
+                    buffer: String::new(),
+                });
+            }
             SshConnectionEvent::ConnectionLost { session_id } => {
                 let known = self.ssh_connection.read(cx).get(&session_id).is_some();
                 if let Some(host) =
@@ -5945,6 +6579,7 @@ impl Workspace {
                 {
                     self.set_host_status(&host, HostStatus::Failed, cx);
                 }
+                self.stop_tunnels(&session_id);
                 // Only surface the error screen if the connection never reached
                 // the shell — a drop after `Connected` belongs in the terminal.
                 if known {
@@ -6131,12 +6766,47 @@ impl Workspace {
             SshPrompt::Passphrase { ssh_id, buffer } => {
                 self.retry_ssh(&ssh_id, Some(buffer), None, cx);
             }
+            SshPrompt::Hop {
+                ssh_id,
+                pending,
+                buffer,
+            } => {
+                self.ssh_connection
+                    .update(cx, |s, cx| s.resume(&ssh_id, cx));
+                self.answer_hop(ssh_id, pending, buffer, true);
+            }
         }
         cx.notify();
     }
 
+    fn answer_hop(
+        &self,
+        ssh_id: String,
+        pending: labonair_ssh::PendingPrompt,
+        buffer: String,
+        submit: bool,
+    ) {
+        let answer = hop_answer(&pending.kind, buffer, submit);
+        let ssh = self.ssh.clone();
+        self.tokio.spawn(async move {
+            let _ = ssh
+                .answer_prompt(SshSessionId::new(ssh_id), pending.request_id, answer)
+                .await;
+        });
+    }
+
     fn cancel_prompt(&mut self, cx: &mut Context<Self>) {
         match self.ssh_prompt.take() {
+            Some(SshPrompt::Hop {
+                ssh_id,
+                pending,
+                buffer,
+            }) => {
+                self.ssh_connection.update(cx, |s, cx| {
+                    s.set_error(&ssh_id, "Jump host prompt cancelled.", cx)
+                });
+                self.answer_hop(ssh_id, pending, buffer, false);
+            }
             Some(SshPrompt::Trust {
                 ssh_id,
                 prompt_request_id,
@@ -6167,10 +6837,7 @@ impl Workspace {
             "escape" => self.cancel_prompt(cx),
             "enter" => self.submit_prompt(cx),
             "backspace" => {
-                if let Some(
-                    SshPrompt::Password { buffer, .. } | SshPrompt::Passphrase { buffer, .. },
-                ) = self.ssh_prompt.as_mut()
-                {
+                if let Some(buffer) = self.ssh_prompt.as_mut().and_then(|p| p.buffer_mut()) {
                     buffer.pop();
                 }
             }
@@ -6183,10 +6850,8 @@ impl Workspace {
                     .clone()
                     .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
                     .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
-                if let (
-                    Some(ch),
-                    Some(SshPrompt::Password { buffer, .. } | SshPrompt::Passphrase { buffer, .. }),
-                ) = (ch, self.ssh_prompt.as_mut())
+                if let (Some(ch), Some(buffer)) =
+                    (ch, self.ssh_prompt.as_mut().and_then(|p| p.buffer_mut()))
                 {
                     buffer.push_str(&ch);
                 }
@@ -6307,12 +6972,8 @@ impl Workspace {
         let buffer_dots = self
             .ssh_prompt
             .as_ref()
-            .and_then(|p| match p {
-                SshPrompt::Password { buffer, .. } | SshPrompt::Passphrase { buffer, .. } => {
-                    Some("\u{2022}".repeat(buffer.chars().count()))
-                }
-                _ => None,
-            })
+            .and_then(|p| p.buffer_len())
+            .map(|n| "\u{2022}".repeat(n))
             .unwrap_or_default();
 
         let (card_title, card_body): (String, String) = match &entry.state {
@@ -6360,6 +7021,15 @@ impl Workspace {
                 format!("Connecting to {}\u{2026}", entry.host_label),
                 "Negotiating a secure channel.".to_string(),
             ),
+        };
+
+        let card_title = match &self.ssh_prompt {
+            Some(SshPrompt::Hop { pending, .. })
+                if is_prompt || entry.state == ConnectionState::WaitingTrust =>
+            {
+                hop_title(pending.hop.as_ref(), &card_title)
+            }
+            _ => card_title,
         };
 
         let host_incompatible = entry
@@ -6555,7 +7225,8 @@ impl Workspace {
                     }),
             );
 
-        let jump_badge = entry.jump_host_name.clone().map(|j| {
+        let jump_badge = (!entry.route.is_empty()).then(|| {
+            let j = entry.route.join(" \u{203a} ");
             div()
                 .px_2()
                 .py_0p5()
@@ -6566,6 +7237,17 @@ impl Workspace {
                 .text_color(muted)
                 .child(SharedString::from(format!("via {j}")))
         });
+
+        let hop_line = entry
+            .current_hop
+            .as_ref()
+            .filter(|_| entry.state == ConnectionState::Connecting)
+            .map(|(i, n, label)| {
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(SharedString::from(format!("Hop {i}/{n}: {label}")))
+            });
 
         div()
             .size_full()
@@ -6596,6 +7278,7 @@ impl Workspace {
                             .children(jump_badge),
                     )
                     .child(stages)
+                    .children(hop_line)
                     .child(state_card)
                     .child(log_panel),
             )
@@ -7399,12 +8082,139 @@ impl labonair_command_palette::PaletteWorkspace for Workspace {
     }
 }
 
+/// Live state of every known forward by id, for the Hosts forwards tab.
+fn forward_states(
+    forwards: &[labonair_ssh::ForwardInfo],
+) -> std::collections::HashMap<labonair_ssh::ForwardId, ForwardLive> {
+    forwards
+        .iter()
+        .map(|f| {
+            (
+                f.spec.id.clone(),
+                ForwardLive {
+                    state: f.state.clone(),
+                    bound_port: f.bound_port,
+                },
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn forward_states_cover_every_forward_with_bound_port() {
+        use labonair_ssh::{
+            ForwardId, ForwardInfo, ForwardKind, ForwardLifetime, ForwardOrigin, ForwardSpec,
+            ForwardState,
+        };
+        let info = |id: &str, state, port| ForwardInfo {
+            spec: ForwardSpec {
+                id: ForwardId(id.into()),
+                host_id: "h".into(),
+                kind: ForwardKind::Local,
+                name: None,
+                listen_host: "127.0.0.1".into(),
+                listen_port: 0,
+                target_host: "db".into(),
+                target_port: 5432,
+            },
+            state,
+            lifetime: ForwardLifetime::WithConnection,
+            origin: ForwardOrigin::App,
+            bound_port: port,
+            connections: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            saved: false,
+        };
+        let states = super::forward_states(&[
+            info("a", ForwardState::Active, Some(4000)),
+            info("b", ForwardState::Stopped, None),
+        ]);
+        assert_eq!(states.len(), 2);
+        assert_eq!(states[&ForwardId("a".into())].bound_port, Some(4000));
+        assert_eq!(states[&ForwardId("b".into())].state, ForwardState::Stopped);
+    }
+
+    #[test]
+    fn auto_prompt_only_for_user_started_new_prompts() {
+        use labonair_ssh::{ForwardState as S, PendingPrompt, PromptKind, PromptRequestId};
+        let prompt = |id: &str| {
+            S::AwaitingInput(PendingPrompt {
+                request_id: PromptRequestId::new(id),
+                kind: PromptKind::Password,
+                hop: None,
+            })
+        };
+        assert!(super::should_auto_prompt(
+            true,
+            Some(&S::Starting),
+            &prompt("a")
+        ));
+        assert!(super::should_auto_prompt(true, None, &prompt("a")));
+        assert!(super::should_auto_prompt(
+            true,
+            Some(&prompt("a")),
+            &prompt("b")
+        ));
+        assert!(!super::should_auto_prompt(
+            true,
+            Some(&prompt("a")),
+            &prompt("a")
+        ));
+        assert!(!super::should_auto_prompt(
+            false,
+            Some(&S::Starting),
+            &prompt("a")
+        ));
+        assert!(!super::should_auto_prompt(
+            true,
+            Some(&S::Starting),
+            &S::Active
+        ));
+    }
+
+    #[test]
+    fn hop_title_and_answers() {
+        use labonair_ssh::{HopInfo, PromptAnswer, PromptKind};
+        let hop = HopInfo {
+            index: 2,
+            total: 3,
+            label: "bastion".into(),
+        };
+        assert_eq!(
+            super::hop_title(Some(&hop), "Password required"),
+            "Hop 2/3: bastion: Password required"
+        );
+        assert_eq!(super::hop_title(None, "x"), "x");
+        let hk = PromptKind::HostKey {
+            host: "h".into(),
+            fingerprint: "f".into(),
+            is_mismatch: false,
+        };
+        assert_eq!(
+            super::hop_answer(&hk, String::new(), true),
+            PromptAnswer::Trust(true)
+        );
+        assert_eq!(
+            super::hop_answer(&hk, String::new(), false),
+            PromptAnswer::Trust(false)
+        );
+        assert_eq!(
+            super::hop_answer(&PromptKind::Password, "pw".into(), true),
+            PromptAnswer::Secret(Some("pw".into()))
+        );
+        assert_eq!(
+            super::hop_answer(&PromptKind::Passphrase, "pw".into(), false),
+            PromptAnswer::Secret(None)
+        );
+    }
+
     use super::{
         decode_local_file_uri, editor_tab_diagnostic_status, editor_tab_git_status,
-        is_supported_external_document_link, relative_path_under_root, shell_quote, ssh_tab_title,
-        TabDiagnosticStatus, TabGitStatus,
+        is_supported_external_document_link, relative_path_under_root, shell_quote,
+        ssh_route_title, TabDiagnosticStatus, TabGitStatus,
     };
     use labonair_editor::language_services::{
         Diagnostic, DiagnosticSeverity, LanguageServerId, LspPosition, LspRange,
@@ -7543,11 +8353,20 @@ mod tests {
     }
 
     #[test]
-    fn ssh_tab_title_annotates_jump_route() {
-        assert_eq!(ssh_tab_title("prod-web", None), "prod-web");
+    fn ssh_route_title_annotates_jump_route() {
+        let r = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(ssh_route_title("prod-web", &[]), "prod-web");
         assert_eq!(
-            ssh_tab_title("prod-web", Some("bastion")),
-            "prod-web  \u{2192} bastion"
+            ssh_route_title("prod-web", &r(&["a"])),
+            "prod-web  \u{21e2} a"
+        );
+        assert_eq!(
+            ssh_route_title("prod-web", &r(&["a", "b"])),
+            "prod-web  \u{21e2} a \u{203a} b"
+        );
+        assert_eq!(
+            ssh_route_title("prod-web", &r(&["a", "b", "c"])),
+            "prod-web  \u{21e2} 3 hops"
         );
     }
 }

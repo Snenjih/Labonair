@@ -10,7 +10,9 @@ path = "src/lib.rs"
 
 [dependencies]
 gpui = { workspace = true }
+labonair-forwards = { path = "../forwards" }
 labonair-hosts = { path = "../hosts" }
+labonair-ssh = { path = "../ssh" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

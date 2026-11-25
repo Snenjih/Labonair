@@ -28,6 +28,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use labonair_credentials::{self, Credential};
+use labonair_forwards::{parse_saved, serialize_saved, HostForwards, SavedForward};
 use labonair_hosts::store::{HostCreateRequest, HostEventHandler, HostUpdateRequest};
 use labonair_hosts::{
     store as host_store, Group, Host, HostOpenRequest, HostPickerRow, ReorderItem,
@@ -36,7 +37,8 @@ use labonair_persistence::Database;
 use labonair_secrets::SecretsState;
 use labonair_snippets::store as snippet_store;
 use labonair_ssh::{
-    ImportConflict, SshConfigEntry, SshConfigService, SshConnectionTester, SshTestResult,
+    ForwardId, ForwardState, ImportConflict, SshConfigEntry, SshConfigService, SshConnectionTester,
+    SshTestResult,
 };
 use tokio::runtime::Handle as TokioHandle;
 
@@ -51,15 +53,42 @@ use labonair_ui_kit::{
 
 mod page;
 
-/// Connection status + the active-tunnel row shape moved to the leaf
-/// `labonair-hosts-host` contract in R08-012; re-exported so existing
-/// `labonair_hosts_ui::{HostStatus, ActiveTunnelRow}` call sites keep working.
-pub use labonair_hosts_host::{ActiveTunnelRow, HostStatus};
+/// Connection status moved to the leaf `labonair-hosts-host` contract in
+/// R08-012; re-exported so existing `labonair_hosts_ui::HostStatus` call sites
+/// keep working.
+pub use labonair_hosts_host::{ForwardLive, HostStatus};
 
 /// Emitted to the workspace to drive an action it owns.
 pub enum HostManagerEvent {
     /// Open the requested transport for a saved host.
     Open(HostOpenRequest),
+    /// Start or stop one saved forward of a host.
+    ForwardAction {
+        host_id: String,
+        forward_id: String,
+        action: ForwardAction,
+    },
+    /// Open the forward editor for a host: `edit` prefills an existing saved
+    /// forward (saving upserts by id), `None` starts a new one.
+    EditForward {
+        host_id: String,
+        edit: Option<SavedForward>,
+    },
+    /// The host's saved forwards were persisted; the workspace reconciles
+    /// running forwards (`plan_forward_changes`).
+    ForwardsSaved {
+        host_id: String,
+        forwards: Vec<SavedForward>,
+    },
+    /// Open the port-forwards popover.
+    ManageForwards { host_id: Option<String> },
+}
+
+/// What a forward row's Start/Stop button asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForwardAction {
+    Start,
+    Stop,
 }
 
 /// Drag payload for reordering host list items / dropping them onto a group
@@ -85,6 +114,8 @@ struct HostRowData {
     icon: IconName,
     pin_to_top: bool,
     status: HostStatus,
+    /// Jump route names, outermost first (empty = direct).
+    route: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,87 +163,6 @@ enum HostField {
     KeepAliveInterval,
     KeepAliveTries,
     Notes,
-    TunnelLocalPort(usize),
-    TunnelRemoteHost(usize),
-    TunnelRemotePort(usize),
-}
-
-/// One editable local-forward row in the host form's Tunnels section.
-#[derive(Debug, Clone, Default, PartialEq)]
-struct TunnelDraft {
-    id: String,
-    local_port: String,
-    remote_host: String,
-    remote_port: String,
-}
-
-impl TunnelDraft {
-    fn new() -> Self {
-        Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            local_port: String::new(),
-            remote_host: String::new(),
-            remote_port: String::new(),
-        }
-    }
-}
-
-/// Parse the `hosts.tunnels` JSON column into editable drafts.
-fn parse_tunnels(raw: &Option<String>) -> Vec<TunnelDraft> {
-    let Some(s) = raw.as_deref().filter(|s| !s.trim().is_empty()) else {
-        return Vec::new();
-    };
-    let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(s) else {
-        return Vec::new();
-    };
-    arr.iter()
-        .map(|t| TunnelDraft {
-            id: t
-                .get("id")
-                .and_then(|v| v.as_str())
-                .map(str::to_string)
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-            local_port: t
-                .get("local_port")
-                .and_then(|v| v.as_u64())
-                .map(|n| n.to_string())
-                .unwrap_or_default(),
-            remote_host: t
-                .get("remote_host")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            remote_port: t
-                .get("remote_port")
-                .and_then(|v| v.as_u64())
-                .map(|n| n.to_string())
-                .unwrap_or_default(),
-        })
-        .collect()
-}
-
-/// Serialize the drafts back to the `hosts.tunnels` JSON shape, dropping any
-/// row that is not a complete `local:<port> → host:<port>` forward.
-fn serialize_tunnels(drafts: &[TunnelDraft]) -> String {
-    let list: Vec<serde_json::Value> = drafts
-        .iter()
-        .filter_map(|d| {
-            let lp: u16 = d.local_port.trim().parse().ok()?;
-            let rp: u16 = d.remote_port.trim().parse().ok()?;
-            let rh = d.remote_host.trim();
-            if rh.is_empty() {
-                return None;
-            }
-            Some(serde_json::json!({
-                "id": d.id,
-                "type": "local",
-                "local_port": lp,
-                "remote_host": rh,
-                "remote_port": rp,
-            }))
-        })
-        .collect();
-    serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string())
 }
 
 /// Backing state of the add/edit-host form.
@@ -248,8 +198,8 @@ struct HostForm {
     /// Id of the bastion host to route through. The host being edited is
     /// never a valid choice.
     jump_host: Option<String>,
-    /// Configured local port-forwards (ProxyJump-independent).
-    tunnels: Vec<TunnelDraft>,
+    /// Saved port forwards (`hosts.tunnels`, shared codec).
+    forwards: Vec<SavedForward>,
     /// "Block AI Agent Access" — when set, the MCP bridge refuses to grant a
     /// tab for this host and any live grant is revoked immediately (T11-006).
     block_agent_access: bool,
@@ -261,8 +211,6 @@ struct HostForm {
     snippet_mode: String,
     /// Which of the 4 form tabs is showing.
     tab: FormTab,
-    /// Fallback edit target for a stale tunnel-field index (never rendered).
-    scratch: String,
 }
 
 /// The 4 host-form tabs — ports `HostFormPanel.tsx:550`.
@@ -322,13 +270,12 @@ impl HostForm {
             credential: None,
             group: None,
             jump_host: None,
-            tunnels: Vec::new(),
+            forwards: Vec::new(),
             block_agent_access: false,
             icon: None,
             snippet_id: None,
             snippet_mode: "execute".into(),
             tab: FormTab::General,
-            scratch: String::new(),
         }
     }
 
@@ -360,7 +307,7 @@ impl HostForm {
             credential: h.credential_id.clone(),
             group: h.group_id.clone(),
             jump_host: h.jump_host_id.clone().filter(|jid| *jid != h.id),
-            tunnels: parse_tunnels(&h.tunnels),
+            forwards: parse_saved(&h.tunnels),
             block_agent_access: h.block_agent_access,
             icon: h.icon.clone(),
             snippet_id: h.startup_snippet_id.clone(),
@@ -369,7 +316,6 @@ impl HostForm {
                 .clone()
                 .unwrap_or_else(|| "execute".into()),
             tab: FormTab::General,
-            scratch: String::new(),
         }
     }
 
@@ -387,16 +333,6 @@ impl HostForm {
             HostField::KeepAliveInterval => &mut self.keep_alive_interval,
             HostField::KeepAliveTries => &mut self.keep_alive_tries,
             HostField::Notes => &mut self.notes,
-            HostField::TunnelLocalPort(i)
-            | HostField::TunnelRemoteHost(i)
-            | HostField::TunnelRemotePort(i)
-                if i >= self.tunnels.len() =>
-            {
-                &mut self.scratch
-            }
-            HostField::TunnelLocalPort(i) => &mut self.tunnels[i].local_port,
-            HostField::TunnelRemoteHost(i) => &mut self.tunnels[i].remote_host,
-            HostField::TunnelRemotePort(i) => &mut self.tunnels[i].remote_port,
         }
     }
 
@@ -414,21 +350,6 @@ impl HostForm {
             HostField::KeepAliveInterval => &self.keep_alive_interval,
             HostField::KeepAliveTries => &self.keep_alive_tries,
             HostField::Notes => &self.notes,
-            HostField::TunnelLocalPort(i) => self
-                .tunnels
-                .get(i)
-                .map(|tunnel| tunnel.local_port.as_str())
-                .unwrap_or(&self.scratch),
-            HostField::TunnelRemoteHost(i) => self
-                .tunnels
-                .get(i)
-                .map(|tunnel| tunnel.remote_host.as_str())
-                .unwrap_or(&self.scratch),
-            HostField::TunnelRemotePort(i) => self
-                .tunnels
-                .get(i)
-                .map(|tunnel| tunnel.remote_port.as_str())
-                .unwrap_or(&self.scratch),
         }
     }
 }
@@ -642,7 +563,8 @@ pub struct HostManagerView {
     credentials: Vec<Credential>,
     snippets: Vec<(String, String)>,
     statuses: Vec<(String, HostStatus)>,
-    active_tunnels: Vec<ActiveTunnelRow>,
+    /// Live state of running forwards by id (fed by the workspace).
+    forward_states: HashMap<ForwardId, ForwardLive>,
     /// The host detail sub-page, `Some` while a host is open.
     form: Option<HostForm>,
     /// The credential detail sub-page, `Some` while a credential is open.
@@ -751,7 +673,7 @@ impl HostManagerView {
             credentials: Vec::new(),
             snippets: Vec::new(),
             statuses: Vec::new(),
-            active_tunnels: Vec::new(),
+            forward_states: HashMap::new(),
             form: None,
             cred_form: None,
             mode: PageMode::Hosts,
@@ -804,13 +726,38 @@ impl HostManagerView {
         cx.notify();
     }
 
-    /// Replace the active-tunnel snapshot (called by the workspace each poll
-    /// tick). Only notifies when the set actually changed.
-    pub fn set_active_tunnels(&mut self, rows: Vec<ActiveTunnelRow>, cx: &mut Context<Self>) {
-        if self.active_tunnels != rows {
-            self.active_tunnels = rows;
+    /// Replace the live forward-state snapshot (called by the workspace each
+    /// poll tick). Only notifies when it actually changed.
+    pub fn set_forward_states(
+        &mut self,
+        states: HashMap<ForwardId, ForwardLive>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.forward_states != states {
+            self.forward_states = states;
             cx.notify();
         }
+    }
+
+    /// Typed saved forwards of a host from the catalog.
+    pub fn saved_forwards(&self, host_id: &str) -> Vec<SavedForward> {
+        self.hosts
+            .iter()
+            .find(|h| h.id == host_id)
+            .map(|h| parse_saved(&h.tunnels))
+            .unwrap_or_default()
+    }
+
+    /// Saved forwards of every host, for conflict hints.
+    fn all_host_forwards(&self) -> Vec<HostForwards> {
+        self.hosts
+            .iter()
+            .map(|h| HostForwards {
+                host_id: h.id.clone(),
+                host_name: h.name.clone(),
+                forwards: parse_saved(&h.tunnels),
+            })
+            .collect()
     }
 
     /// All known host ids (for session restore — T14-001).
@@ -842,14 +789,29 @@ impl HostManagerView {
         hosts.into_iter().take(n).map(Host::picker_row).collect()
     }
 
-    /// Display name of the jump host a given host routes through, if any.
-    pub fn jump_host_label(&self, host_id: &str) -> Option<String> {
-        let host = self.hosts.iter().find(|h| h.id == host_id)?;
-        let jid = host.jump_host_id.as_deref()?;
-        self.hosts
+    /// Names of the jump hosts a host routes through, outermost first,
+    /// excluding the host itself. Stops at a cycle or a missing host.
+    pub fn route_labels(&self, host_id: &str) -> Vec<String> {
+        let mut seen = vec![host_id];
+        let mut labels = Vec::new();
+        let mut next = self
+            .hosts
             .iter()
-            .find(|c| c.id == jid)
-            .map(|c| c.name.clone())
+            .find(|h| h.id == host_id)
+            .and_then(|h| h.jump_host_id.as_deref());
+        while let Some(jid) = next {
+            if seen.contains(&jid) {
+                break;
+            }
+            let Some(jump) = self.hosts.iter().find(|h| h.id == jid) else {
+                break;
+            };
+            seen.push(jid);
+            labels.push(jump.name.clone());
+            next = jump.jump_host_id.as_deref();
+        }
+        labels.reverse();
+        labels
     }
 
     fn status_of(&self, host_id: &str) -> HostStatus {
@@ -1089,7 +1051,7 @@ impl HostManagerView {
         let group_id = form.group.clone();
         let cred_id = form.credential.clone();
         let jump_host_id = form.jump_host.clone();
-        let tunnels_json = serialize_tunnels(&form.tunnels);
+        let tunnels_json = serialize_saved(&form.forwards);
         let block_agent_access = form.block_agent_access;
         let editing = form.editing_id.clone();
         let addr = form.address.trim().to_string();
@@ -1167,6 +1129,7 @@ impl HostManagerView {
                     .map(|host| host.id),
             }
         });
+        let saved_forwards = form.forwards.clone();
         cx.spawn(async move |this, cx| {
             let result = jh.await;
             let _ = this.update(cx, |this, cx| {
@@ -1179,6 +1142,12 @@ impl HostManagerView {
                     this.notify_error("Save host failed", error, "hosts:save", cx);
                 }
                 let ok = saved_id.is_some();
+                if let Some(host_id) = saved_id.clone() {
+                    cx.emit(HostManagerEvent::ForwardsSaved {
+                        host_id,
+                        forwards: saved_forwards,
+                    });
+                }
                 if let (Some(id), Some(form)) = (saved_id, this.form.as_mut()) {
                     // A created host is now an existing one: later autosaves
                     // update it instead of creating another. Typed secrets are
@@ -1401,6 +1370,93 @@ impl HostManagerView {
                     Err(error) => {
                         this.notify_error("Move host failed", error.to_string(), "hosts:move", cx)
                     }
+                }
+                this.reload_list_only(cx)
+            });
+        })
+        .detach();
+    }
+
+    /// Upsert one saved forward (by id) into a host's `tunnels` column through
+    /// the same typed update path the form uses.
+    pub fn save_forward(&mut self, host_id: &str, forward: SavedForward, cx: &mut Context<Self>) {
+        let Some(host) = self.hosts.iter().find(|h| h.id == host_id) else {
+            return;
+        };
+        let mut saved = parse_saved(&host.tunnels);
+        match saved.iter_mut().find(|f| f.id == forward.id) {
+            Some(existing) => *existing = forward,
+            None => saved.push(forward),
+        }
+        let tunnels = serialize_saved(&saved);
+        // Keep an open form for this host in sync so its next autosave does
+        // not overwrite the upsert.
+        if let Some(form) = self
+            .form
+            .as_mut()
+            .filter(|f| f.editing_id.as_deref() == Some(host_id))
+        {
+            form.forwards = saved.clone();
+        }
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let id = host_id.to_string();
+        let saved_event = (id.clone(), saved);
+        let jh = self.tokio.spawn(async move {
+            host_store::hosts_update(
+                &database,
+                &secrets,
+                HostUpdateRequest {
+                    id,
+                    name: None,
+                    host_address: None,
+                    port: None,
+                    username: None,
+                    auth_method: None,
+                    private_key_path: None,
+                    group_id: None,
+                    tags: None,
+                    password: None,
+                    sudo_password: None,
+                    default_path_ssh: None,
+                    default_path_sftp: None,
+                    pin_to_top: None,
+                    keep_alive_interval: None,
+                    keep_alive_tries: None,
+                    sort_order: None,
+                    tunnels: Some(tunnels),
+                    startup_snippet_id: None,
+                    startup_snippet_mode: None,
+                    credential_id: None,
+                    jump_host_id: None,
+                    notes: None,
+                    icon: None,
+                    block_agent_access: None,
+                },
+                None,
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => cx.emit(HostManagerEvent::ForwardsSaved {
+                        host_id: saved_event.0,
+                        forwards: saved_event.1,
+                    }),
+                    Ok(Err(error)) => this.notify_error(
+                        "Save port forward failed",
+                        error.to_string(),
+                        "hosts:save-forward",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Save port forward failed",
+                        error.to_string(),
+                        "hosts:save-forward",
+                        cx,
+                    ),
                 }
                 this.reload_list_only(cx)
             });
@@ -2274,6 +2330,7 @@ impl HostManagerView {
             icon: host_icon(host.icon.as_deref()),
             pin_to_top: host.pin_to_top,
             status: self.status_of(&host.id),
+            route: self.route_labels(&host.id),
         }
     }
 
@@ -3123,6 +3180,50 @@ mod tests {
     }
 
     #[gpui::test]
+    fn saved_forwards_and_conflicts_come_from_the_catalog(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, _cx| {
+                let tunnels = Some(
+                    r#"[{"id":"t","type":"local","listen_port":8080,"target_host":"db","target_port":1}]"#
+                        .to_string(),
+                );
+                let mut a = host_stub("a", "A");
+                a.tunnels = tunnels.clone();
+                let mut b = host_stub("b", "B");
+                b.tunnels = tunnels;
+                v.hosts = vec![a, b];
+                let saved = v.saved_forwards("a");
+                assert_eq!(saved.len(), 1);
+                assert!(v.saved_forwards("missing").is_empty());
+                let conflicts =
+                    labonair_forwards::listen_conflicts(&v.all_host_forwards(), "a", &saved[0]);
+                assert_eq!(conflicts.len(), 1);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn route_labels_are_outermost_first_and_stop_at_cycles(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, _cx| {
+                let mut a = host_stub("a", "A");
+                let mut b = host_stub("b", "B");
+                let mut c = host_stub("c", "C");
+                c.jump_host_id = Some("b".into());
+                b.jump_host_id = Some("a".into());
+                v.hosts = vec![a.clone(), b.clone(), c];
+                assert_eq!(v.route_labels("c"), vec!["A", "B"]);
+                assert!(v.route_labels("a").is_empty());
+                a.jump_host_id = Some("c".into());
+                v.hosts[0] = a;
+                assert_eq!(v.route_labels("c").len(), 2);
+            });
+        });
+    }
+
+    #[gpui::test]
     fn picker_rows_are_canonical_and_recent_rows_keep_owner_order(cx: &mut TestAppContext) {
         let (_rt, view) = make(cx);
         cx.update(|cx| {
@@ -3189,7 +3290,7 @@ mod tests {
         assert_eq!(form.default_path, "/srv");
         assert_eq!(form.editing_id.as_deref(), Some("h"));
         assert!(form.jump_host.is_none());
-        assert!(form.tunnels.is_empty());
+        assert!(form.forwards.is_empty());
     }
 
     #[test]
@@ -3251,42 +3352,17 @@ mod tests {
     }
 
     #[test]
-    fn tunnel_json_round_trips_and_drops_incomplete_rows() {
-        let drafts = vec![
-            TunnelDraft {
-                id: "keep".into(),
-                local_port: "8080".into(),
-                remote_host: "db.internal".into(),
-                remote_port: "5432".into(),
-            },
-            TunnelDraft {
-                id: "drop-no-host".into(),
-                local_port: "9000".into(),
-                remote_host: "  ".into(),
-                remote_port: "9000".into(),
-            },
-            TunnelDraft {
-                id: "drop-bad-port".into(),
-                local_port: "notaport".into(),
-                remote_host: "x".into(),
-                remote_port: "1".into(),
-            },
-        ];
-        let json = serialize_tunnels(&drafts);
-        let back = parse_tunnels(&Some(json));
-        assert_eq!(back.len(), 1);
-        assert_eq!(back[0].id, "keep");
-        assert_eq!(back[0].local_port, "8080");
-        assert_eq!(back[0].remote_host, "db.internal");
-        assert_eq!(back[0].remote_port, "5432");
-    }
-
-    #[test]
-    fn empty_and_garbage_tunnel_columns_parse_to_nothing() {
-        assert!(parse_tunnels(&None).is_empty());
-        assert!(parse_tunnels(&Some(String::new())).is_empty());
-        assert!(parse_tunnels(&Some("not json".into())).is_empty());
-        assert!(parse_tunnels(&Some("[]".into())).is_empty());
+    fn legacy_tunnel_column_loads_as_saved_forwards_and_round_trips() {
+        let raw = Some(
+            r#"[{"id":"keep","type":"local","local_port":8080,"remote_host":"db.internal","remote_port":5432}]"#
+                .to_string(),
+        );
+        let forwards = parse_saved(&raw);
+        assert_eq!(forwards.len(), 1);
+        assert_eq!(forwards[0].listen_port, 8080);
+        assert_eq!(forwards[0].target_host, "db.internal");
+        assert_eq!(parse_saved(&Some(serialize_saved(&forwards))), forwards);
+        assert!(parse_saved(&Some("not json".into())).is_empty());
     }
 
     #[test]
@@ -3326,8 +3402,8 @@ mod tests {
         );
         let form = HostForm::from_host(&target);
         assert_eq!(form.jump_host.as_deref(), Some("b"));
-        assert_eq!(form.tunnels.len(), 1);
-        assert_eq!(form.tunnels[0].local_port, "2201");
+        assert_eq!(form.forwards.len(), 1);
+        assert_eq!(form.forwards[0].listen_port, 2201);
 
         // A self-referential jump_host_id is ignored.
         let mut loopy = host_stub("a", "Alpha");

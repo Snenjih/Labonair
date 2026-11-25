@@ -127,7 +127,10 @@ pub struct ConnectionEntry {
     /// Unknown-vs-mismatch host key, for `WaitingTrust` styling.
     pub trust_fingerprint: Option<String>,
     pub trust_mismatch: bool,
-    pub jump_host_name: Option<String>,
+    /// Jump host names, outermost first (empty = direct).
+    pub route: Vec<String>,
+    /// Hop currently being dialled, parsed from `Hop i/n (label)` log lines.
+    pub current_hop: Option<(usize, usize, String)>,
     /// Index into [`ConnStage::ORDER`] of the furthest stage reached.
     pub stage: usize,
     /// Whether `stage` itself is finished (vs. in progress).
@@ -142,7 +145,7 @@ impl ConnectionEntry {
         host_id: String,
         host_label: String,
         kind: ConnectionKind,
-        jump_host_name: Option<String>,
+        route: Vec<String>,
     ) -> Self {
         Self {
             session_id,
@@ -155,7 +158,8 @@ impl ConnectionEntry {
             is_2fa: false,
             trust_fingerprint: None,
             trust_mismatch: false,
-            jump_host_name,
+            route,
+            current_hop: None,
             stage: 0,
             stage_done: false,
             log: Vec::new(),
@@ -182,6 +186,9 @@ impl ConnectionEntry {
     }
 
     fn ingest_log(&mut self, line: &str) {
+        if let Some(hop) = parse_hop_line(line) {
+            self.current_hop = Some(hop);
+        }
         if let Some((idx, done)) = detect_stage(line) {
             // Never move backwards (interleaved credential / jump-host lines).
             if idx > self.stage || (idx == self.stage && done && !self.stage_done) {
@@ -227,11 +234,32 @@ pub fn detect_stage(line: &str) -> Option<(usize, bool)> {
     }
 }
 
+/// Parse a `Hop i/n (label): ...` line (transport client wording) into
+/// `(i, n, label)`.
+pub fn parse_hop_line(line: &str) -> Option<(usize, usize, String)> {
+    let rest = line.strip_prefix("Hop ")?;
+    let (counts, rest) = rest.split_once(" (")?;
+    let (i, n) = counts.split_once('/')?;
+    let (label, _) = rest.split_once("): ")?;
+    Some((i.parse().ok()?, n.parse().ok()?, label.to_string()))
+}
+
 /// Map a raw connection error to a clear `(title, hint)` pair for the error
 /// card. The raw text is still shown as the detail; this only names the
 /// failure and says what to try. Jump-host and host-key failures are matched
 /// first because their messages also contain generic words like "refused".
-pub fn classify_error(message: &str) -> (&'static str, &'static str) {
+pub fn classify_error(message: &str) -> (&'static str, String) {
+    if let Some((i, n, label)) = parse_hop_line(message) {
+        return (
+            "Jump host failed",
+            format!("Hop {i}/{n} ({label}) could not be completed. Check that jump host's own settings."),
+        );
+    }
+    let (title, hint) = classify_generic(message);
+    (title, hint.to_string())
+}
+
+fn classify_generic(message: &str) -> (&'static str, &'static str) {
     let m = message.to_ascii_lowercase();
     let has = |needles: &[&str]| needles.iter().any(|n| m.contains(n));
     if has(&["cancelled", "canceled"]) {
@@ -331,7 +359,7 @@ impl ConnectionStatusStore {
         host_id: impl Into<String>,
         host_label: impl Into<String>,
         kind: ConnectionKind,
-        jump_host_name: Option<String>,
+        route: Vec<String>,
         cx: &mut Context<Self>,
     ) {
         let session_id = session_id.into();
@@ -340,7 +368,7 @@ impl ConnectionStatusStore {
             host_id.into(),
             host_label.into(),
             kind,
-            jump_host_name,
+            route,
         );
         self.entries.insert(session_id, entry);
         self.changed(cx);
@@ -541,6 +569,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_hop_line_reads_index_total_and_label() {
+        assert_eq!(
+            parse_hop_line("Hop 2/3 (my bastion): connecting\u{2026}"),
+            Some((2, 3, "my bastion".to_string()))
+        );
+        assert_eq!(parse_hop_line("Hop x/3 (a): b"), None);
+        assert_eq!(parse_hop_line("TCP connection established."), None);
+    }
+
+    #[test]
+    fn classify_error_names_the_failing_hop() {
+        let (title, hint) = classify_error("Hop 1/2 (bastion): Permission denied (publickey)");
+        assert_eq!(title, "Jump host failed");
+        assert!(hint.contains("bastion"));
+    }
+
+    #[test]
     fn classify_error_names_the_failure() {
         assert_eq!(
             classify_error("Jump host 'x' not found").0,
@@ -576,7 +621,7 @@ mod tests {
             "h".into(),
             "Host".into(),
             ConnectionKind::Terminal,
-            None,
+            Vec::new(),
         );
         assert_eq!(e.stage_status(ConnStage::Tcp), StageStatus::Active);
 
@@ -615,7 +660,14 @@ mod tests {
         let snapshot = |cx: &mut TestAppContext| cx.update(|cx| center.read(cx).snapshot());
         cx.update(|cx| {
             store.update(cx, |s, cx| {
-                s.begin("sess", "host", "Web", ConnectionKind::Terminal, None, cx);
+                s.begin(
+                    "sess",
+                    "host",
+                    "Web",
+                    ConnectionKind::Terminal,
+                    Vec::new(),
+                    cx,
+                );
             });
         });
         let running = snapshot(cx);
@@ -646,13 +698,15 @@ mod tests {
                     "host",
                     "Web",
                     ConnectionKind::Terminal,
-                    Some("bastion".into()),
+                    vec!["bastion".into()],
                     cx,
                 );
                 assert_eq!(s.get("sess").unwrap().state, ConnectionState::Connecting);
+                assert_eq!(s.get("sess").unwrap().route, vec!["bastion".to_string()]);
+                s.push_log("sess", "Hop 1/2 (bastion): connecting\u{2026}", cx);
                 assert_eq!(
-                    s.get("sess").unwrap().jump_host_name.as_deref(),
-                    Some("bastion")
+                    s.get("sess").unwrap().current_hop,
+                    Some((1, 2, "bastion".to_string()))
                 );
 
                 s.push_log("sess", "TCP connection established.", cx);

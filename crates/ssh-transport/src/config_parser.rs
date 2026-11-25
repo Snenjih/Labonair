@@ -12,11 +12,15 @@ pub struct SshConfigEntry {
     pub auth_method: String,
     pub private_key_path: Option<String>,
     pub proxy_jump: Option<String>,
+    /// Raw `LocalForward` / `RemoteForward` / `DynamicForward` lines.
+    #[serde(default)]
+    pub forwards: Vec<String>,
 }
 
 fn flush_entry(
     alias: String,
     map: &std::collections::HashMap<String, String>,
+    forwards: Vec<String>,
 ) -> Option<SshConfigEntry> {
     if alias.contains('*') || alias.contains('?') {
         return None;
@@ -59,6 +63,7 @@ fn flush_entry(
         auth_method,
         private_key_path,
         proxy_jump,
+        forwards,
     })
 }
 
@@ -66,6 +71,7 @@ pub fn parse_ssh_config(content: &str) -> Vec<SshConfigEntry> {
     let mut entries: Vec<SshConfigEntry> = Vec::new();
     let mut current_alias: Option<String> = None;
     let mut current: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut current_forwards: Vec<String> = Vec::new();
     // `Match` opens a conditional block whose directives we do not model —
     // suppress key capture until the next top-level `Host`. `Include` is read
     // but not recursed into (the referenced files are not followed).
@@ -92,11 +98,14 @@ pub fn parse_ssh_config(content: &str) -> Vec<SshConfigEntry> {
 
         if key == "host" {
             if let Some(alias) = current_alias.take() {
-                if let Some(entry) = flush_entry(alias, &current) {
+                if let Some(entry) =
+                    flush_entry(alias, &current, std::mem::take(&mut current_forwards))
+                {
                     entries.push(entry);
                 }
             }
             current.clear();
+            current_forwards.clear();
             current_alias = Some(value);
             in_match = false;
         } else if key == "match" {
@@ -104,12 +113,22 @@ pub fn parse_ssh_config(content: &str) -> Vec<SshConfigEntry> {
         } else if key == "include" {
             // read but intentionally not followed
         } else if current_alias.is_some() && !in_match {
+            // Forwards repeat; keep every well-formed line.
+            if matches!(
+                key.as_str(),
+                "localforward" | "remoteforward" | "dynamicforward"
+            ) {
+                if labonair_forwards::from_ssh_config_line(trimmed).is_some() {
+                    current_forwards.push(trimmed.to_string());
+                }
+                continue;
+            }
             // Only store first occurrence of each key (SSH config precedence)
             current.entry(key).or_insert(value);
         }
     }
     if let Some(alias) = current_alias {
-        if let Some(entry) = flush_entry(alias, &current) {
+        if let Some(entry) = flush_entry(alias, &current, current_forwards) {
             entries.push(entry);
         }
     }
@@ -259,29 +278,95 @@ pub async fn import_ssh_config_entries(
         result_ids.push(id);
     }
 
-    // Second pass: resolve proxy_jump aliases to host ids.
+    // Saved forwards: append the config's forwards to the host's `tunnels`
+    // column, skipping ids that already exist.
     for (idx, host_id) in &touched {
-        if let Some(ref pj_alias) = entries[*idx].proxy_jump {
+        let lines: Vec<_> = entries[*idx]
+            .forwards
+            .iter()
+            .filter_map(|l| labonair_forwards::from_ssh_config_line(l))
+            .collect();
+        if lines.is_empty() {
+            continue;
+        }
+        let conn = hosts_db.0.lock().map_err(|e| e.to_string())?;
+        let raw: Option<String> = conn
+            .query_row("SELECT tunnels FROM hosts WHERE id = ?1", [host_id], |r| {
+                r.get(0)
+            })
+            .unwrap_or(None);
+        let mut saved = labonair_forwards::parse_saved(&raw);
+        let before = saved.len();
+        for f in lines {
+            if !saved.iter().any(|s| s.id == f.id) {
+                saved.push(f);
+            }
+        }
+        if saved.len() != before {
+            let _ = conn.execute(
+                "UPDATE hosts SET tunnels = ?1 WHERE id = ?2",
+                rusqlite::params![labonair_forwards::serialize_saved(&saved), host_id],
+            );
+        }
+    }
+
+    // Second pass: resolve each ProxyJump list (`a,b` = dial a, then b, then
+    // the target) into links target -> b, b -> a. Existing different links are
+    // never overwritten.
+    for (idx, host_id) in &touched {
+        let Some(ref pj) = entries[*idx].proxy_jump else {
+            continue;
+        };
+        let mut chain: Vec<&String> = Vec::new();
+        for el in pj.split(',') {
+            let el = el.trim().trim_start_matches("ssh://");
             // Extract just the host part from "user@host:port" format.
-            let pj_host = pj_alias
+            let host = el
                 .split('@')
                 .next_back()
-                .unwrap_or(pj_alias)
+                .unwrap_or(el)
                 .split(':')
                 .next()
-                .unwrap_or(pj_alias)
+                .unwrap_or(el)
                 .trim();
-            if let Some(jump_id) = alias_to_id.get(pj_host).or_else(|| existing.get(pj_host)) {
-                let conn = hosts_db.0.lock().map_err(|e| e.to_string())?;
-                let _ = conn.execute(
-                    "UPDATE hosts SET jump_host_id = ?1 WHERE id = ?2",
-                    rusqlite::params![jump_id, host_id],
-                );
+            if let Some(id) = alias_to_id.get(host).or_else(|| existing.get(host)) {
+                chain.push(id);
             }
+        }
+        let conn = hosts_db.0.lock().map_err(|e| e.to_string())?;
+        let mut child = host_id;
+        for jump in chain.into_iter().rev() {
+            if jump != child {
+                set_jump_if_free(&conn, child, jump);
+            }
+            child = jump;
         }
     }
 
     Ok(result_ids)
+}
+
+/// Sets `jump_host_id` unless the host already has a different link.
+fn set_jump_if_free(conn: &rusqlite::Connection, host_id: &str, jump_id: &str) {
+    let current: Option<String> = conn
+        .query_row(
+            "SELECT jump_host_id FROM hosts WHERE id = ?1",
+            [host_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(None);
+    match current {
+        Some(c) if c != jump_id => {
+            log::warn!("ssh-config import: host {host_id} already has jump host {c}; keeping it");
+        }
+        Some(_) => {}
+        None => {
+            let _ = conn.execute(
+                "UPDATE hosts SET jump_host_id = ?1 WHERE id = ?2",
+                rusqlite::params![jump_id, host_id],
+            );
+        }
+    }
 }
 
 /// Writes an `export_ssh_config` text block to `~/.ssh/config`. With
@@ -337,6 +422,7 @@ struct ExportHostRow {
     private_key_path: Option<String>,
     credential_id: Option<String>,
     jump_host_id: Option<String>,
+    tunnels: Option<String>,
 }
 
 /// Generates an `~/.ssh/config`-format text block for the given hosts — the
@@ -365,7 +451,7 @@ pub async fn export_ssh_config(
         let mut host_stmt = conn
             .prepare(
                 "SELECT id, name, host_address, port, username, auth_method, \
-                 private_key_path, credential_id, jump_host_id FROM hosts",
+                 private_key_path, credential_id, jump_host_id, tunnels FROM hosts",
             )
             .map_err(|e| e.to_string())?;
         let hosts = host_stmt
@@ -381,6 +467,7 @@ pub async fn export_ssh_config(
                         private_key_path: row.get(6)?,
                         credential_id: row.get(7)?,
                         jump_host_id: row.get(8)?,
+                        tunnels: row.get(9)?,
                     },
                 ))
             })
@@ -425,11 +512,20 @@ pub async fn export_ssh_config(
             _ => None,
         };
 
-        let proxy_jump = host
-            .jump_host_id
-            .as_ref()
-            .and_then(|jid| all_hosts.get(jid))
-            .map(|jh| jh.name.clone());
+        // Whole chain, outermost first; a broken (cyclic/too deep) route
+        // exports no ProxyJump.
+        let route = crate::client::route_ids(id, |h| {
+            all_hosts.get(h).and_then(|r| r.jump_host_id.clone())
+        })
+        .unwrap_or_default();
+        let proxy_jump = Some(
+            route
+                .iter()
+                .filter_map(|j| all_hosts.get(j).map(|r| r.name.as_str()))
+                .collect::<Vec<_>>()
+                .join(","),
+        )
+        .filter(|s| !s.is_empty());
 
         out.push_str(&format!("Host {}\n", host.name));
         out.push_str(&format!("    HostName {}\n", host.host_address));
@@ -444,6 +540,12 @@ pub async fn export_ssh_config(
         }
         if let Some(pj) = proxy_jump {
             out.push_str(&format!("    ProxyJump {}\n", pj));
+        }
+        for f in labonair_forwards::parse_saved(&host.tunnels) {
+            out.push_str(&format!(
+                "    {}\n",
+                labonair_forwards::to_ssh_config_line(&f)
+            ));
         }
         out.push('\n');
     }
@@ -497,6 +599,7 @@ Include ~/.ssh/config.d/*
                 private_key_path TEXT,
                 credential_id TEXT,
                 jump_host_id TEXT,
+                tunnels TEXT,
                 created_at INTEGER NOT NULL DEFAULT 0,
                 sort_order INTEGER NOT NULL DEFAULT 0
             );
@@ -596,6 +699,7 @@ Include ~/.ssh/config.d/*
             auth_method: "password".into(),
             private_key_path: None,
             proxy_jump: None,
+            forwards: Vec::new(),
         };
         let updated = SshConfigEntry {
             host_address: "2.2.2.2".into(),
@@ -686,5 +790,125 @@ Include ~/.ssh/config.d/*
         assert_eq!(web.3, "key");
         assert_eq!(web.4.as_deref(), Some("/home/me/.ssh/id_web"));
         assert!(web.5.is_some()); // ProxyJump preserved
+    }
+
+    fn ins(db: &Database, id: &str, name: &str, jump: Option<&str>) {
+        db.0.lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO hosts (id, name, host_address, jump_host_id) VALUES (?1, ?2, ?2, ?3)",
+                rusqlite::params![id, name, jump],
+            )
+            .unwrap();
+    }
+
+    fn jump_of(db: &Database, name: &str) -> Option<String> {
+        db.0.lock()
+            .unwrap()
+            .query_row(
+                "SELECT jump_host_id FROM hosts WHERE name = ?1",
+                [name],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    const CHAIN: &str =
+        "Host a\n  HostName a\nHost b\n  HostName b\nHost t\n  HostName t\n  ProxyJump u@a:22,b\n";
+
+    #[test]
+    fn parses_proxyjump_list() {
+        let e = parse_ssh_config(CHAIN);
+        assert_eq!(e[2].proxy_jump.as_deref(), Some("u@a:22,b"));
+    }
+
+    #[tokio::test]
+    async fn import_builds_two_hop_chain() {
+        let db = mk_db();
+        import_ssh_config_entries(parse_ssh_config(CHAIN), ImportConflict::Skip, &db)
+            .await
+            .unwrap();
+        let id = |n: &str| {
+            db.0.lock()
+                .unwrap()
+                .query_row("SELECT id FROM hosts WHERE name = ?1", [n], |r| {
+                    r.get::<_, String>(0)
+                })
+                .unwrap()
+        };
+        assert_eq!(jump_of(&db, "t"), Some(id("b")));
+        assert_eq!(jump_of(&db, "b"), Some(id("a")));
+        assert_eq!(jump_of(&db, "a"), None);
+    }
+
+    #[tokio::test]
+    async fn import_keeps_existing_different_link() {
+        let db = mk_db();
+        ins(&db, "x", "x", None);
+        ins(&db, "a", "a", None);
+        ins(&db, "t", "t", Some("x"));
+        let entry = SshConfigEntry {
+            alias: "t".into(),
+            host_address: "t".into(),
+            port: 22,
+            username: None,
+            auth_method: "password".into(),
+            private_key_path: None,
+            proxy_jump: Some("a".into()),
+            forwards: Vec::new(),
+        };
+        import_ssh_config_entries(vec![entry], ImportConflict::Overwrite, &db)
+            .await
+            .unwrap();
+        assert_eq!(jump_of(&db, "t").as_deref(), Some("x"));
+    }
+
+    #[tokio::test]
+    async fn export_chain_and_round_trip() {
+        let db = mk_db();
+        ins(&db, "a", "a", None);
+        ins(&db, "b", "b", Some("a"));
+        ins(&db, "t", "t", Some("b"));
+        let text = export_ssh_config(vec!["t".into()], &db).await.unwrap();
+        assert!(text.contains("    ProxyJump a,b\n"));
+        let db2 = mk_db();
+        let mut entries = parse_ssh_config(&text);
+        entries.extend(parse_ssh_config("Host a\nHost b\n"));
+        import_ssh_config_entries(entries, ImportConflict::Skip, &db2)
+            .await
+            .unwrap();
+        let text2 = export_ssh_config(
+            {
+                let c = db2.0.lock().unwrap();
+                let mut st = c.prepare("SELECT id FROM hosts WHERE name='t'").unwrap();
+                st.query_map([], |r| r.get::<_, String>(0))
+                    .unwrap()
+                    .map(|r| r.unwrap())
+                    .collect()
+            },
+            &db2,
+        )
+        .await
+        .unwrap();
+        assert!(text2.contains("    ProxyJump a,b\n"));
+    }
+
+    #[tokio::test]
+    async fn forwards_import_export_round_trip() {
+        let text = "Host web\n    HostName 1.1.1.1\n    LocalForward 8080 db:5432\n    LocalForward 9090 db:80\n    DynamicForward 1080\n    LocalForward bad\n";
+        let entries = parse_ssh_config(text);
+        assert_eq!(entries[0].forwards.len(), 3);
+        let db = mk_db();
+        let ids = import_ssh_config_entries(entries.clone(), ImportConflict::Skip, &db)
+            .await
+            .unwrap();
+        // Re-import with overwrite must not duplicate forwards.
+        import_ssh_config_entries(entries, ImportConflict::Overwrite, &db)
+            .await
+            .unwrap();
+        let out = export_ssh_config(ids, &db).await.unwrap();
+        assert_eq!(out.matches("Forward ").count(), 3);
+        assert!(out.contains("    LocalForward 8080 db:5432\n"));
+        assert!(out.contains("    DynamicForward 1080\n"));
     }
 }

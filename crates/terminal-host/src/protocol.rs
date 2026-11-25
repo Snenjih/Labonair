@@ -14,6 +14,11 @@
 //! The protocol is additive: new control messages are new [`Message`]
 //! variants; a peer that does not know one decodes it as [`Message::Unknown`]
 //! and ignores it. New frame *kinds* require a `proto_version` bump.
+//!
+//! Version history: v3 adds interactive jump-hop prompts (`hop_prompt` bus
+//! event, [`RpcCall::SshAnswerPrompt`]) and port forwards ([`RpcCall::SshForwardOpen`]
+//! and friends; the daemon pushes `forward_reset` / `forward_changed` /
+//! `forward_removed` bus events to subscribers, see [`FORWARD_RESET`]).
 
 use std::io::{self, Read};
 
@@ -21,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 /// Protocol version this build speaks.
-pub const PROTO_VERSION: u32 = 2;
+pub const PROTO_VERSION: u32 = 3;
 /// Oldest peer version this build still understands.
 pub const MIN_COMPAT: u32 = 1;
 /// Version floor required by this app build. The daemon keeps `MIN_COMPAT`
@@ -29,6 +34,17 @@ pub const MIN_COMPAT: u32 = 1;
 pub const CLIENT_MIN_COMPAT: u32 = 2;
 /// Largest accepted frame payload. Bigger frames are a protocol error.
 pub const MAX_FRAME_LEN: usize = 32 * 1024 * 1024;
+
+/// Bus event (payload `null`): the daemon starts a full forward replay; drop
+/// the cached forwards.
+pub const FORWARD_RESET: &str = "forward_reset";
+/// Bus event, payload `ForwardInfo` (origin always `Daemon`): a forward was
+/// added or changed.
+pub const FORWARD_CHANGED: &str = "forward_changed";
+/// Bus event, payload `{ "id": "<forward id>" }`: a forward is gone.
+pub const FORWARD_REMOVED: &str = "forward_removed";
+/// First protocol version that carries port forwards.
+pub const FORWARDS_PROTO: u32 = 3;
 
 /// Wire id of a hosted session (unique within one daemon lifetime).
 pub type SessionId = u64;
@@ -482,7 +498,7 @@ pub enum Message {
     },
     /// A service event, in the shape of the in-process event bus
     /// (`labonair_events::RawEvent`): SSH connection events
-    /// (`ssh_connect_log`, `known_hosts_warning`, `auth_required`,
+    /// (`ssh_connect_log`, `known_hosts_warning`, `hop_prompt`, `auth_required`,
     /// `passphrase_required`, `session_established`, `ssh_connection_lost`,
     /// `sftp_ready`) and transfer events (`transfer_progress`,
     /// `transfer_step`, `file_conflict`, `file_error`). Only sent to
@@ -704,7 +720,7 @@ pub enum DetachReason {
 //
 // The daemon runs the concrete SSH stack; these types let a thin app-side
 // proxy implement every method of `SshConnectionService`, `SshPtyService`,
-// `SshRemoteCommandService`, `SshRemoteFileService`, `SshTunnelService`,
+// `SshRemoteCommandService`, `SshRemoteFileService`, `SshForwardService`,
 // `SftpSessionService`, `SftpBrowserService` and `TransferService` 1:1.
 
 /// A secret the daemon keeps in RAM only (the app resolved it from its own
@@ -800,6 +816,9 @@ pub struct SshConnectParams {
     /// `None` = keepalive on with the daemon default (25 s, 3 misses).
     pub keepalive_interval_secs: Option<u64>,
     pub keepalive_max_failures: Option<u32>,
+    /// One-off jump route replacing the stored chain; see
+    /// [`labonair_ssh::SshConnectRequest::route_override`].
+    pub route_override: Option<Vec<String>>,
     /// Host rows and secrets for this connect; see [`SshHostSnapshot`].
     pub host: SshHostSnapshot,
     /// Wire id of the hosted session; allocated by the daemon when `None`.
@@ -826,6 +845,7 @@ impl std::fmt::Debug for SshConnectParams {
             .field("connect_timeout_secs", &self.connect_timeout_secs)
             .field("keepalive_interval_secs", &self.keepalive_interval_secs)
             .field("keepalive_max_failures", &self.keepalive_max_failures)
+            .field("route_override", &self.route_override)
             .field("host", &self.host)
             .field("id", &self.id)
             .field("pane_tag", &self.pane_tag)
@@ -945,6 +965,44 @@ pub enum RpcCall {
         accepted: bool,
     },
 
+    /// Answer to a `hop_prompt` event (v3). `answer` never prints a secret in
+    /// `Debug`.
+    SshAnswerPrompt {
+        session_id: String,
+        prompt_request_id: labonair_ssh::PromptRequestId,
+        answer: labonair_ssh::PromptAnswer,
+    },
+
+    // SshForwardService (v3). Mutating calls carry the host snapshot (chain +
+    // secrets, RAM only) like `SshConnect`.
+    SshForwardOpen {
+        request: labonair_ssh::ForwardOpenRequest,
+        host: SshHostSnapshot,
+    },
+    SshForwardClose {
+        id: labonair_ssh::ForwardId,
+    },
+    SshForwardRestart {
+        id: labonair_ssh::ForwardId,
+    },
+    SshForwardAnswerPrompt {
+        id: labonair_ssh::ForwardId,
+        prompt_request_id: labonair_ssh::PromptRequestId,
+        answer: labonair_ssh::PromptAnswer,
+    },
+    SshForwardAttachHost {
+        host_id: String,
+        host: SshHostSnapshot,
+    },
+    SshForwardDetachHost {
+        host_id: String,
+    },
+    SshForwardList,
+    /// Auto-reconnect policy of the daemon's forward engine (fire-and-forget).
+    SshForwardSetPolicy {
+        auto_reconnect: bool,
+    },
+
     // SshPtyService (the hot path is `DataKind::Input` / `Message::Resize` on
     // the wire id; these are the by-ssh-id equivalents)
     SshPtyWrite {
@@ -994,16 +1052,6 @@ pub enum RpcCall {
     SshCleanupRemoteEditTemp {
         local_temp_path: String,
     },
-
-    // SshTunnelService
-    SshTunnelStart {
-        host_id: String,
-        host: SshHostSnapshot,
-    },
-    SshTunnelStop {
-        host_id: String,
-    },
-    SshTunnelsActive,
 
     // SftpSessionService / SftpBrowserService (`session` is the handle string)
     SftpOpen {
@@ -1087,9 +1135,10 @@ pub enum RpcValue {
     Entries(Vec<labonair_sftp::RemoteEntry>),
     /// Reply to `TransferEnqueue`.
     JobId(String),
-    Tunnels(Vec<labonair_ssh::ActiveTunnel>),
     Transfers(Vec<WireTransferSnapshot>),
     SshSessions(Vec<SshSessionInfo>),
+    /// Reply to `SshForwardList` (origin is always `Daemon`).
+    Forwards(Vec<labonair_ssh::ForwardInfo>),
     /// Reply to `SshExec`; `stdout` / `stderr` are base64.
     Exec {
         stdout: String,
@@ -1525,20 +1574,47 @@ mod tests {
             req_id: 1,
             call: RpcCall::SshConnect(connect_params()),
         };
-        let tunnel = Message::Rpc {
-            req_id: 2,
-            call: RpcCall::SshTunnelStart {
-                host_id: "host-1".into(),
-                host: connect_params().host,
-            },
-        };
-        for text in [format!("{message:?}"), format!("{tunnel:?}")] {
-            assert!(!text.contains("hunter2"), "secret leaked: {text}");
-            assert!(text.contains("<redacted>"));
-            assert!(text.contains("host-1"), "non-secrets stay readable");
-        }
+        let text = format!("{message:?}");
+        assert!(!text.contains("hunter2"), "secret leaked: {text}");
+        assert!(text.contains("<redacted>"));
+        assert!(text.contains("host-1"), "non-secrets stay readable");
         let pretty = format!("{:#?}", connect_params());
         assert!(!pretty.contains("hunter2"));
+
+        let host = connect_params().host;
+        let secret = |text: String| {
+            assert!(!text.contains("hunter2"), "secret leaked: {text}");
+        };
+        for call in [
+            RpcCall::SshForwardOpen {
+                request: labonair_ssh::ForwardOpenRequest {
+                    spec: labonair_ssh::ForwardSpec {
+                        id: labonair_ssh::ForwardId("f".into()),
+                        host_id: "host-1".into(),
+                        kind: labonair_ssh::ForwardKind::Local,
+                        name: None,
+                        listen_host: "127.0.0.1".into(),
+                        listen_port: 0,
+                        target_host: "db".into(),
+                        target_port: 5432,
+                    },
+                    lifetime: labonair_ssh::ForwardLifetime::Pinned,
+                },
+                host: host.clone(),
+            },
+            RpcCall::SshForwardAttachHost {
+                host_id: "host-1".into(),
+                host,
+            },
+            RpcCall::SshForwardAnswerPrompt {
+                id: labonair_ssh::ForwardId("f".into()),
+                prompt_request_id: labonair_ssh::PromptRequestId::new("r"),
+                answer: labonair_ssh::PromptAnswer::Secret(Some("hunter2".into())),
+            },
+        ] {
+            secret(format!("{call:?}"));
+            secret(format!("{:#?}", Message::Rpc { req_id: 1, call }));
+        }
     }
 
     #[test]

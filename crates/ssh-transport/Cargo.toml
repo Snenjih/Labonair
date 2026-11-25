@@ -12,6 +12,7 @@ path = "src/lib.rs"
 labonair-errors = { path = "../errors" }
 labonair-events = { path = "../events" }
 labonair-filesystem = { path = "../filesystem" }
+labonair-forwards = { path = "../forwards" }
 labonair-persistence = { path = "../persistence" }
 labonair-secrets = { path = "../secrets" }
 labonair-ssh = { path = "../ssh" }
@@ -28,3 +29,6 @@ md5 = "0.7"
 socket2 = "0.5"
 uuid = { workspace = true }
 dirs = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

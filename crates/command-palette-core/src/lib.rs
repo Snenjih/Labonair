@@ -271,6 +271,14 @@ pub enum CommandId {
     TerminalRestartBackgroundHost,
     /// Submenu listing every terminal in the background host.
     TerminalManage,
+    // Port forwards and jump routes (ADR 0016).
+    ForwardsNew,
+    ForwardsStartSaved,
+    ForwardsStop,
+    ForwardsStopAll,
+    ForwardsManage,
+    JumpEditRoute,
+    OpenSshVia,
 }
 
 /// A visual hint that the GPUI adapter maps to its icon set.
@@ -326,6 +334,19 @@ pub enum CommandSubmenu {
     TerminalCursorStyle,
     EditorLanguage,
     Terminals,
+    /// Host picker of `Port Forwards: New…`; drills into [`Self::ForwardsQuick`].
+    ForwardsHosts,
+    /// Second step of `Port Forwards: New…`: rows come from the dynamic-row
+    /// hook (editor row + parsed quick spec), keyed by the carried host id.
+    ForwardsQuick,
+    ForwardsSaved,
+    ForwardsActive,
+    /// Host picker of `Jump Hosts: Edit Route…`.
+    RouteHosts,
+    /// Target picker of `Open SSH via…`; drills into [`Self::ViaJumps`].
+    ViaTargets,
+    /// Jump picker of `Open SSH via…` (rows keyed by the carried target id).
+    ViaJumps,
 }
 
 /// Stable identity and presentation metadata for a dynamic submenu.
@@ -383,6 +404,35 @@ pub enum SubmenuAction {
     /// Close a background-host terminal: its pane when this window shows it,
     /// else the session in the host.
     KillBackgroundTerminal(u64),
+    /// Multi-step pick: the palette navigates to `submenu` and remembers
+    /// `carry` (the previous pick) for the dynamic-row hook. Palette-internal;
+    /// never reaches an owner handler.
+    Drill {
+        submenu: CommandSubmenu,
+        carry: String,
+    },
+    /// Open the forward editor, optionally for a host and with a raw ssh
+    /// quick spec (`-L 8080:db:5432`) the owner parses.
+    OpenForwardEditor {
+        host_id: Option<String>,
+        quick: Option<String>,
+    },
+    /// Start/stop a saved forward (`forward_id` = forward id or saved key).
+    ToggleForward {
+        forward_id: String,
+    },
+    CloseForward {
+        id: String,
+    },
+    /// Edit the stored jump route of a host.
+    EditJumpRoute {
+        host_id: String,
+    },
+    /// Open SSH to `host_id` through a one-off route (outermost hop first).
+    OpenSshVia {
+        host_id: String,
+        route: Vec<String>,
+    },
 }
 
 /// A user action emitted by a dynamic palette surface.
@@ -912,6 +962,13 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
         "terminal::RestartBackgroundHost",
     ),
     (CommandId::TerminalManage, "terminal::Manage"),
+    (CommandId::ForwardsNew, "forwards::New"),
+    (CommandId::ForwardsStartSaved, "forwards::StartSaved"),
+    (CommandId::ForwardsStop, "forwards::Stop"),
+    (CommandId::ForwardsStopAll, "forwards::StopAll"),
+    (CommandId::ForwardsManage, "forwards::Manage"),
+    (CommandId::JumpEditRoute, "connections::EditJumpRoute"),
+    (CommandId::OpenSshVia, "connections::OpenSshVia"),
 ];
 
 impl CommandId {

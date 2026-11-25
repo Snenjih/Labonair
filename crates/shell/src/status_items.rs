@@ -14,6 +14,7 @@
 //! `StatusItemRegistry` resolves the rest.
 
 use gpui::{App, Entity};
+use labonair_forwards_ui::ForwardsView;
 use labonair_panel::DockPosition;
 use labonair_transfers_ui::TransfersView;
 use labonair_workspace::agent_access::AgentAccessStore;
@@ -38,6 +39,7 @@ pub fn register_builtin_status_items(
     updater: &Entity<UpdaterView>,
     agent_access: &Entity<AgentAccessStore>,
     transfers_view: &Entity<TransfersView>,
+    forwards_view: &Entity<ForwardsView>,
     cx: &mut App,
 ) {
     let dock_btn_left = labonair_workspace::dock_status_item::registration(
@@ -64,6 +66,7 @@ pub fn register_builtin_status_items(
     let preview = labonair_workspace::status_items::preview_url_registration(workspace, theme, cx);
     let updater_item = labonair_updater_ui::status_item::registration(updater, theme, cx);
     let transfers = labonair_transfers_ui::status_item_registration(transfers_view, theme, cx);
+    let forwards = labonair_forwards_ui::status_item_registration(forwards_view, theme, cx);
     let agent = labonair_workspace::status_items::status_item_registration(
         agent_access,
         workspace,
@@ -89,6 +92,7 @@ pub fn register_builtin_status_items(
         preview,
         updater_item,
         transfers,
+        forwards,
         agent,
     ]
     .into_iter()

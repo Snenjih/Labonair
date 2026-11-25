@@ -41,6 +41,7 @@ labonair-editor-ui = { path = "../editor-ui" }
 labonair-git = { path = "../git" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-ssh = { path = "../ssh" }
+labonair-forwards = { path = "../forwards" }
 labonair-sftp = { path = "../sftp" }
 labonair-transfers = { path = "../transfers" }
 labonair-ai = { path = "../ai" }

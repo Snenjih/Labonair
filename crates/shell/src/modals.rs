@@ -105,3 +105,54 @@ impl labonair_workspace::modal_layer::ModalView for UpdaterModal {
         true
     }
 }
+
+/// Hosts the forward editor in the modal layer; Esc / Cancel dismiss it.
+pub(crate) struct ForwardEditorModal {
+    inner: Entity<labonair_forwards_ui::ForwardEditor>,
+}
+
+impl ForwardEditorModal {
+    pub(crate) fn new(
+        inner: Entity<labonair_forwards_ui::ForwardEditor>,
+        _cx: &mut Context<Self>,
+    ) -> Self {
+        Self { inner }
+    }
+}
+
+impl EventEmitter<DismissEvent> for ForwardEditorModal {}
+
+impl Focusable for ForwardEditorModal {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.inner.read(cx).focus_handle(cx)
+    }
+}
+
+impl Render for ForwardEditorModal {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        self.inner.clone()
+    }
+}
+
+impl labonair_workspace::modal_layer::ModalView for ForwardEditorModal {}
+
+/// Hosts the forward prompt dialog in the modal layer; Esc rejects.
+pub(crate) struct ForwardPromptModal {
+    pub(crate) inner: Entity<labonair_forwards_ui::ForwardPromptDialog>,
+}
+
+impl EventEmitter<DismissEvent> for ForwardPromptModal {}
+
+impl Focusable for ForwardPromptModal {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.inner.read(cx).focus_handle(cx)
+    }
+}
+
+impl Render for ForwardPromptModal {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        self.inner.clone()
+    }
+}
+
+impl labonair_workspace::modal_layer::ModalView for ForwardPromptModal {}

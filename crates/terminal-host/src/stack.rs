@@ -19,10 +19,10 @@ use labonair_events::EventBus;
 use labonair_persistence::Database;
 use labonair_secrets::SecretsState;
 use labonair_ssh_transport::contract::{
-    SshConnectionServiceAdapter, SshPtyServiceAdapter, SshRemoteServiceAdapter,
-    SshTunnelServiceAdapter,
+    SshConnectionServiceAdapter, SshForwardServiceAdapter, SshPtyServiceAdapter,
+    SshRemoteServiceAdapter,
 };
-use labonair_ssh_transport::tunnels::TunnelState;
+use labonair_ssh_transport::forwards::{ForwardRegistry, SshSessionFactory};
 use labonair_ssh_transport::{SshState, TrustState};
 use labonair_transfers::{ConflictMap, TransferSettings, TransferWorkerState, WorkerMessage};
 
@@ -43,7 +43,6 @@ pub fn concrete_services() -> Result<HostServices, String> {
     let secrets = Arc::new(SecretsState::in_memory());
     let ssh = SshState::default();
     let trust = TrustState::default();
-    let tunnels = TunnelState::default();
 
     let (sender, receiver) = tokio::sync::mpsc::channel::<WorkerMessage>(100);
     let conflicts: ConflictMap = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
@@ -75,6 +74,7 @@ pub fn concrete_services() -> Result<HostServices, String> {
         connection: Arc::new(SshConnectionServiceAdapter::new(
             ssh.clone(),
             trust.clone(),
+            labonair_ssh_transport::prompts::PromptBroker::default(),
             db.clone(),
             Arc::clone(&secrets),
             events.clone(),
@@ -88,13 +88,15 @@ pub fn concrete_services() -> Result<HostServices, String> {
                 events.clone(),
             ),
         ),
-        tunnels: Arc::new(SshTunnelServiceAdapter::new(
-            tunnels,
-            db,
-            secrets,
-            trust,
-            events.clone(),
-        )),
+        forwards: Arc::new(SshForwardServiceAdapter::new(ForwardRegistry::new(
+            Arc::new(SshSessionFactory {
+                hosts_db: db,
+                secrets,
+                trust_state: trust,
+                events: events.clone(),
+                connect_timeout_secs: None,
+            }),
+        ))),
         sftp_session: sftp.clone(),
         sftp_browser: sftp,
         transfers: Arc::new(labonair_transfers_ssh::adapter::TransferServiceAdapter::new(worker)),
@@ -114,7 +116,7 @@ pub fn install_host(
 ) -> Result<(), String> {
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
-        // A host row may reference its jump host, which the snapshot lists
+        // A host row may reference its jump host(s), which the snapshot may list
         // after it: check foreign keys at commit, not per statement.
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         tx.execute_batch("PRAGMA defer_foreign_keys = ON")
@@ -230,5 +232,39 @@ mod tests {
             ..Default::default()
         };
         assert!(install_host(&db, &SecretsState::in_memory(), &dangling).is_err());
+    }
+
+    #[test]
+    fn installs_a_three_hop_chain_in_any_list_order() {
+        let rows = || {
+            vec![
+                record("target", Some("inner")),
+                record("inner", Some("mid")),
+                record("mid", Some("outer")),
+                record("outer", None),
+            ]
+        };
+        for order in 0..2 {
+            let db = Database(Arc::new(Mutex::new(
+                labonair_persistence::initialize_in_memory_database().unwrap(),
+            )));
+            let mut hosts = rows();
+            if order == 1 {
+                hosts.reverse();
+            } else {
+                hosts.swap(0, 2);
+            }
+            let snapshot = SshHostSnapshot {
+                hosts,
+                ..Default::default()
+            };
+            install_host(&db, &SecretsState::in_memory(), &snapshot).unwrap();
+            let n: i64 =
+                db.0.lock()
+                    .unwrap()
+                    .query_row("SELECT COUNT(*) FROM hosts", [], |r| r.get(0))
+                    .unwrap();
+            assert_eq!(n, 4);
+        }
     }
 }

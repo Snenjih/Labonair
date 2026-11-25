@@ -4356,6 +4356,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-forwards"
+version = "1.0.0"
+dependencies = [
+ "labonair-command-palette-core",
+ "labonair-ssh",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "labonair-forwards-ui"
+version = "1.0.0"
+dependencies = [
+ "gpui",
+ "labonair-forwards",
+ "labonair-panel",
+ "labonair-ssh",
+ "labonair-theme",
+ "labonair-ui-kit",
+]
+
+[[package]]
 name = "labonair-git"
 version = "1.0.0"
 dependencies = [
@@ -4401,7 +4423,9 @@ name = "labonair-hosts-host"
 version = "1.0.0"
 dependencies = [
  "gpui",
+ "labonair-forwards",
  "labonair-hosts",
+ "labonair-ssh",
 ]
 
 [[package]]
@@ -4413,6 +4437,7 @@ dependencies = [
  "labonair-command-palette-runtime",
  "labonair-credentials",
  "labonair-errors",
+ "labonair-forwards",
  "labonair-hosts",
  "labonair-hosts-host",
  "labonair-notifications",
@@ -4746,6 +4771,8 @@ dependencies = [
  "labonair-events",
  "labonair-explorer-host",
  "labonair-filesystem",
+ "labonair-forwards",
+ "labonair-forwards-ui",
  "labonair-git",
  "labonair-git-transport",
  "labonair-gpui-ext",
@@ -4833,6 +4860,7 @@ version = "1.0.0"
 dependencies = [
  "labonair-errors",
  "serde",
+ "serde_json",
  "tokio",
 ]
 
@@ -4844,6 +4872,7 @@ dependencies = [
  "labonair-errors",
  "labonair-events",
  "labonair-filesystem",
+ "labonair-forwards",
  "labonair-persistence",
  "labonair-secrets",
  "labonair-ssh",
@@ -5067,6 +5096,7 @@ dependencies = [
  "labonair-editor-ui",
  "labonair-explorer-host",
  "labonair-filesystem",
+ "labonair-forwards",
  "labonair-git",
  "labonair-gpui-ext",
  "labonair-hosts",

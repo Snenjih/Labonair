@@ -23,6 +23,9 @@ pub enum HostOpenMode {
 pub struct HostOpenRequest {
     pub host_id: String,
     pub mode: HostOpenMode,
+    /// One-off jump route (outermost hop first) replacing the host's stored
+    /// chain for this connection only. Never persisted (ADR 0016).
+    pub route_override: Option<Vec<String>>,
 }
 
 impl HostOpenRequest {
@@ -30,6 +33,7 @@ impl HostOpenRequest {
         Self {
             host_id: host_id.into(),
             mode: HostOpenMode::Ssh,
+            route_override: None,
         }
     }
 
@@ -37,6 +41,15 @@ impl HostOpenRequest {
         Self {
             host_id: host_id.into(),
             mode: HostOpenMode::Sftp,
+            route_override: None,
+        }
+    }
+
+    /// SSH to `host_id` through `route` instead of its stored jump chain.
+    pub fn ssh_via(host_id: impl Into<String>, route: Vec<String>) -> Self {
+        Self {
+            route_override: Some(route),
+            ..Self::ssh(host_id)
         }
     }
 }
@@ -165,13 +178,19 @@ mod tests {
             HostOpenRequest {
                 host_id: "prod".to_string(),
                 mode: HostOpenMode::Ssh,
+                route_override: None,
             }
+        );
+        assert_eq!(
+            HostOpenRequest::ssh_via("prod", vec!["jump".to_string()]).route_override,
+            Some(vec!["jump".to_string()])
         );
         assert_eq!(
             HostOpenRequest::sftp("prod"),
             HostOpenRequest {
                 host_id: "prod".to_string(),
                 mode: HostOpenMode::Sftp,
+                route_override: None,
             }
         );
     }

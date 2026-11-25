@@ -215,6 +215,13 @@ pub enum Page {
     TerminalCursorStyle,
     EditorLanguage,
     Terminals,
+    ForwardsHosts,
+    ForwardsQuick,
+    ForwardsSaved,
+    ForwardsActive,
+    RouteHosts,
+    ViaTargets,
+    ViaJumps,
 }
 
 impl Page {
@@ -237,6 +244,11 @@ impl Page {
             Page::TerminalCursorStyle => "Search cursor styles\u{2026}",
             Page::EditorLanguage => "Search languages\u{2026}",
             Page::Terminals => "Search terminals\u{2026}",
+            Page::ForwardsHosts | Page::RouteHosts | Page::ViaTargets | Page::ViaJumps => {
+                "Search hosts\u{2026}"
+            }
+            Page::ForwardsQuick => "Type -L, -R or -D spec, e.g. -L 8080:db:5432\u{2026}",
+            Page::ForwardsSaved | Page::ForwardsActive => "Search port forwards\u{2026}",
         }
     }
 
@@ -260,6 +272,13 @@ impl Page {
             Page::TerminalCursorStyle => "Cursor Style",
             Page::EditorLanguage => "Language",
             Page::Terminals => "Terminals",
+            Page::ForwardsHosts => "New Port Forward",
+            Page::ForwardsQuick => "Forward",
+            Page::ForwardsSaved => "Saved Port Forwards",
+            Page::ForwardsActive => "Active Port Forwards",
+            Page::RouteHosts => "Jump Route",
+            Page::ViaTargets => "Open SSH via",
+            Page::ViaJumps => "Via",
         }
     }
 }
@@ -357,6 +376,13 @@ fn page_for(page: CommandSubmenu) -> Page {
         CommandSubmenu::TerminalCursorStyle => Page::TerminalCursorStyle,
         CommandSubmenu::EditorLanguage => Page::EditorLanguage,
         CommandSubmenu::Terminals => Page::Terminals,
+        CommandSubmenu::ForwardsHosts => Page::ForwardsHosts,
+        CommandSubmenu::ForwardsQuick => Page::ForwardsQuick,
+        CommandSubmenu::ForwardsSaved => Page::ForwardsSaved,
+        CommandSubmenu::ForwardsActive => Page::ForwardsActive,
+        CommandSubmenu::RouteHosts => Page::RouteHosts,
+        CommandSubmenu::ViaTargets => Page::ViaTargets,
+        CommandSubmenu::ViaJumps => Page::ViaJumps,
     }
 }
 
@@ -453,6 +479,22 @@ pub struct PaletteData {
     /// Runtime-backed submenu snapshots supplied by the owning capabilities.
     /// The palette never rebuilds feature-specific lists itself.
     pub submenus: SubmenuRegistry,
+    /// Optional owner hook producing query-aware rows for multi-step pages:
+    /// `(submenu, carried previous pick, query) -> rows`.
+    pub dynamic_rows: Option<DynamicRows>,
+}
+
+/// Shared handle of the dynamic-row hook (see [`PaletteData::dynamic_rows`]).
+#[derive(Clone)]
+pub struct DynamicRows(pub std::rc::Rc<DynamicRowsFn>);
+
+/// `(submenu, carried previous pick, query) -> rows`.
+pub type DynamicRowsFn = dyn Fn(CommandSubmenu, &str, &str) -> Vec<SubmenuItem>;
+
+impl std::fmt::Debug for DynamicRows {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DynamicRows")
+    }
 }
 
 /// Move `id` to the front of the MRU list: deduplicated, capped at `max`.
@@ -548,6 +590,13 @@ enum RowKey {
     OpenBackgroundTerminal(u64),
     /// Close a background-host terminal.
     KillBackgroundTerminal(u64),
+    /// Owner-typed forwards/jump action: close and hand to the owner.
+    Owner(SubmenuAction),
+    /// Navigate to the next step of a multi-step pick, carrying the pick.
+    Drill {
+        page: Page,
+        carry: String,
+    },
     /// Non-actionable (empty-state placeholder line).
     Noop,
 }
@@ -606,6 +655,15 @@ fn row_key_for_action(action: &SubmenuAction) -> RowKey {
         SubmenuAction::SetEditorLanguage(id) => RowKey::SetEditorLanguage(id.clone()),
         SubmenuAction::OpenBackgroundTerminal(id) => RowKey::OpenBackgroundTerminal(*id),
         SubmenuAction::KillBackgroundTerminal(id) => RowKey::KillBackgroundTerminal(*id),
+        SubmenuAction::Drill { submenu, carry } => RowKey::Drill {
+            page: page_for(*submenu),
+            carry: carry.clone(),
+        },
+        SubmenuAction::OpenForwardEditor { .. }
+        | SubmenuAction::ToggleForward { .. }
+        | SubmenuAction::CloseForward { .. }
+        | SubmenuAction::EditJumpRoute { .. }
+        | SubmenuAction::OpenSshVia { .. } => RowKey::Owner(action.clone()),
     }
 }
 
@@ -624,6 +682,8 @@ pub struct CommandPalette<W, Th> {
     pages: Vec<Page>,
     query: String,
     query_input: Option<Entity<InputState>>,
+    /// Previous pick of a multi-step flow (see `SubmenuAction::Drill`).
+    carry: Option<String>,
     _query_input_subscription: Option<Subscription>,
     selected: usize,
     recent: Vec<CommandId>,
@@ -660,6 +720,7 @@ where
             pages: vec![Page::Root],
             query: String::new(),
             query_input: None,
+            carry: None,
             _query_input_subscription: None,
             selected: 0,
             recent: recent::load(),
@@ -692,6 +753,7 @@ where
     pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open = true;
         self.pages = vec![Page::Root];
+        self.carry = None;
         self.query.clear();
         self.selected = 0;
         self.reset_query_input(window, cx);
@@ -766,6 +828,7 @@ where
     fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.pages.len() > 1 {
             self.pages.pop();
+            self.carry = None;
             self.query.clear();
             self.selected = 0;
             self.reset_query_input(window, cx);
@@ -777,6 +840,7 @@ where
     fn go_back_to(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index + 1 < self.pages.len() {
             self.pages.truncate(index + 1);
+            self.carry = None;
             self.query.clear();
             self.selected = 0;
             self.reset_query_input(window, cx);
@@ -846,7 +910,14 @@ where
             .get(submenu)
             .map(|snapshot| snapshot.items.as_slice())
             .unwrap_or(&[]);
-        if items.is_empty() {
+        // Owner-computed rows (already query-aware) come first, unfiltered.
+        let dynamic = self
+            .data
+            .dynamic_rows
+            .as_ref()
+            .map(|hook| (hook.0)(submenu, self.carry.as_deref().unwrap_or(""), &self.query))
+            .unwrap_or_default();
+        if items.is_empty() && dynamic.is_empty() {
             return vec![PaletteRow {
                 key: RowKey::Noop,
                 secondary: None,
@@ -868,9 +939,10 @@ where
             })
             .collect();
         scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        scored
-            .into_iter()
-            .map(|(_, _, c)| PaletteRow {
+        dynamic
+            .iter()
+            .chain(scored.into_iter().map(|(_, _, c)| c))
+            .map(|c| PaletteRow {
                 key: row_key_for_action(&c.action),
                 secondary: c.secondary.as_ref().map(|secondary| SecondaryAction {
                     label: secondary.label.clone(),
@@ -882,7 +954,7 @@ where
                 section: section.to_string(),
                 keys: vec![],
                 right_label: c.active.then(|| "active".to_string()),
-                has_sub: false,
+                has_sub: matches!(c.action, SubmenuAction::Drill { .. }),
             })
             .collect()
     }
@@ -1045,6 +1117,55 @@ where
                 IconName::Terminal,
                 mode,
                 "No cursor styles available",
+            ),
+            Page::ForwardsHosts => self.submenu_rows(
+                CommandSubmenu::ForwardsHosts,
+                "New Port Forward",
+                IconName::Server,
+                mode,
+                "No hosts configured yet",
+            ),
+            Page::ForwardsQuick => self.submenu_rows(
+                CommandSubmenu::ForwardsQuick,
+                "Forward",
+                IconName::Server,
+                mode,
+                "Type a spec such as -L 8080:db:5432",
+            ),
+            Page::ForwardsSaved => self.submenu_rows(
+                CommandSubmenu::ForwardsSaved,
+                "Saved Port Forwards",
+                IconName::Server,
+                mode,
+                "No saved port forwards",
+            ),
+            Page::ForwardsActive => self.submenu_rows(
+                CommandSubmenu::ForwardsActive,
+                "Active Port Forwards",
+                IconName::Server,
+                mode,
+                "No active port forwards",
+            ),
+            Page::RouteHosts => self.submenu_rows(
+                CommandSubmenu::RouteHosts,
+                "Jump Route",
+                IconName::Server,
+                mode,
+                "No hosts configured yet",
+            ),
+            Page::ViaTargets => self.submenu_rows(
+                CommandSubmenu::ViaTargets,
+                "Open SSH via",
+                IconName::Server,
+                mode,
+                "No hosts configured yet",
+            ),
+            Page::ViaJumps => self.submenu_rows(
+                CommandSubmenu::ViaJumps,
+                "Jump through",
+                IconName::Server,
+                mode,
+                "No other hosts to jump through",
             ),
             Page::EditorLanguage => {
                 // Language-server controls are `RunCommand` rows; everything
@@ -1238,6 +1359,16 @@ where
                 cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
                     SubmenuAction::KillBackgroundTerminal(id),
                 )));
+            }
+            RowKey::Owner(action) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(action)));
+            }
+            RowKey::Drill { page, carry } => {
+                self.navigate(page, window, cx);
+                // `navigate` is the only way in, so set after it.
+                self.carry = Some(carry);
+                cx.notify();
             }
         }
     }
@@ -1835,6 +1966,13 @@ mod tests {
             Page::TerminalCursorStyle,
             Page::EditorLanguage,
             Page::Terminals,
+            Page::ForwardsHosts,
+            Page::ForwardsQuick,
+            Page::ForwardsSaved,
+            Page::ForwardsActive,
+            Page::RouteHosts,
+            Page::ViaTargets,
+            Page::ViaJumps,
         ];
         let labels: std::collections::HashSet<_> = pages.iter().map(|p| p.label()).collect();
         assert_eq!(labels.len(), pages.len());
@@ -1898,6 +2036,7 @@ mod tests {
                     .with_submenu(CommandSubmenu::ColorMode),
             )],
             submenus,
+            dynamic_rows: None,
         };
         palette.update_in(cx, |p, w, cx| {
             p.set_data(data);

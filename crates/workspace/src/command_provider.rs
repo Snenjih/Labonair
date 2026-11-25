@@ -14,6 +14,7 @@ use labonair_command_palette_core::{
     PaletteAction, SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
 };
 use labonair_command_palette_runtime::CommandHandlerRegistry;
+use labonair_forwards::{ForwardsIntent, ForwardsUiEvent};
 use labonair_terminal::command_provider::TerminalCommandTarget;
 use labonair_terminal::Scroll;
 
@@ -89,6 +90,58 @@ pub fn register_hosts_handler(
             });
         })
         .expect("workspace hosts handler must have a unique id");
+}
+
+/// Register the forwards commands that run directly (no picker step). The
+/// forwards owner decides meaning; the workspace performs the request.
+pub fn register_forwards_handlers(
+    registry: &mut CommandHandlerRegistry,
+    workspace: &Entity<Workspace>,
+) {
+    for (id, event) in [
+        (CommandId::ForwardsStopAll, ForwardsUiEvent::StopAll),
+        (
+            CommandId::ForwardsManage,
+            ForwardsUiEvent::Manage { host_id: None },
+        ),
+    ] {
+        let workspace = workspace.clone();
+        registry
+            .register(id, move |_window, cx| {
+                workspace.update(cx, |workspace, cx| {
+                    workspace.handle_forwards_event(event.clone(), cx)
+                });
+            })
+            .expect("forwards command handler must have a unique id");
+    }
+}
+
+/// Register the forwards/jump-route palette actions. `labonair-forwards`
+/// decodes them into typed intents; the workspace executes.
+pub fn register_forwards_palette_handlers(
+    registry: &mut labonair_command_palette_runtime::PaletteActionHandlerRegistry,
+    workspace: &Entity<Workspace>,
+) {
+    let workspace = workspace.clone();
+    registry
+        .register("forwards", move |action, window, cx| {
+            let PaletteAction::Submenu(action) = action else {
+                return false;
+            };
+            let Some(intent) = labonair_forwards::decode_action(action) else {
+                return false;
+            };
+            workspace.update(cx, |workspace, cx| match intent {
+                ForwardsIntent::Ui(event) => workspace.handle_forwards_event(event, cx),
+                ForwardsIntent::OpenSshVia { host_id, route } => workspace.open_host_request(
+                    labonair_hosts::HostOpenRequest::ssh_via(host_id, route),
+                    window,
+                    cx,
+                ),
+            });
+            true
+        })
+        .expect("forwards palette action handler must have a unique owner");
 }
 
 struct WorkspaceTerminalCommandTarget(Entity<Workspace>);

@@ -611,7 +611,7 @@ impl Workspace {
                         s.host_id.clone(),
                         label.clone(),
                         crate::ssh_connection::ConnectionKind::Sftp,
-                        None,
+                        Vec::new(),
                         cx,
                     );
                 });

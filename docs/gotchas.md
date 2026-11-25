@@ -87,3 +87,11 @@ Index: [GPUI](#gpui) · [Terminal and alacritty_terminal](#terminal-and-alacritt
 - **`scripts/screenshot.sh` fails closed:** it resolves the exact Rust process PID, filters CoreGraphics windows by it (layer 0), and refuses when none matches; there is no full-display fallback, and the legacy app is never a valid target. It also validates the command path of the PID against `target/debug/labonair` and the packaged bundle executable, so launch by absolute path or `cargo run -p labonair`; a `./target/debug/labonair` launch produces `$REPO_ROOT/./target/...` and was rejected before normalization was added.
 - **`screencapture` needs Screen Recording permission** for the runner; without it the window is found but capture is denied. Keep the visual matrix `Pending` and never substitute a screenshot of another application.
 - In some sessions the desktop exposes no Labonair window at all (only another app's); a visual check cannot be marked passed from such an environment.
+
+## SSH forwards and jump hosts
+
+- **tokio `start_paused` auto-advances the clock during real I/O** (sockets, spawned blocking work), so timing tests that mix paused time with real connections are flaky. Use real short timeouts for tests that touch sockets; keep `start_paused` for pure timer logic.
+- **`sed -i` on macOS** treats the next argument as a backup suffix and can leave `*-E` backup files behind (`sed -i -E ...`). Use `sed -i '' -E` or edit with a proper tool, and check `git status` for stray files.
+- **russh `forwarded-tcpip` dispatch** is keyed by the (address, port) the server reports; a `listen_port = 0` request returns a server-assigned port and some servers report a different address string. The handler falls back to the only registered forward when exactly one matches the port.
+- **Jump hop `Handle`s must outlive the final stream.** Dropping an intermediate session closes the `direct-tcpip` channel the next hop runs over; `ChainedStream` owns every hop handle together with the final stream.
+- **Hop session ids end in `_jumpN`** (`hop_session_id`). Strip the suffix with `split_hop_session_id` before looking up a tab or connection by session id, or hop events miss their tab.

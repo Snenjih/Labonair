@@ -67,6 +67,13 @@ Workspace leases fence stale writes between app instances. They do not provide a
 
 SSH host-key prompts and transfer conflict decisions are tied to the owning connection. Current protocol code checks the prompt owner and rejects a mismatched request ID; v2 transfer resolution requires a request ID. A resolved prompt is removed, and disconnecting its owner clears or rejects pending decisions. Remote safety still depends on explicit user trust decisions and correctly scoped host configuration.
 
+## Port forwards and jump routes
+
+- Binding a forward to a non-loopback address (public bind) requires explicit confirmation while `forwardsConfirmPublicBind` is on (default).
+- Forward creation is not exposed to AI tools or the MCP bridge; `block_agent_access` hosts are unaffected.
+- Prompt answers (passwords, passphrases, host-key trust) and stored hop secrets are never logged and never stored in `ForwardInfo`, forward JSON or the daemon cache. Prompts expire after 300 s.
+- The in-process e2e test `crates/ssh-transport/tests/forwards_e2e.rs` redirects `HOME` to a temp directory and never touches the real `~/.ssh`.
+
 ## Project trust
 
 There is no general Workspace Trust or Restricted Mode today. Project settings are treated as untrusted input in [project settings parser](../crates/settings/src/project.rs), but there is no typed trust gate covering all project-controlled settings, language services, Git, agent tools, and other integrations. Opening a repository does not sandbox its files or tools.

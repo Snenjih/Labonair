@@ -1,0 +1,15 @@
+[package]
+name = "labonair-forwards"
+version.workspace = true
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "labonair_forwards"
+path = "src/lib.rs"
+
+[dependencies]
+labonair-ssh = { path = "../ssh" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }

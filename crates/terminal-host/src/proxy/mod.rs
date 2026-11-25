@@ -5,7 +5,7 @@
 //!
 //! [`DaemonServices`] implements the UI-free service traits (`SshConnectionService`,
 //! `SshPtyService`, `SshRemoteCommandService`, `SshRemoteFileService`,
-//! `SshTunnelService`, `SftpSessionService`, `SftpBrowserService`,
+//! `SshForwardService`, `SftpSessionService`, `SftpBrowserService`,
 //! `TransferService`) over the shared [`HostClient`], so app code does not
 //! change. Daemon service events are re-emitted on the app's [`EventBus`] and
 //! reach the existing `SshEventSourceAdapter` / `TransferEventSourceAdapter`.
@@ -36,9 +36,9 @@ use labonair_sftp::{
     BoxFuture as SftpFuture, RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService,
 };
 use labonair_ssh::{
-    ActiveTunnel, BoxFuture, SharedSshEventSink, SshConnectRequest, SshConnectionService,
-    SshExecOutput, SshHostedAccess, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
-    SshSessionId, SshTunnelService,
+    BoxFuture, ForwardId, ForwardInfo, ForwardOpenRequest, PromptAnswer, PromptRequestId,
+    SharedSshEventSink, SshConnectRequest, SshConnectionService, SshExecOutput, SshForwardService,
+    SshHostedAccess, SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionId,
 };
 use labonair_transfers::{TransferPromptId, TransferRequest, TransferResolution, TransferService};
 
@@ -46,7 +46,8 @@ use self::hosted::HostedSsh;
 use crate::client::{HostClient, SessionSink};
 use crate::protocol::{
     RpcCall, RpcValue, SessionId, SshConnectParams, SshHostSnapshot, SshSessionInfo,
-    TransferConfig, WireColors, WireError,
+    TransferConfig, WireColors, WireError, FORWARDS_PROTO, FORWARD_CHANGED, FORWARD_REMOVED,
+    FORWARD_RESET,
 };
 use crate::spawn::shared_client;
 
@@ -60,7 +61,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 const BLOCKING_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Rows of the app's hosts database and secret store for one host.
-pub type HostSnapshots = Arc<dyn Fn(&str) -> Result<SshHostSnapshot, String> + Send + Sync>;
+/// The optional list is a one-off jump route replacing the stored chain.
+pub type HostSnapshots =
+    Arc<dyn Fn(&str, Option<&[String]>) -> Result<SshHostSnapshot, String> + Send + Sync>;
 
 /// What the proxies need from the application, supplied by the composition root.
 #[derive(Clone)]
@@ -86,8 +89,67 @@ struct Inner {
     ctx: ProxyContext,
     /// By SSH session id (the app's tab id).
     sessions: Mutex<HashMap<String, Arc<HostedSsh>>>,
-    /// Last known forwards of the daemon's tunnel service (`active` is sync).
-    tunnels: Mutex<Vec<ActiveTunnel>>,
+    forwards: Arc<ForwardCache>,
+    /// Last forward auto-reconnect policy; re-sent whenever the connection is
+    /// (re)established.
+    policy: Mutex<Option<bool>>,
+}
+
+/// The daemon's forwards as last pushed to this client (origin `Daemon`).
+struct ForwardCache {
+    map: Mutex<HashMap<ForwardId, ForwardInfo>>,
+    revision: tokio::sync::watch::Sender<u64>,
+    /// Extra change hooks (the router's merged revision).
+    listeners: Mutex<Vec<Arc<dyn Fn() + Send + Sync>>>,
+}
+
+impl ForwardCache {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            map: Mutex::new(HashMap::new()),
+            revision: tokio::sync::watch::channel(0).0,
+            listeners: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn bump(&self) {
+        self.revision.send_modify(|rev| *rev += 1);
+        let listeners = lock(&self.listeners).clone();
+        for listener in listeners {
+            listener();
+        }
+    }
+
+    /// Apply one forward bus event; `false` when `name` is not one.
+    fn apply(&self, name: &str, payload: &serde_json::Value) -> bool {
+        let changed = match name {
+            FORWARD_RESET => {
+                let mut map = lock(&self.map);
+                let had = !map.is_empty();
+                map.clear();
+                had
+            }
+            FORWARD_CHANGED => {
+                let Ok(mut info) = serde_json::from_value::<ForwardInfo>(payload.clone()) else {
+                    return true;
+                };
+                info.origin = labonair_ssh::ForwardOrigin::Daemon;
+                lock(&self.map)
+                    .insert(info.spec.id.clone(), info.clone())
+                    .as_ref()
+                    != Some(&info)
+            }
+            FORWARD_REMOVED => payload
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| lock(&self.map).remove(&ForwardId(id.into())).is_some()),
+            _ => return false,
+        };
+        if changed {
+            self.bump();
+        }
+        true
+    }
 }
 
 static CONTEXT: Mutex<Option<ProxyContext>> = Mutex::new(None);
@@ -105,17 +167,32 @@ impl DaemonServices {
     /// jobs), then streams live events onto `ctx.bus`.
     pub fn new(client: HostClient, ctx: ProxyContext) -> Self {
         let bus = ctx.bus.clone();
+        let forwards = ForwardCache::new();
+        let cache = Arc::clone(&forwards);
         client.subscribe_events(Arc::new(move |name, payload| {
-            let _ = bus.emit(&name, payload);
+            if !cache.apply(&name, &payload) {
+                let _ = bus.emit(&name, payload);
+            }
         }));
         Self {
             inner: Arc::new(Inner {
                 client,
                 ctx,
                 sessions: Mutex::new(HashMap::new()),
-                tunnels: Mutex::new(Vec::new()),
+                forwards,
+                policy: Mutex::new(None),
             }),
         }
+    }
+
+    /// Identity of this proxy instance (the router links to each one once).
+    pub(crate) fn instance_id(&self) -> usize {
+        Arc::as_ptr(&self.inner) as usize
+    }
+
+    /// Call `hook` whenever the cached daemon forwards change.
+    pub(crate) fn on_forwards_changed(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        lock(&self.inner.forwards.listeners).push(hook);
     }
 
     /// The process-wide instance, if one was created (never connects).
@@ -171,11 +248,35 @@ impl DaemonServices {
         lock(&self.inner.sessions).contains_key(ssh_id)
     }
 
-    async fn call(&self, call: RpcCall) -> Result<RpcValue, WireError> {
-        if !self.inner.client.is_connected() {
-            // The daemon may still be there (the connection alone dropped).
-            let _ = self.inner.client.reconnect();
+    /// Reopen a dropped connection (the daemon may still be there) and give it
+    /// the current forward policy again.
+    fn ensure_connected(&self) {
+        if !self.inner.client.is_connected() && self.inner.client.reconnect().is_ok() {
+            self.send_policy();
         }
+    }
+
+    /// Fire-and-forget push of the stored policy; skipped without a connection
+    /// or against a daemon that predates forwards.
+    fn send_policy(&self) {
+        let Some(auto_reconnect) = *lock(&self.inner.policy) else {
+            return;
+        };
+        let client = &self.inner.client;
+        if !client.is_connected() || client.daemon_proto_version() < FORWARDS_PROTO {
+            return;
+        }
+        let client = client.clone();
+        std::thread::spawn(move || {
+            let _ = client.rpc_blocking(
+                RpcCall::SshForwardSetPolicy { auto_reconnect },
+                std::time::Duration::from_secs(5),
+            );
+        });
+    }
+
+    async fn call(&self, call: RpcCall) -> Result<RpcValue, WireError> {
+        self.ensure_connected();
         self.inner.client.rpc(call).await
     }
 
@@ -299,13 +400,9 @@ impl DaemonServices {
             Err(error) => Err(error.message),
         }
     }
-
-    async fn refresh_tunnels(&self) {
-        if let Ok(RpcValue::Tunnels(active)) = self.call(RpcCall::SshTunnelsActive).await {
-            *lock(&self.inner.tunnels) = active;
-        }
-    }
 }
+
+const RESTART_FOR_FORWARDS: &str = "Restart the background host to use port forwards";
 
 fn unexpected() -> WireError {
     WireError::plain("unexpected reply from the background session host")
@@ -334,7 +431,8 @@ impl SshConnectionService for DaemonServices {
     ) -> BoxFuture<'a, Result<(), LabonairError>> {
         Box::pin(async move {
             let ssh_id = request.session_id.as_str().to_string();
-            let host = (self.inner.ctx.hosts)(&request.host_id).map_err(LabonairError::Internal)?;
+            let host = (self.inner.ctx.hosts)(&request.host_id, request.route_override.as_deref())
+                .map_err(LabonairError::Internal)?;
             let session = self.session_entry(&ssh_id);
             session.reopen();
             session.set_events(events);
@@ -365,6 +463,7 @@ impl SshConnectionService for DaemonServices {
                 connect_timeout_secs: request.connect_timeout_secs,
                 keepalive_interval_secs: request.keepalive_interval_secs,
                 keepalive_max_failures: request.keepalive_max_failures,
+                route_override: request.route_override,
                 host,
                 pane_tag: session.pane_tag(),
                 colors: session.colors(),
@@ -403,6 +502,23 @@ impl SshConnectionService for DaemonServices {
             }
             self.unit(RpcCall::SshDisconnect {
                 session_id: ssh_id.to_string(),
+            })
+            .await
+            .map_err(plain)
+        })
+    }
+
+    fn answer_prompt<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        request_id: labonair_ssh::PromptRequestId,
+        answer: labonair_ssh::PromptAnswer,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            self.unit(RpcCall::SshAnswerPrompt {
+                session_id: session_id.as_str().to_string(),
+                prompt_request_id: request_id,
+                answer,
             })
             .await
             .map_err(plain)
@@ -550,32 +666,86 @@ impl SshRemoteFileService for DaemonServices {
     }
 }
 
-impl SshTunnelService for DaemonServices {
-    fn start<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+impl DaemonServices {
+    /// A forward call, refused against a daemon that predates forwards.
+    async fn forward_call(&self, call: RpcCall) -> Result<RpcValue, String> {
+        self.ensure_connected();
+        if self.inner.client.daemon_proto_version() < FORWARDS_PROTO {
+            return Err(RESTART_FOR_FORWARDS.into());
+        }
+        self.call(call).await.map_err(plain)
+    }
+
+    async fn forward_unit(&self, call: RpcCall) -> Result<(), String> {
+        self.forward_call(call).await.map(|_| ())
+    }
+
+    fn host_snapshot(&self, host_id: &str) -> Result<SshHostSnapshot, String> {
+        (self.inner.ctx.hosts)(host_id, None)
+    }
+}
+
+impl SshForwardService for DaemonServices {
+    fn set_reconnect_policy(&self, enabled: bool) {
+        *lock(&self.inner.policy) = Some(enabled);
+        self.send_policy();
+    }
+
+    fn open<'a>(&'a self, request: ForwardOpenRequest) -> BoxFuture<'a, Result<ForwardId, String>> {
         Box::pin(async move {
-            let host = (self.inner.ctx.hosts)(&host_id)?;
-            let result = self
-                .unit(RpcCall::SshTunnelStart { host_id, host })
-                .await
-                .map_err(plain);
-            self.refresh_tunnels().await;
-            result
+            let host = self.host_snapshot(&request.spec.host_id)?;
+            match self
+                .forward_call(RpcCall::SshForwardOpen { request, host })
+                .await?
+            {
+                RpcValue::Text(id) => Ok(ForwardId(id)),
+                _ => Err(unexpected().message),
+            }
         })
     }
 
-    fn stop<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+    fn close<'a>(&'a self, id: ForwardId) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(self.forward_unit(RpcCall::SshForwardClose { id }))
+    }
+
+    fn restart<'a>(&'a self, id: ForwardId) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(self.forward_unit(RpcCall::SshForwardRestart { id }))
+    }
+
+    fn answer_prompt<'a>(
+        &'a self,
+        id: ForwardId,
+        request_id: PromptRequestId,
+        answer: PromptAnswer,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(self.forward_unit(RpcCall::SshForwardAnswerPrompt {
+            id,
+            prompt_request_id: request_id,
+            answer,
+        }))
+    }
+
+    fn attach_host<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let result = self
-                .unit(RpcCall::SshTunnelStop { host_id })
+            let host = self.host_snapshot(&host_id)?;
+            self.forward_unit(RpcCall::SshForwardAttachHost { host_id, host })
                 .await
-                .map_err(plain);
-            self.refresh_tunnels().await;
-            result
         })
     }
 
-    fn active(&self) -> Vec<ActiveTunnel> {
-        lock(&self.inner.tunnels).clone()
+    fn detach_host<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(self.forward_unit(RpcCall::SshForwardDetachHost { host_id }))
+    }
+
+    /// From the event-updated cache; empty against a daemon without forwards.
+    fn list(&self) -> Vec<ForwardInfo> {
+        let mut all: Vec<_> = lock(&self.inner.forwards.map).values().cloned().collect();
+        all.sort_by(|a, b| a.spec.id.cmp(&b.spec.id));
+        all
+    }
+
+    fn revision(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.inner.forwards.revision.subscribe()
     }
 }
 

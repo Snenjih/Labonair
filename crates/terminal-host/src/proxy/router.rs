@@ -17,9 +17,10 @@ use labonair_sftp::{
     BoxFuture as SftpFuture, RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService,
 };
 use labonair_ssh::{
-    ActiveTunnel, BoxFuture, SharedSshEventSink, SshConnectRequest, SshConnectionService,
-    SshExecOutput, SshHostedAccess, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
-    SshSessionId, SshTunnelService,
+    BoxFuture, ForwardId, ForwardInfo, ForwardOpenRequest, ForwardOrigin, PromptAnswer,
+    PromptRequestId, SharedSshEventSink, SshConnectRequest, SshConnectionService, SshExecOutput,
+    SshForwardService, SshHostedAccess, SshPtyService, SshRemoteCommandService,
+    SshRemoteFileService, SshSessionId,
 };
 use labonair_transfers::TransferPromptId;
 use labonair_transfers::{TransferRequest, TransferResolution, TransferService};
@@ -39,7 +40,7 @@ pub struct LocalServices {
     pub pty: Arc<dyn SshPtyService>,
     pub remote_command: Arc<dyn SshRemoteCommandService>,
     pub remote_file: Arc<dyn SshRemoteFileService>,
-    pub tunnels: Arc<dyn SshTunnelService>,
+    pub forwards: Arc<dyn SshForwardService>,
     pub sftp_session: Arc<dyn SftpSessionService>,
     pub sftp_browser: Arc<dyn SftpBrowserService>,
     pub transfers: Arc<dyn TransferService>,
@@ -81,10 +82,10 @@ enum Route {
 struct Routes {
     /// SSH session id -> where it lives. Fixed for the session.
     sessions: HashMap<String, Route>,
-    /// The host of a host id's last connection: where its tunnels run.
-    hosts: HashMap<String, Route>,
     /// Transfer job id -> the host of its SSH session.
     jobs: HashMap<String, Route>,
+    /// Host id -> where each live `attach_host` went (a stack: attaches nest).
+    forward_hosts: HashMap<String, Vec<Route>>,
 }
 
 struct Inner {
@@ -95,6 +96,17 @@ struct Inner {
     /// back to the app).
     on_fallback: Arc<dyn Fn(String) + Send + Sync>,
     routes: Mutex<Routes>,
+    /// Merged forward revision (local + daemon), see [`SshForwardService::revision`].
+    merged: Arc<tokio::sync::watch::Sender<u64>>,
+    /// Daemon proxies already wired into `merged` (by instance id).
+    linked: Mutex<Vec<usize>>,
+    local_forwarder: std::sync::Once,
+    /// Last forward auto-reconnect policy, handed to every daemon proxy linked later.
+    policy: Mutex<Option<bool>>,
+}
+
+fn bump(merged: &tokio::sync::watch::Sender<u64>) {
+    merged.send_modify(|rev| *rev += 1);
 }
 
 /// All SSH, SFTP and transfer service traits, routed per session.
@@ -117,6 +129,10 @@ impl RoutedServices {
                 detached,
                 on_fallback,
                 routes: Mutex::new(Routes::default()),
+                merged: Arc::new(tokio::sync::watch::channel(0).0),
+                linked: Mutex::new(Vec::new()),
+                local_forwarder: std::sync::Once::new(),
+                policy: Mutex::new(None),
             }),
         }
     }
@@ -125,9 +141,35 @@ impl RoutedServices {
     /// its live SSH sessions and transfer jobs replay onto the event bus and
     /// show up in the transfers panel. Blocks briefly; call off the UI thread.
     pub fn attach_running_daemon(&self) {
-        if let Err(error) = (self.inner.daemon.connect)(false) {
-            tracing::debug!(%error, "no background session host to rejoin");
+        match (self.inner.daemon.connect)(false) {
+            // Its replayed forwards are already cached: publish them.
+            Ok(daemon) => self.link(&daemon),
+            Err(error) => tracing::debug!(%error, "no background session host to rejoin"),
         }
+    }
+
+    /// Wire a daemon proxy's forward changes into the merged revision (once).
+    fn link(&self, daemon: &DaemonServices) {
+        {
+            let mut linked = lock(&self.inner.linked);
+            if linked.contains(&daemon.instance_id()) {
+                return;
+            }
+            linked.push(daemon.instance_id());
+        }
+        let merged = Arc::clone(&self.inner.merged);
+        daemon.on_forwards_changed(Arc::new(move || bump(&merged)));
+        if let Some(enabled) = *lock(&self.inner.policy) {
+            SshForwardService::set_reconnect_policy(daemon, enabled);
+        }
+        bump(&self.inner.merged);
+    }
+
+    /// The daemon proxy for forwards, linked into the merged revision.
+    fn forward_daemon(&self) -> Option<DaemonServices> {
+        let daemon = self.peek()?;
+        self.link(&daemon);
+        Some(daemon)
     }
 
     fn peek(&self) -> Option<DaemonServices> {
@@ -144,14 +186,6 @@ impl RoutedServices {
             Some(daemon) if daemon.owns(ssh_id) => Route::Daemon(daemon),
             _ => Route::Local,
         }
-    }
-
-    fn route_host(&self, host_id: &str) -> Route {
-        lock(&self.inner.routes)
-            .hosts
-            .get(host_id)
-            .cloned()
-            .unwrap_or(Route::Local)
     }
 
     /// A job this app did not enqueue (replayed after a restart) can only be
@@ -174,6 +208,11 @@ impl RoutedServices {
             // A pane registered the session with the daemon already.
             return Route::Daemon(daemon);
         }
+        self.choose_new().await
+    }
+
+    /// The session-host policy for something new (a session or a forward).
+    async fn choose_new(&self) -> Route {
         if !(self.inner.detached)() {
             return Route::Local;
         }
@@ -208,7 +247,6 @@ impl SshConnectionService for RoutedServices {
             {
                 let mut routes = lock(&self.inner.routes);
                 routes.sessions.insert(ssh_id, route.clone());
-                routes.hosts.insert(request.host_id.clone(), route.clone());
             }
             match route {
                 Route::Local => self.inner.local.connection.connect(request, events).await,
@@ -224,6 +262,30 @@ impl SshConnectionService for RoutedServices {
             match route {
                 Route::Local => self.inner.local.connection.disconnect(session_id).await,
                 Route::Daemon(daemon) => daemon.disconnect(session_id).await,
+            }
+        })
+    }
+
+    fn answer_prompt<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        request_id: labonair_ssh::PromptRequestId,
+        answer: labonair_ssh::PromptAnswer,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            // The daemon protocol does not carry hop prompts yet (J5c).
+            match self.route(labonair_ssh::split_hop_session_id(session_id.as_str()).0) {
+                Route::Local => {
+                    self.inner
+                        .local
+                        .connection
+                        .answer_prompt(session_id, request_id, answer)
+                        .await
+                }
+                Route::Daemon(daemon) => {
+                    SshConnectionService::answer_prompt(&daemon, session_id, request_id, answer)
+                        .await
+                }
             }
         })
     }
@@ -387,31 +449,159 @@ impl SshRemoteFileService for RoutedServices {
     }
 }
 
-impl SshTunnelService for RoutedServices {
-    fn start<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            match self.route_host(&host_id) {
-                Route::Local => self.inner.local.tunnels.start(host_id).await,
-                Route::Daemon(daemon) => SshTunnelService::start(&daemon, host_id).await,
-            }
-        })
-    }
-
-    fn stop<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            match self.route_host(&host_id) {
-                Route::Local => self.inner.local.tunnels.stop(host_id).await,
-                Route::Daemon(daemon) => SshTunnelService::stop(&daemon, host_id).await,
-            }
-        })
-    }
-
-    fn active(&self) -> Vec<ActiveTunnel> {
-        let mut active = self.inner.local.tunnels.active();
-        if let Some(daemon) = self.peek() {
-            active.extend(SshTunnelService::active(&daemon));
+impl RoutedServices {
+    /// Where the forward `id` lives: its `origin` in the merged list, never
+    /// the host's history (so an app restart can still reach daemon forwards).
+    fn forward_route(&self, id: &ForwardId) -> Result<Route, String> {
+        let origin = SshForwardService::list(self)
+            .into_iter()
+            .find(|info| &info.spec.id == id)
+            .map(|info| info.origin);
+        match origin {
+            Some(ForwardOrigin::Daemon) => self
+                .forward_daemon()
+                .map(Route::Daemon)
+                .ok_or_else(|| "the background session host is not connected".to_string()),
+            _ => Ok(Route::Local),
         }
-        active
+    }
+}
+
+impl SshForwardService for RoutedServices {
+    /// Applies to the local registry and to a daemon already known (never
+    /// starts one); a daemon linked later receives the stored value.
+    fn set_reconnect_policy(&self, enabled: bool) {
+        *lock(&self.inner.policy) = Some(enabled);
+        self.inner.local.forwards.set_reconnect_policy(enabled);
+        if let Some(daemon) = self.peek() {
+            SshForwardService::set_reconnect_policy(&daemon, enabled);
+        }
+    }
+
+    fn open<'a>(&'a self, request: ForwardOpenRequest) -> BoxFuture<'a, Result<ForwardId, String>> {
+        Box::pin(async move {
+            match self.choose_new().await {
+                Route::Local => self.inner.local.forwards.open(request).await,
+                Route::Daemon(daemon) => {
+                    self.link(&daemon);
+                    SshForwardService::open(&daemon, request).await
+                }
+            }
+        })
+    }
+
+    fn close<'a>(&'a self, id: ForwardId) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            match self.forward_route(&id)? {
+                Route::Local => self.inner.local.forwards.close(id).await,
+                Route::Daemon(daemon) => SshForwardService::close(&daemon, id).await,
+            }
+        })
+    }
+
+    fn restart<'a>(&'a self, id: ForwardId) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            match self.forward_route(&id)? {
+                Route::Local => self.inner.local.forwards.restart(id).await,
+                Route::Daemon(daemon) => SshForwardService::restart(&daemon, id).await,
+            }
+        })
+    }
+
+    fn answer_prompt<'a>(
+        &'a self,
+        id: ForwardId,
+        request_id: PromptRequestId,
+        answer: PromptAnswer,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            match self.forward_route(&id)? {
+                Route::Local => {
+                    self.inner
+                        .local
+                        .forwards
+                        .answer_prompt(id, request_id, answer)
+                        .await
+                }
+                Route::Daemon(daemon) => {
+                    SshForwardService::answer_prompt(&daemon, id, request_id, answer).await
+                }
+            }
+        })
+    }
+
+    fn attach_host<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let route = self.choose_new().await;
+            lock(&self.inner.routes)
+                .forward_hosts
+                .entry(host_id.clone())
+                .or_default()
+                .push(route.clone());
+            match route {
+                Route::Local => self.inner.local.forwards.attach_host(host_id).await,
+                Route::Daemon(daemon) => {
+                    self.link(&daemon);
+                    SshForwardService::attach_host(&daemon, host_id).await
+                }
+            }
+        })
+    }
+
+    fn detach_host<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let recorded = lock(&self.inner.routes)
+                .forward_hosts
+                .get_mut(&host_id)
+                .and_then(Vec::pop);
+            let route = match recorded {
+                Some(route) => route,
+                // Unknown attach (another app instance): follow the host's
+                // daemon forwards, else the app.
+                None => match self.forward_daemon() {
+                    Some(daemon) if daemon.list().iter().any(|f| f.spec.host_id == host_id) => {
+                        Route::Daemon(daemon)
+                    }
+                    _ => Route::Local,
+                },
+            };
+            match route {
+                Route::Local => self.inner.local.forwards.detach_host(host_id).await,
+                Route::Daemon(daemon) => SshForwardService::detach_host(&daemon, host_id).await,
+            }
+        })
+    }
+
+    /// Local rows (origin `App`) followed by the daemon's (origin `Daemon`).
+    fn list(&self) -> Vec<ForwardInfo> {
+        let mut all = self.inner.local.forwards.list();
+        if let Some(daemon) = self.forward_daemon() {
+            all.extend(daemon.list());
+        }
+        all
+    }
+
+    fn revision(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.inner.local_forwarder.call_once(|| {
+            let mut local = self.inner.local.forwards.revision();
+            let merged = Arc::clone(&self.inner.merged);
+            // A tiny thread of its own: callers may not be on a Tokio runtime.
+            // It ends when the local service's sender drops.
+            let _ = std::thread::Builder::new()
+                .name("labonair-forward-revision".into())
+                .spawn(move || {
+                    let Ok(runtime) = tokio::runtime::Builder::new_current_thread().build() else {
+                        return;
+                    };
+                    runtime.block_on(async move {
+                        while local.changed().await.is_ok() {
+                            bump(&merged);
+                        }
+                    });
+                });
+        });
+        let _ = self.forward_daemon();
+        self.inner.merged.subscribe()
     }
 }
 

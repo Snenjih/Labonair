@@ -56,6 +56,7 @@ pub(crate) fn routed_services(composition: &AppComposition, cx: &mut App) -> Rou
             labonair_ssh_transport::contract::SshConnectionServiceAdapter::new(
                 ssh.clone(),
                 composition.trust().clone(),
+                composition.prompts().clone(),
                 composition.db().clone(),
                 composition.secrets().clone(),
                 events.clone(),
@@ -66,13 +67,9 @@ pub(crate) fn routed_services(composition: &AppComposition, cx: &mut App) -> Rou
         )),
         remote_command: remote.clone(),
         remote_file: remote,
-        tunnels: Arc::new(
-            labonair_ssh_transport::contract::SshTunnelServiceAdapter::new(
-                composition.tunnels().clone(),
-                composition.db().clone(),
-                composition.secrets().clone(),
-                composition.trust().clone(),
-                events.clone(),
+        forwards: Arc::new(
+            labonair_ssh_transport::contract::SshForwardServiceAdapter::new(
+                composition.forwards().clone(),
             ),
         ),
         sftp_session: sftp.clone(),
@@ -90,7 +87,7 @@ pub(crate) fn routed_services(composition: &AppComposition, cx: &mut App) -> Rou
         bus: events,
         hosts: {
             let db = db.clone();
-            Arc::new(move |host_id| snapshot::build(&db, &secrets, host_id))
+            Arc::new(move |host_id, route| snapshot::build(&db, &secrets, host_id, route))
         },
         transfer_config: Arc::new(move || transfer_config(&transfer_settings)),
         // The daemon records nothing in the app's database: keep the recents.

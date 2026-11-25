@@ -9,7 +9,7 @@ use gpui::{App, Window};
 use labonair_command_palette_core::{CommandId, PaletteAction, SubmenuAction};
 use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_command_palette_runtime::PaletteActionHandlerRegistry;
-use labonair_hosts::{HostOpenMode, HostOpenRequest};
+use labonair_hosts::HostOpenRequest;
 
 /// Host operation used to open the canonical command-palette host picker.
 pub type HostPickerHandler = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -44,15 +44,10 @@ pub fn register_palette_action_handlers(
             else {
                 return false;
             };
-            let request = match sftp {
-                true => HostOpenRequest {
-                    host_id: host_id.clone(),
-                    mode: HostOpenMode::Sftp,
-                },
-                false => HostOpenRequest {
-                    host_id: host_id.clone(),
-                    mode: HostOpenMode::Ssh,
-                },
+            let request = if *sftp {
+                HostOpenRequest::sftp(host_id.clone())
+            } else {
+                HostOpenRequest::ssh(host_id.clone())
             };
             open_host(request, window, cx);
             true

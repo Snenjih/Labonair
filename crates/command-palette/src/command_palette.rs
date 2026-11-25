@@ -55,6 +55,6 @@ impl KeybindDisplay {
 
 impl gpui::Global for KeybindDisplay {}
 pub use palette::{
-    context_of, Command, CommandPalette, Page, PaletteData, PaletteEvent, PaletteTabKind,
-    PaletteTabRow, PaletteWorkspace,
+    context_of, Command, CommandPalette, DynamicRows, Page, PaletteData, PaletteEvent,
+    PaletteTabKind, PaletteTabRow, PaletteWorkspace,
 };

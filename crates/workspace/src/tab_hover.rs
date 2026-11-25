@@ -92,6 +92,17 @@ impl HoverIntent {
     }
 }
 
+/// `You → a → b → host` for a routed SSH tab; `None` for a direct connection.
+fn route_text(route: &[String], host_label: &str) -> Option<String> {
+    if route.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "You \u{2192} {} \u{2192} {host_label}",
+        route.join(" \u{2192} ")
+    ))
+}
+
 /// What the open list is about.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HoverTarget {
@@ -247,6 +258,12 @@ impl Workspace {
             self.close_tab_hover(cx);
             return None;
         }
+        let route_line = self
+            .ssh_tabs
+            .values()
+            .find(|t| t.tab_id == target.tab)
+            .and_then(|t| self.ssh_connection.read(cx).get(&t.ssh_id))
+            .and_then(|e| route_text(&e.route, &e.host_label));
         let content = div()
             .id("tab-hover-list")
             .flex()
@@ -264,6 +281,14 @@ impl Workspace {
                 }
             }))
             .children(rows)
+            .children(route_line.map(|text| {
+                div()
+                    .px(px(8.0))
+                    .py(px(4.0))
+                    .text_xs()
+                    .text_color(c.muted)
+                    .child(format!("Route: {text}"))
+            }))
             .into_any_element();
         let view = cx.entity();
         Some(popover_with_exit(
@@ -282,6 +307,16 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn route_text_lists_the_whole_chain() {
+        assert_eq!(route_text(&[], "h"), None);
+        let r = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(
+            route_text(&r, "h").unwrap(),
+            "You \u{2192} a \u{2192} b \u{2192} h"
+        );
+    }
 
     #[test]
     fn open_needs_the_pointer_to_stay_on_the_same_tab() {

@@ -8,6 +8,9 @@ This is a backlog, not a gate: a direct user request always takes precedence. St
 | R07-001 product-surface acceptance | Partial | Native visual-state matrix (one open box); also covers the visual checks of closed R07-004/005 and R09-001..005 |
 | R07-007 transitional-edge review | Open | Review remaining transitional edges in `scripts/crate-graph.toml` |
 | R07-008 multi-instance / detached sessions | Partial | Code landed (4cc0d575); acceptance boxes unchecked, needs two-process tests |
+| R12-001 jump routes and hop prompts | Code complete | Gate-tested; native visual check pending; no real multi-hop network check (only the in-process e2e) |
+| R12-002 forward engine and daemon | Code complete | Gate-tested incl. in-process russh e2e `forwards_e2e`; real-network and detached-daemon runtime check pending |
+| R12-003 forwards UI and integration | Code complete | Gate-tested; native visual check of popover, editor, route display and prompts pending |
 | R08-010 actionable notifications | In progress | Focused action/toast lifecycle tests and native visual review of the dropdown and PR toast |
 | R09-003 editor E2 editing | Partial | Splits dropped (view groups, ADR 0005); verify command registration/keymap overrides, multi-select on folded views |
 | R09-006 editor E5 git gutter/review | Partial | Core + bridge done; verify alignment after reload, notification routing, settings records |

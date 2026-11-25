@@ -23,6 +23,12 @@ pub struct ConnectionsContent {
     /// Fallback number of missed keep-alive pings tolerated before the
     /// connection is considered dead, for hosts that don't set their own.
     pub ssh_keepalive_max_failures: Option<u32>,
+    /// Default listen address of new port forwards (`forwards.defaultListenHost`).
+    pub forwards_default_listen_host: Option<String>,
+    /// Reconnect dropped port forwards automatically (`forwards.autoReconnect`).
+    pub forwards_auto_reconnect: Option<bool>,
+    /// Ask before binding a non-loopback address (`forwards.confirmPublicBind`).
+    pub forwards_confirm_public_bind: Option<bool>,
 }
 
 impl ConnectionsContent {
@@ -31,6 +37,27 @@ impl ConnectionsContent {
             ssh_connect_timeout_secs: Some(20),
             ssh_keepalive_interval_secs: Some(25),
             ssh_keepalive_max_failures: Some(3),
+            forwards_default_listen_host: Some("127.0.0.1".into()),
+            forwards_auto_reconnect: Some(true),
+            forwards_confirm_public_bind: Some(true),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forward_defaults_and_round_trip() {
+        let d = ConnectionsContent::defaults();
+        assert_eq!(d.forwards_default_listen_host.as_deref(), Some("127.0.0.1"));
+        assert_eq!(d.forwards_auto_reconnect, Some(true));
+        assert_eq!(d.forwards_confirm_public_bind, Some(true));
+        let json = serde_json::to_value(&d).unwrap();
+        assert_eq!(json["forwardsAutoReconnect"], true);
+        assert_eq!(json["forwardsDefaultListenHost"], "127.0.0.1");
+        let back: ConnectionsContent = serde_json::from_value(json).unwrap();
+        assert_eq!(back, d);
     }
 }

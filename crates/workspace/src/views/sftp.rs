@@ -914,6 +914,7 @@ impl SftpView {
                     connect_timeout_secs: Some(connect_timeout_secs),
                     keepalive_interval_secs,
                     keepalive_max_failures,
+                    route_override: None,
                 },
                 std::sync::Arc::new(QuietSshEventSink),
             )

@@ -13,13 +13,14 @@ pub mod client;
 pub mod config_parser;
 pub mod contract;
 pub mod exec;
+pub mod forwards;
 pub mod hosted;
 pub mod net_error;
+pub mod prompts;
 pub mod pty;
 pub mod sftp;
 pub mod shell;
 pub(crate) mod shell_integration;
-pub mod tunnels;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;

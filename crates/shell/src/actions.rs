@@ -13,7 +13,7 @@
 //! `Minimize` / `Zoom` / `Toggle Full Screen` stay as real window
 //! `.on_action`s on the shell root (they only touch `Window`).
 
-use gpui::{App, Context, Window};
+use gpui::{App, AppContext as _, Context, DismissEvent, Window};
 use labonair_command_palette::{
     Command as PaletteCommand, Page as PalettePage, PaletteData, PaletteEvent, PaletteWorkspace,
 };
@@ -26,7 +26,7 @@ use labonair_workspace::{file_finder::FileFinderView, search_overlay::SearchOver
 
 use crate::app_shell::AppShell;
 use crate::menu;
-use crate::modals::{CommandPaletteModal, UpdaterModal};
+use crate::modals::{CommandPaletteModal, ForwardEditorModal, ForwardPromptModal, UpdaterModal};
 
 fn register_snapshot(registry: &mut SubmenuRegistry, snapshot: SubmenuSnapshot) {
     registry
@@ -159,6 +159,143 @@ impl AppShell {
         });
     }
 
+    /// Present the port-forward editor; its submit is performed by the workspace.
+    pub(crate) fn open_forward_editor(
+        &mut self,
+        host_id: Option<String>,
+        quick: Option<labonair_forwards::QuickSpec>,
+        edit: Option<labonair_forwards::SavedForward>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let workspace = self.workspace.clone();
+        let theme = self.theme.clone();
+        let hosts = workspace.read(cx).forward_editor_hosts(cx);
+        let saved = workspace.read(cx).saved_forwards_by_host(cx);
+        let defaults = workspace.read(cx).forward_editor_defaults(cx);
+        self.modal_layer.update(cx, |layer, cx| {
+            layer.open_modal(window, cx, move |window, cx| {
+                let editor = cx.new(|cx| {
+                    labonair_forwards_ui::ForwardEditor::new(
+                        theme,
+                        hosts,
+                        host_id,
+                        quick.as_ref(),
+                        edit.as_ref(),
+                        defaults,
+                        window,
+                        cx,
+                    )
+                    .with_saved_forwards(saved)
+                });
+                cx.subscribe(
+                    &editor,
+                    move |_, _, event: &labonair_forwards::ForwardEditorEvent, cx| {
+                        if let labonair_forwards::ForwardEditorEvent::Submit { .. } = event {
+                            workspace
+                                .update(cx, |w, cx| w.submit_forward_editor(event.clone(), cx));
+                        }
+                        cx.emit(DismissEvent);
+                    },
+                )
+                .detach();
+                ForwardEditorModal::new(editor, cx)
+            });
+        });
+    }
+
+    /// Present the prompt dialog of an `AwaitingInput` forward; at most one
+    /// prompt dialog is open at a time.
+    pub(crate) fn open_forward_prompt(
+        &mut self,
+        forward_id: labonair_ssh::ForwardId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .modal_layer
+            .read(cx)
+            .active_modal::<ForwardPromptModal>()
+            .is_some()
+        {
+            return;
+        }
+        let workspace = self.workspace.clone();
+        let theme = self.theme.clone();
+        let pending = workspace
+            .read(cx)
+            .forwards()
+            .iter()
+            .find_map(|f| match &f.state {
+                labonair_ssh::ForwardState::AwaitingInput(p) if f.spec.id == forward_id => {
+                    Some(p.clone())
+                }
+                _ => None,
+            });
+        let Some(pending) = pending else {
+            return;
+        };
+        self.modal_layer.update(cx, |layer, cx| {
+            layer.open_modal(window, cx, move |window, cx| {
+                let id = forward_id.clone();
+                let dialog = cx.new(|cx| {
+                    labonair_forwards_ui::ForwardPromptDialog::new(theme, id, pending, window, cx)
+                });
+                cx.subscribe(
+                    &dialog,
+                    move |_, _, event: &labonair_forwards_ui::ForwardPromptEvent, cx| {
+                        if let labonair_forwards_ui::ForwardPromptEvent::Answer {
+                            forward_id,
+                            request_id,
+                            answer,
+                        } = event
+                        {
+                            workspace.update(cx, |w, _| {
+                                w.answer_forward_prompt(
+                                    forward_id.clone(),
+                                    request_id.clone(),
+                                    answer.clone(),
+                                )
+                            });
+                        }
+                        cx.emit(DismissEvent);
+                    },
+                )
+                .detach();
+                ForwardPromptModal { inner: dialog }
+            });
+        });
+    }
+
+    /// Close the prompt dialog when its prompt is no longer pending (answered
+    /// elsewhere, forward closed or failed).
+    pub(crate) fn sync_forward_prompt_modal(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(modal) = self
+            .modal_layer
+            .read(cx)
+            .active_modal::<ForwardPromptModal>()
+        else {
+            return;
+        };
+        let (id, request_id) = {
+            let dialog = modal.read(cx).inner.read(cx);
+            (dialog.forward_id().clone(), dialog.request_id().clone())
+        };
+        let pending = self.workspace.read(cx).forwards().iter().any(|f| {
+            f.spec.id == id
+                && matches!(&f.state, labonair_ssh::ForwardState::AwaitingInput(p) if p.request_id == request_id)
+        });
+        if !pending {
+            self.modal_layer.update(cx, |layer, cx| {
+                layer.hide_modal(window, cx);
+            });
+        }
+    }
+
     // ── Modal-layer mirrors (driven from `render`) ────────────────────────
 
     /// Mirror the updater dialog's visibility into the modal layer. Driven from
@@ -245,6 +382,39 @@ impl AppShell {
             self.workspace.read(cx).recent_host_picker_rows(cx, 5),
         );
         register_snapshot(&mut submenus, recent_hosts);
+
+        let host_choices: Vec<labonair_forwards::HostChoice> = self
+            .workspace
+            .read(cx)
+            .host_picker_rows(cx)
+            .into_iter()
+            .map(|row| labonair_forwards::HostChoice {
+                id: row.id,
+                name: row.name,
+                subtitle: row.subtitle,
+            })
+            .collect();
+        let forward_rows = self.workspace.read(cx).palette_forward_rows(cx);
+        register_snapshot(
+            &mut submenus,
+            labonair_forwards::forwards_hosts_submenu(&host_choices),
+        );
+        register_snapshot(
+            &mut submenus,
+            labonair_forwards::route_hosts_submenu(&host_choices),
+        );
+        register_snapshot(
+            &mut submenus,
+            labonair_forwards::via_targets_submenu(&host_choices),
+        );
+        register_snapshot(
+            &mut submenus,
+            labonair_forwards::saved_forwards_submenu(&forward_rows),
+        );
+        register_snapshot(
+            &mut submenus,
+            labonair_forwards::active_forwards_submenu(&forward_rows),
+        );
 
         let app_theme = ThemeSettings::try_get(cx)
             .map(|s| s.app_theme().to_string())
@@ -370,6 +540,11 @@ impl AppShell {
                 .map(PaletteCommand::from_descriptor)
                 .collect(),
             submenus,
+            dynamic_rows: Some(labonair_command_palette::DynamicRows(std::rc::Rc::new(
+                move |submenu, carry, query| {
+                    labonair_forwards::dynamic_rows(submenu, carry, query, &host_choices)
+                },
+            ))),
         }
     }
 

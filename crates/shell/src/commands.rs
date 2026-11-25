@@ -368,6 +368,7 @@ fn compose_builtin_commands(
     r.register_provider(&labonair_terminal::command_provider::TerminalCommandProvider);
     r.register_provider(&labonair_editor::command_provider::EditorCommandProvider);
     r.register_provider(&labonair_hosts::command_provider::HostsCommandProvider);
+    r.register_provider(&labonair_forwards::ForwardsCommandProvider);
     r.register_provider(&labonair_theme::command_provider::ThemeCommandProvider);
     r.register_provider(&labonair_settings::command_provider::SettingsCommandProvider);
     r.register_provider(&labonair_keymap::command_provider::KeymapCommandProvider);
@@ -423,6 +424,10 @@ fn compose_builtin_commands(
             workspace,
         );
         labonair_workspace::command_provider::register_hosts_handler(
+            &mut r.owner_handlers,
+            workspace,
+        );
+        labonair_workspace::command_provider::register_forwards_handlers(
             &mut r.owner_handlers,
             workspace,
         );

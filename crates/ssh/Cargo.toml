@@ -7,4 +7,8 @@ license = "GPL-3.0-or-later"
 [dependencies]
 labonair-errors = { path = "../errors" }
 serde = { workspace = true }
+# Only `tokio::sync::watch` is used (SshForwardService::revision).
 tokio = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

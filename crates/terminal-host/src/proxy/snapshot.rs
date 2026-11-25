@@ -8,6 +8,7 @@
 
 use labonair_persistence::Database;
 use labonair_secrets::{get_password, SecretsState};
+use labonair_ssh_transport::client::{override_route_ids, route_ids, JumpRouteError};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::protocol::{CredentialRecord, HostRecord, SecretEntry, SshHostSnapshot};
@@ -61,27 +62,45 @@ fn credential_row(conn: &Connection, id: &str) -> Result<Option<CredentialRecord
     .map_err(|e| e.to_string())
 }
 
-/// The host, its jump host (single hop, like the transport), the credentials
-/// they reference and the secrets a connect would read from the store.
+/// The host, every hop of its jump chain (order: target, then hops innermost
+/// to outermost), the credentials they reference and the secrets a connect would read from the store.
+///
+/// `route_override` (outermost first) replaces the stored chain for a one-off
+/// route: the snapshot then carries exactly those hops, and the stored
+/// `jump_host_id` links of every row are cleared so the daemon's deferred
+/// foreign-key check cannot trip over hosts the snapshot does not list.
 pub fn build(
     db: &Database,
     secrets: &SecretsState,
     host_id: &str,
+    route_override: Option<&[String]>,
 ) -> Result<SshHostSnapshot, String> {
     let mut snapshot = SshHostSnapshot::default();
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         let host =
             host_row(&conn, host_id)?.ok_or_else(|| format!("host '{host_id}' not found"))?;
-        // Single hop: a jump host's own jump host is never followed.
-        let jump = match host.jump_host_id.as_deref() {
-            Some(jump_id) => Some(
-                host_row(&conn, jump_id)?
-                    .ok_or_else(|| format!("Jump host '{jump_id}' not found"))?,
-            ),
-            None => None,
-        };
-        for record in std::iter::once(&host).chain(jump.as_ref()) {
+        // Whole jump chain; `route_ids` is outermost first, so reverse it to
+        // list hops innermost to outermost after the target.
+        let ids = match route_override {
+            Some(route) => override_route_ids(host_id, route),
+            None => route_ids(host_id, |id| {
+                host_row(&conn, id)
+                    .ok()
+                    .flatten()
+                    .and_then(|h| h.jump_host_id)
+                    .filter(|s| !s.is_empty())
+            }),
+        }
+        .map_err(|e| e.to_string())?;
+        let mut hops = Vec::new();
+        for id in ids.iter().rev() {
+            hops.push(
+                host_row(&conn, id)?
+                    .ok_or_else(|| JumpRouteError::Missing(id.clone()).to_string())?,
+            );
+        }
+        for record in std::iter::once(&host).chain(hops.iter()) {
             if let Some(credential_id) = &record.credential_id {
                 let credential = credential_row(&conn, credential_id)?.ok_or_else(|| {
                     format!(
@@ -95,7 +114,12 @@ pub fn build(
             }
         }
         snapshot.hosts.push(host);
-        snapshot.hosts.extend(jump);
+        snapshot.hosts.extend(hops);
+        if route_override.is_some() {
+            for record in &mut snapshot.hosts {
+                record.jump_host_id = None;
+            }
+        }
     }
     let mut add_secret = |service: &str, account: &str| {
         if let Ok(Some(value)) = get_password(secrets, service, account) {
@@ -156,6 +180,27 @@ mod tests {
     }
 
     #[test]
+    fn route_override_snapshot_lists_the_overridden_hops_only() {
+        let db = db();
+        insert_host(&db, "old", "key", None, None);
+        insert_host(&db, "a", "key", None, None);
+        insert_host(&db, "b", "key", None, Some("old"));
+        insert_host(&db, "target", "key", None, Some("old"));
+        let secrets = SecretsState::in_memory();
+        let route = ["a".to_string(), "b".to_string()];
+        let snapshot = build(&db, &secrets, "target", Some(&route)).unwrap();
+        // Target first, then hops innermost to outermost.
+        let ids: Vec<_> = snapshot.hosts.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(ids, ["target", "b", "a"]);
+        assert!(snapshot.hosts.iter().all(|h| h.jump_host_id.is_none()));
+        // Empty override = direct.
+        let direct = build(&db, &secrets, "target", Some(&[])).unwrap();
+        assert_eq!(direct.hosts.len(), 1);
+        let err = build(&db, &secrets, "target", Some(&["target".to_string()])).unwrap_err();
+        assert!(err.contains("same as the target"), "{err}");
+    }
+
+    #[test]
     fn collects_host_jump_host_credential_and_only_the_secrets_a_connect_reads() {
         let db = db();
         let secrets = SecretsState::in_memory();
@@ -174,7 +219,7 @@ mod tests {
         // Not read by a key-auth connect: must not travel.
         labonair_secrets::store_password(&secrets, HOST_SECRET, "target", "unused").unwrap();
 
-        let snapshot = build(&db, &secrets, "target").unwrap();
+        let snapshot = build(&db, &secrets, "target", None).unwrap();
         let ids: Vec<_> = snapshot.hosts.iter().map(|h| h.id.as_str()).collect();
         assert_eq!(ids, ["target", "jump"]);
         assert_eq!(snapshot.credentials.len(), 1);
@@ -190,8 +235,63 @@ mod tests {
     }
 
     #[test]
+    fn three_hop_chain_lists_all_rows_and_only_needed_secrets() {
+        let db = db();
+        let secrets = SecretsState::in_memory();
+        insert_host(&db, "outer", "password", None, None);
+        insert_host(&db, "mid", "password", None, Some("outer"));
+        insert_host(&db, "inner", "key", None, Some("mid"));
+        insert_host(&db, "target", "key", None, Some("inner"));
+        for (id, v) in [
+            ("outer", "pw-outer"),
+            ("mid", "pw-mid"),
+            ("inner", "unused"),
+        ] {
+            labonair_secrets::store_password(&secrets, HOST_SECRET, id, v).unwrap();
+        }
+        let snapshot = build(&db, &secrets, "target", None).unwrap();
+        let ids: Vec<_> = snapshot.hosts.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(ids, ["target", "inner", "mid", "outer"]);
+        let secret_ids: Vec<_> = snapshot
+            .secrets
+            .iter()
+            .map(|s| s.account.as_str())
+            .collect();
+        assert_eq!(secret_ids, ["mid", "outer"]);
+        let debug = format!("{snapshot:?}");
+        assert!(!debug.contains("pw-outer") && !debug.contains("pw-mid"));
+    }
+
+    #[test]
+    fn cycle_and_depth_errors_surface() {
+        let db = db();
+        let secrets = SecretsState::in_memory();
+        insert_host(&db, "a", "key", None, None);
+        insert_host(&db, "b", "key", None, Some("a"));
+        db.0.lock()
+            .unwrap()
+            .execute("UPDATE hosts SET jump_host_id='b' WHERE id='a'", [])
+            .unwrap();
+        let err = build(&db, &secrets, "a", None).unwrap_err();
+        assert!(err.contains("cycle"), "{err}");
+        let db = self::db();
+        insert_host(&db, "h0", "key", None, None);
+        for i in 1..=9 {
+            insert_host(
+                &db,
+                &format!("h{i}"),
+                "key",
+                None,
+                Some(&format!("h{}", i - 1)),
+            );
+        }
+        let err = build(&db, &secrets, "h9", None).unwrap_err();
+        assert!(err.contains("deeper"), "{err}");
+    }
+
+    #[test]
     fn unknown_host_is_an_error() {
-        let err = build(&db(), &SecretsState::in_memory(), "nope").unwrap_err();
+        let err = build(&db(), &SecretsState::in_memory(), "nope", None).unwrap_err();
         assert!(err.contains("not found"));
     }
 }

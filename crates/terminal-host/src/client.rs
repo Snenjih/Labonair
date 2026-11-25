@@ -174,6 +174,8 @@ struct State {
     bus: Option<BusSink>,
     /// Re-subscribe to service events after every (re)connect.
     events_wanted: bool,
+    /// Protocol version the daemon announced in its handshake (0 = none yet).
+    daemon_proto: u32,
 }
 
 struct ClientAttachment {
@@ -253,6 +255,7 @@ impl HostClient {
                     rpcs: HashMap::new(),
                     bus: None,
                     events_wanted: false,
+                    daemon_proto: 0,
                 }),
             }),
         }
@@ -260,6 +263,11 @@ impl HostClient {
 
     pub fn data_dir(&self) -> &std::path::Path {
         &self.inner.data_dir
+    }
+
+    /// The daemon's protocol version from the last handshake (0 before one).
+    pub fn daemon_proto_version(&self) -> u32 {
+        lock(&self.inner.state).daemon_proto
     }
 
     pub fn status(&self) -> HostStatus {
@@ -304,6 +312,7 @@ impl HostClient {
                     build_id: ack.build_id.clone(),
                 }
             };
+            state.daemon_proto = ack.proto_version;
             state.conn = Some(Conn { tx, stream });
             state.generation
         };

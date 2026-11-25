@@ -284,6 +284,12 @@
     // Fallback keep-alive ping interval for hosts that don't set their own.
     "sshKeepaliveIntervalSecs": 25,
     // Fallback missed-ping tolerance for hosts that don't set their own.
-    "sshKeepaliveMaxFailures": 3
+    "sshKeepaliveMaxFailures": 3,
+    // Default listen address of new port forwards.
+    "forwardsDefaultListenHost": "127.0.0.1",
+    // Reconnect dropped port forwards automatically.
+    "forwardsAutoReconnect": true,
+    // Ask before a forward listens on a non-loopback address.
+    "forwardsConfirmPublicBind": true
   },
 }

@@ -114,6 +114,7 @@ mod tests {
             private_key_path: (auth == "key")
                 .then(|| "/Users/secret-person/.ssh/id_ed25519".into()),
             proxy_jump: jump.map(str::to_owned),
+            forwards: Vec::new(),
         }
     }
 

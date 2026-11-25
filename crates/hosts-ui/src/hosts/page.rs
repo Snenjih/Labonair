@@ -56,6 +56,32 @@ fn jump_creates_cycle(hosts: &[Host], editing: &str, candidate: &str) -> bool {
     false
 }
 
+// keep in sync with labonair-ssh-transport::client::MAX_JUMP_HOPS (ADR 0016)
+const MAX_JUMP_HOPS: usize = 8;
+
+/// Number of hops a host routed through `candidate` would have
+/// (`candidate` plus its own jump ancestors). Stops at a cycle.
+fn jump_depth(hosts: &[Host], candidate: &str) -> usize {
+    let mut seen = HashSet::new();
+    let mut current = Some(candidate);
+    while let Some(id) = current.filter(|id| seen.insert(*id)) {
+        current = hosts
+            .iter()
+            .find(|host| host.id == id)
+            .and_then(|host| host.jump_host_id.as_deref());
+    }
+    seen.len()
+}
+
+/// Names of the hosts that use `id` as their jump host.
+fn dependents_of_jump(hosts: &[Host], id: &str) -> Vec<String> {
+    hosts
+        .iter()
+        .filter(|host| host.jump_host_id.as_deref() == Some(id))
+        .map(|host| host.name.clone())
+        .collect()
+}
+
 fn credential_label(credential: &Credential) -> String {
     format!(
         "{} ({})",
@@ -954,23 +980,27 @@ impl HostManagerView {
             );
         }
 
-        if !self.active_tunnels.is_empty() {
-            let mut group = settings_group("hosts-tunnels", *p).title("Active tunnels");
-            for tunnel in &self.active_tunnels {
-                group = group.row(
-                    settings_row(
-                        SharedString::from(format!("tunnel-{}", tunnel.local_port)),
-                        *p,
-                        tunnel.host_label.clone(),
-                    )
-                    .description(SharedString::from(format!(
-                        "localhost:{} \u{2192} {}:{}",
-                        tunnel.local_port, tunnel.remote_host, tunnel.remote_port
-                    ))),
-                );
-            }
-            page = page.child(group);
-        }
+        // Running forwards live in the statusbar popover; this is only a link.
+        page = page.child(
+            settings_group("hosts-forwards-link", *p).row(
+                settings_row("open-forwards", *p, "Open port forwards")
+                    .description("Running forwards of all hosts, in the status bar")
+                    .control(
+                        button(
+                            "open-forwards-go",
+                            *p,
+                            ButtonVariant::Outlined,
+                            ButtonSize::Xs,
+                        )
+                        .child("Open")
+                        .on_click(cx.listener(
+                            |_this, _: &ClickEvent, _w, cx| {
+                                cx.emit(HostManagerEvent::ManageForwards { host_id: None })
+                            },
+                        )),
+                    ),
+            ),
+        );
 
         if visible.is_empty() {
             let (message, hint) = if self.hosts.is_empty() {
@@ -1063,6 +1093,23 @@ impl HostManagerView {
                             )
                             .when(data.pin_to_top, |d| {
                                 d.child(IconName::Pin.svg(p.muted).size(px(11.0)))
+                            })
+                            .when(!data.route.is_empty(), |d| {
+                                // Muted route chip, same look as the loading-screen badge.
+                                d.child(
+                                    div()
+                                        .px(p.space(6.0))
+                                        .rounded_md()
+                                        .border_1()
+                                        .border_color(p.border)
+                                        .text_size(p.control_space(11.0))
+                                        .text_color(p.muted)
+                                        .whitespace_nowrap()
+                                        .child(SharedString::from(format!(
+                                            "via {}",
+                                            data.route.join(" \u{203a} ")
+                                        ))),
+                                )
                             }),
                     )
                     .child(
@@ -1259,7 +1306,7 @@ impl HostManagerView {
                 ("general", "General"),
                 ("ssh", "SSH"),
                 ("sftp", "SFTP"),
-                ("tunnels", "Tunnels"),
+                ("tunnels", "Port forwards"),
             ],
             p,
             |this, key, cx| {
@@ -1280,7 +1327,7 @@ impl HostManagerView {
             FormTab::General => self.render_general_tab(&form, p, window, cx),
             FormTab::Ssh => self.render_ssh_tab(&form, p, window, cx),
             FormTab::Sftp => self.render_sftp_tab(p, window, cx),
-            FormTab::Tunnels => self.render_tunnels_tab(&form, p, window, cx),
+            FormTab::Tunnels => self.render_tunnels_tab(&form, p, cx),
         };
         v_stack()
             .gap(p.space(20.0))
@@ -1512,7 +1559,8 @@ impl HostManagerView {
         for host in &self.hosts {
             let blocked = editing
                 .as_deref()
-                .is_some_and(|id| jump_creates_cycle(&self.hosts, id, &host.id));
+                .is_some_and(|id| jump_creates_cycle(&self.hosts, id, &host.id))
+                || jump_depth(&self.hosts, &host.id) > MAX_JUMP_HOPS;
             if !blocked {
                 jump_options.push((
                     SharedString::from(host.id.clone()),
@@ -1526,7 +1574,25 @@ impl HostManagerView {
             .and_then(|id| self.hosts.iter().find(|h| h.id == id))
             .map(|h| h.name.clone())
             .unwrap_or_else(|| "None (direct connection)".to_string());
-        let jump = settings_group("hf-jump", *p)
+        let route_row = form.jump_host.as_deref().map(|jid| {
+            let mut names = self.route_labels(jid);
+            names.push(
+                self.hosts
+                    .iter()
+                    .find(|h| h.id == jid)
+                    .map(|h| h.name.clone())
+                    .unwrap_or_default(),
+            );
+            let mut text = format!(
+                "You \u{2192} {} \u{2192} this host",
+                names.join(" \u{2192} ")
+            );
+            if names.len() >= MAX_JUMP_HOPS {
+                text.push_str(&format!(" (at most {MAX_JUMP_HOPS} hops are supported)"));
+            }
+            settings_row("hf-jump-route", *p, "Route").description(text)
+        });
+        let mut jump = settings_group("hf-jump", *p)
             .title("Jump host (ProxyJump)")
             .row(
                 settings_row("hf-jump-row", *p, "Via jump host")
@@ -1541,6 +1607,9 @@ impl HostManagerView {
                         cx,
                     )),
             );
+        if let Some(row) = route_row {
+            jump = jump.row(row);
+        }
 
         let notes_input = self.input_for(
             FieldKey::Host(HostField::Notes),
@@ -1772,142 +1841,219 @@ impl HostManagerView {
         &mut self,
         form: &HostForm,
         p: &Palette,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let caption = |text: &'static str| {
-            div()
-                .text_size(p.control_space(11.0))
+        let Some(host_id) = form.editing_id.clone() else {
+            return div()
+                .text_size(p.control_space(12.0))
                 .text_color(p.muted)
-                .child(text)
+                .child("Enter the host's address first: port forwards can be added once the host is saved.")
+                .into_any_element();
         };
-        let mut group = settings_group("ht-tunnels", *p).title("Local port forwards");
-        for (index, tunnel) in form.tunnels.iter().enumerate() {
-            let local_invalid = !tunnel.local_port.is_empty() && !valid_port(&tunnel.local_port);
-            let remote_invalid = !tunnel.remote_port.is_empty() && !valid_port(&tunnel.remote_port);
-            let local = self
-                .text_control(
-                    FieldKey::Host(HostField::TunnelLocalPort(index)),
-                    InputKind::Single,
-                    "8080",
-                    local_invalid,
-                    window,
-                    cx,
-                    p,
-                )
-                .w(p.control_space(96.0));
-            let remote_host = self
-                .text_control(
-                    FieldKey::Host(HostField::TunnelRemoteHost(index)),
-                    InputKind::Single,
-                    "127.0.0.1",
-                    false,
-                    window,
-                    cx,
-                    p,
-                )
-                .w_full();
-            let remote_port = self
-                .text_control(
-                    FieldKey::Host(HostField::TunnelRemotePort(index)),
-                    InputKind::Single,
-                    "8080",
-                    remote_invalid,
-                    window,
-                    cx,
-                    p,
-                )
-                .w(p.control_space(96.0));
-            group = group.row(
-                h_stack()
-                    .items_end()
-                    .gap(p.space(10.0))
-                    .px(p.control_space(16.0))
-                    .py(p.control_space(12.0))
-                    .child(
-                        v_stack()
-                            .gap(p.space(4.0))
-                            .child(caption("Local port"))
-                            .child(local),
-                    )
-                    .child(
-                        div()
-                            .pb(p.space(9.0))
-                            .child(IconName::ArrowRight.svg(p.muted).size(px(14.0))),
-                    )
-                    .child(
-                        v_stack()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(p.space(4.0))
-                            .child(caption("Remote host"))
-                            .child(remote_host),
-                    )
-                    .child(
-                        v_stack()
-                            .gap(p.space(4.0))
-                            .child(caption("Remote port"))
-                            .child(remote_port),
-                    )
-                    .child(
-                        icon_button_builder(
-                            SharedString::from(format!("tunnel-del-{index}")),
-                            *p,
-                            IconName::Trash,
-                        )
-                        .variant(ButtonVariant::Subtle)
-                        .size(ButtonSize::IconSm)
-                        .shape(IconButtonShape::Square)
-                        .tooltip("Remove tunnel")
-                        .render()
-                        .on_click(cx.listener(
-                            move |this, _: &ClickEvent, _w, cx| {
-                                if let Some(form) = this.form.as_mut() {
-                                    if index < form.tunnels.len() {
-                                        form.tunnels.remove(index);
-                                    }
-                                }
-                                // Row indices shifted: rebuild the tunnel inputs.
-                                this.inputs.retain(|key, _| {
-                                    !matches!(
-                                        key,
-                                        FieldKey::Host(
-                                            HostField::TunnelLocalPort(_)
-                                                | HostField::TunnelRemoteHost(_)
-                                                | HostField::TunnelRemotePort(_)
-                                        )
-                                    )
-                                });
-                                this.schedule_autosave(cx);
-                            },
-                        )),
-                    ),
-            );
-        }
-        let add = icon_button_builder("ht-add", *p, IconName::Plus)
-            .variant(ButtonVariant::Outlined)
-            .size(ButtonSize::Sm)
-            .label("Add tunnel")
-            .render()
-            .w_full()
-            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                if let Some(form) = this.form.as_mut() {
-                    form.tunnels.push(TunnelDraft::new());
-                }
-                this.schedule_autosave(cx);
-            }));
+        let all = self.all_host_forwards();
         let mut tab = v_stack().gap(p.space(12.0));
-        if form.tunnels.is_empty() {
+        if form.forwards.is_empty() {
             tab = tab.child(
-                div()
+                v_stack()
+                    .gap(p.space(4.0))
                     .text_size(p.control_space(12.0))
                     .text_color(p.muted)
-                    .child("Forward a local port to a port on (or behind) this host. Tunnels start when you connect."),
+                    .child(
+                        "Local: a port on this machine reaches a host and port behind this server.",
+                    )
+                    .child("Remote: a port on the server reaches a host and port on this machine.")
+                    .child("Dynamic: a local SOCKS5 proxy that routes through this server."),
             );
         } else {
+            let mut group = settings_group("ht-forwards", *p).title("Saved port forwards");
+            for (index, forward) in form.forwards.iter().enumerate() {
+                group = group.row(self.forward_row(&host_id, index, forward, &all, p, cx));
+            }
             tab = tab.child(group);
         }
-        tab.child(add).into_any_element()
+        let add_host = host_id.clone();
+        tab.child(
+            icon_button_builder("ht-add", *p, IconName::Plus)
+                .variant(ButtonVariant::Outlined)
+                .size(ButtonSize::Sm)
+                .label("Add forward")
+                .render()
+                .w_full()
+                .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                    cx.emit(HostManagerEvent::EditForward {
+                        host_id: add_host.clone(),
+                        edit: None,
+                    })
+                })),
+        )
+        .into_any_element()
+    }
+
+    /// One saved forward: label, live state + bound port, auto-start toggle and
+    /// Edit / Start-Stop / Delete buttons.
+    fn forward_row(
+        &self,
+        host_id: &str,
+        index: usize,
+        forward: &SavedForward,
+        all: &[HostForwards],
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> SettingsRow {
+        let id = forward.id.clone();
+        let spec = forward.clone().into_spec(host_id);
+        let live = self.forward_states.get(&ForwardId(id.clone()));
+        let running = live.is_some_and(|l| {
+            matches!(
+                l.state,
+                ForwardState::Starting
+                    | ForwardState::Active
+                    | ForwardState::Reconnecting { .. }
+                    | ForwardState::AwaitingInput(_)
+            )
+        });
+        let dot = match live.map(|l| &l.state) {
+            Some(ForwardState::Active) => p.success,
+            Some(ForwardState::Starting | ForwardState::Reconnecting { .. }) => p.warning,
+            Some(ForwardState::AwaitingInput(_)) => p.info,
+            Some(ForwardState::Failed { .. }) => p.error,
+            _ => p.muted,
+        };
+        let state_text = live
+            .and_then(|l| l.bound_port.filter(|_| running))
+            .map(|port| SharedString::from(format!(":{port}")));
+        let title = forward
+            .name
+            .clone()
+            .unwrap_or_else(|| labonair_forwards::route_label(&spec));
+        let description = format!(
+            "{} \u{00B7} {}",
+            labonair_forwards::kind_name(forward.kind),
+            labonair_forwards::route_label(&spec)
+        );
+        let conflicts = labonair_forwards::listen_conflicts(all, host_id, forward);
+        let view = cx.entity();
+        let toggle_view = view.clone();
+        let toggle_id = id.clone();
+        let (edit_host, edit_forward) = (host_id.to_string(), forward.clone());
+        let (act_host, act_id) = (host_id.to_string(), id.clone());
+        let mut row = settings_row(SharedString::from(format!("fwd-{index}")), *p, title)
+            .description(SharedString::from(description));
+        if !conflicts.is_empty() {
+            row = row.extra(
+                div()
+                    .text_size(p.control_space(11.0))
+                    .text_color(p.warning)
+                    .child(SharedString::from(conflicts.join("; "))),
+            );
+        }
+        row.control(
+            h_stack()
+                .items_center()
+                .gap(p.space(8.0))
+                .child(indicator(IndicatorSize::Sm, dot))
+                .when_some(state_text, |d, text| {
+                    d.child(
+                        div()
+                            .text_size(p.control_space(11.0))
+                            .text_color(p.muted)
+                            .child(text),
+                    )
+                })
+                .child(
+                    switch(
+                        SharedString::from(format!("fwd-auto-{index}")),
+                        *p,
+                        forward.auto_start,
+                    )
+                    .on_click(move |next: &bool, _w, cx| {
+                        let (next, toggle_id) = (*next, toggle_id.clone());
+                        toggle_view.update(cx, |this, cx| {
+                            if let Some(f) = this
+                                .form
+                                .as_mut()
+                                .and_then(|f| f.forwards.iter_mut().find(|f| f.id == toggle_id))
+                            {
+                                f.auto_start = next;
+                            }
+                            this.schedule_autosave(cx);
+                        });
+                    }),
+                )
+                .child(
+                    icon_button_builder(
+                        SharedString::from(format!("fwd-edit-{index}")),
+                        *p,
+                        IconName::Pencil,
+                    )
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .tooltip("Edit forward")
+                    .render()
+                    .on_click(cx.listener(
+                        move |_this, _: &ClickEvent, _w, cx| {
+                            cx.emit(HostManagerEvent::EditForward {
+                                host_id: edit_host.clone(),
+                                edit: Some(edit_forward.clone()),
+                            })
+                        },
+                    )),
+                )
+                .child(
+                    icon_button_builder(
+                        SharedString::from(format!("fwd-run-{index}")),
+                        *p,
+                        if running {
+                            IconName::Stop
+                        } else {
+                            IconName::PlayFilled
+                        },
+                    )
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .tooltip(if running {
+                        "Stop forward"
+                    } else {
+                        "Start forward"
+                    })
+                    .render()
+                    .on_click(cx.listener(
+                        move |_this, _: &ClickEvent, _w, cx| {
+                            cx.emit(HostManagerEvent::ForwardAction {
+                                host_id: act_host.clone(),
+                                forward_id: act_id.clone(),
+                                action: if running {
+                                    ForwardAction::Stop
+                                } else {
+                                    ForwardAction::Start
+                                },
+                            })
+                        },
+                    )),
+                )
+                .child(
+                    icon_button_builder(
+                        SharedString::from(format!("fwd-del-{index}")),
+                        *p,
+                        IconName::Trash,
+                    )
+                    .variant(ButtonVariant::Subtle)
+                    .size(ButtonSize::IconSm)
+                    .shape(IconButtonShape::Square)
+                    .tooltip("Delete forward")
+                    .render()
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            if let Some(form) = this.form.as_mut() {
+                                form.forwards.retain(|f| f.id != id);
+                            }
+                            this.schedule_autosave(cx);
+                        },
+                    )),
+                ),
+        )
     }
 }
 
@@ -2279,11 +2425,12 @@ impl HostManagerView {
                     .find(|h| h.id == *id)
                     .map(|h| h.name.clone())
                     .unwrap_or_default();
-                (
-                    "Delete host?",
-                    format!("\u{201c}{name}\u{201d} and its stored passwords will be removed. This can't be undone."),
-                    confirm.clone(),
-                )
+                let mut body = format!("\u{201c}{name}\u{201d} and its stored passwords will be removed. This can't be undone.");
+                let users = dependents_of_jump(&self.hosts, id);
+                if !users.is_empty() {
+                    body.push_str(&format!(" Used as jump host by: {}.", users.join(", ")));
+                }
+                ("Delete host?", body, confirm.clone())
             }
             Confirm::DeleteCredential(id) => {
                 let used = self
@@ -2395,6 +2542,25 @@ mod tests {
         assert!(valid_optional_number(""));
         assert!(valid_optional_number("30"));
         assert!(!valid_optional_number("-1"));
+    }
+
+    #[test]
+    fn jump_depth_and_dependents() {
+        let hosts = vec![host("a", None), host("b", Some("a")), host("c", Some("b"))];
+        assert_eq!(jump_depth(&hosts, "a"), 1);
+        assert_eq!(jump_depth(&hosts, "c"), 3);
+        assert_eq!(dependents_of_jump(&hosts, "a"), vec!["b".to_string()]);
+        assert!(dependents_of_jump(&hosts, "c").is_empty());
+        let chain: Vec<Host> = (0..9)
+            .map(|i| {
+                host(
+                    &format!("h{i}"),
+                    (i > 0).then(|| format!("h{}", i - 1)).as_deref(),
+                )
+            })
+            .collect();
+        assert!(jump_depth(&chain, "h8") > MAX_JUMP_HOPS);
+        assert!(jump_depth(&chain, "h7") <= MAX_JUMP_HOPS);
     }
 
     #[test]

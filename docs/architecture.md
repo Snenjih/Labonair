@@ -108,7 +108,7 @@ The workspace has the crates below (verify with `ls crates/` and `scripts/crate-
 | Backgrounds | `labonair-background` | `-background-host` | Background-image settings, catalog, persistence, decoding, rendering, and its own settings editor. |
 | Terminal | `labonair-terminal` | `-terminal-core` (GPUI-free engine/PTY), `-terminal-host` (detached session host, daemon `labonair-host`, [ADR 0009](adr/0009-detached-session-host.md)), `-terminal-integration` | PTY sessions, engine, renderer, terminal commands. |
 | Editor | `labonair-editor` | `-editor-ui` | Buffers, syntax, editing behavior, commands; the UI sibling holds the GPUI view. |
-| SSH | `labonair-ssh` | `-ssh-transport` | UI-free session, PTY, trust, remote-command, tunnel, tester, and SSH-config contracts; the sibling owns russh transport, auth, tunnels, jump hosts. |
+| SSH | `labonair-ssh` | `-ssh-transport` | UI-free session, PTY, trust, remote-command, port-forward, tester, and SSH-config contracts; the sibling owns russh transport, auth, the forward engine, multi-hop jump chains and the prompt broker. |
 | SFTP | `labonair-sftp` | `-sftp-ssh` | Authenticated session handle and remote-browser contracts; sibling owns concrete session setup and service adapters. |
 | Hosts | `labonair-hosts` | `-hosts-ui`, `-hosts-host` | Saved hosts, recent hosts, import/export, management UI. |
 | Credentials | `labonair-credentials` | — | Credential metadata, secret references, generated SSH key material. |

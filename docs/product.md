@@ -48,5 +48,6 @@ No feature adds a new permanent global strip, badge row, or shell toolbar withou
 - The titlebar global menu exposes Keymap, Themes, Icon Themes, and Hosts. Host management is the Hosts owner's full-page surface on the Settings `Hosts` page (below Keymap, [ADR 0007](adr/0007-hosts-settings-page.md)); host selection stays a palette submenu.
 - Notifications are retained entries in the statusbar dropdown. Producers may opt into a brief toast for selected events; the toast and dropdown share the same entry and actions ([ADR 0011](adr/0011-actionable-notification-presentations.md)).
 - Transfers are a statusbar item with progress and history.
-- Jump hosts are part of connection configuration and execution, not a standalone menu.
+- Jump hosts (multi-hop chains, [ADR 0016](adr/0016-multi-hop-jump-routes-and-port-forwards.md)) are part of connection configuration and execution, not a standalone menu or statusbar item; the route is shown on the connection (tab title, hover, loading screen) and reachable from the palette.
+- Port forwards (local, remote, dynamic) are a first-class capability with a statusbar item that appears only while forwards exist, palette commands, and per-host saved forwards.
 - AI and agent workflows follow the same owner-first design as other capabilities.

@@ -18,7 +18,7 @@
 use std::{rc::Rc, sync::Arc};
 
 use gpui::{App, AppContext, Context, Entity, PathPromptOptions, Window, WindowBounds};
-use labonair_hosts_ui::{HostManagerEvent, HostManagerView};
+use labonair_hosts_ui::{ForwardAction, HostManagerEvent, HostManagerView};
 use labonair_mcp_core::{
     preferences::McpPreferences, McpEventSource, McpSessionAccessService, McpTabOperationService,
 };
@@ -29,8 +29,8 @@ use labonair_mcp_server::{
 use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
-    SshConfigService, SshConnectionService, SshConnectionTester, SshEventSource, SshPtyService,
-    SshRemoteCommandService, SshRemoteFileService, SshTunnelService,
+    SshConfigService, SshConnectionService, SshConnectionTester, SshEventSource, SshForwardService,
+    SshPtyService, SshRemoteCommandService, SshRemoteFileService,
 };
 use labonair_terminal::TerminalRegistry;
 use labonair_transfers::{TransferEventSource, TransferService};
@@ -167,6 +167,28 @@ fn new_project_space_picker(workspace: Entity<Workspace>, cx: &mut Context<AppSh
 /// Rebuild the AI live-bridge [`LiveSnapshot`] from the current workspace +
 /// explorer state. Called event-driven (T17-006) from `cx.observe` on the
 /// workspace + explorer, instead of every frame.
+/// Open the forwards popover, or the editor when there are no forwards (the
+/// statusbar item is hidden then).
+fn manage_forwards(
+    forwards_view: &Entity<labonair_forwards_ui::ForwardsView>,
+    workspace: &Entity<Workspace>,
+    cx: &mut Context<AppShell>,
+) {
+    if forwards_view.read(cx).rows().is_empty() {
+        workspace.update(cx, |w, cx| {
+            w.handle_forwards_event(
+                labonair_forwards::ForwardsUiEvent::New {
+                    host_id: None,
+                    quick: None,
+                },
+                cx,
+            )
+        });
+    } else {
+        forwards_view.update(cx, |v, cx| v.request_open(cx));
+    }
+}
+
 pub(crate) fn refresh_live_snapshot(
     workspace: &Entity<Workspace>,
     explorer: &Entity<ExplorerView>,
@@ -265,7 +287,7 @@ pub(crate) fn bootstrap(
     let ssh_pty_service: Arc<dyn SshPtyService> = Arc::new(routed.clone());
     let ssh_remote_service: Arc<dyn SshRemoteCommandService> = Arc::new(routed.clone());
     let ssh_remote_file_service: Arc<dyn SshRemoteFileService> = Arc::new(routed.clone());
-    let ssh_tunnel_service: Arc<dyn SshTunnelService> = Arc::new(routed.clone());
+    let ssh_forward_service: Arc<dyn SshForwardService> = Arc::new(routed.clone());
     let ssh_tester: Arc<dyn SshConnectionTester> = Arc::new(
         labonair_ssh_transport::contract::SshConnectionTesterAdapter::new(
             composition.trust().clone(),
@@ -346,7 +368,7 @@ pub(crate) fn bootstrap(
             ssh_pty_service.clone(),
             ssh_remote_service.clone(),
             ssh_remote_file_service.clone(),
-            ssh_tunnel_service.clone(),
+            ssh_forward_service.clone(),
             sftp_session_service.clone(),
             sftp_browser_service.clone(),
             git_service.clone(),
@@ -377,7 +399,7 @@ pub(crate) fn bootstrap(
                     },
                     {
                         let hm = hm.clone();
-                        move |id, cx| hm.read(cx).jump_host_label(id)
+                        move |id, cx| hm.read(cx).route_labels(id)
                     },
                     {
                         let hm = hm.clone();
@@ -393,8 +415,18 @@ pub(crate) fn bootstrap(
                             hm.update(cx, |h, cx| h.set_status(id, status, cx));
                         }
                     },
-                    move |rows, cx| {
-                        hm.update(cx, |h, cx| h.set_active_tunnels(rows, cx));
+                    {
+                        let hm = hm.clone();
+                        move |states, cx| {
+                            hm.update(cx, |h, cx| h.set_forward_states(states, cx));
+                        }
+                    },
+                    {
+                        let hm = hm.clone();
+                        move |host_id, cx| hm.read(cx).saved_forwards(host_id)
+                    },
+                    move |host_id, forward, cx| {
+                        hm.update(cx, |h, cx| h.save_forward(host_id, forward, cx));
                     },
                 )
             },
@@ -405,12 +437,12 @@ pub(crate) fn bootstrap(
         )
     });
     workspace.update(cx, |workspace, cx| workspace.start_shared_storage(cx));
+    let forwards_view = cx.new(|_| labonair_forwards_ui::ForwardsView::new());
     // Workspace emits intent for cross-surface navigation it can't present
     // itself (the project-folder picker is a native OS dialog).
-    cx.subscribe_in(
-        &workspace,
-        window,
-        |this, _, event: &WorkspaceEvent, _window, cx| match event {
+    cx.subscribe_in(&workspace, window, {
+        let forwards_view = forwards_view.clone();
+        move |this, _, event: &WorkspaceEvent, _window, cx| match event {
             WorkspaceEvent::OpenProject => open_project_picker(this.workspace.clone(), cx),
             WorkspaceEvent::NewProjectSpace => new_project_space_picker(this.workspace.clone(), cx),
             WorkspaceEvent::OpenHosts => {
@@ -419,9 +451,20 @@ pub(crate) fn bootstrap(
             WorkspaceEvent::OpenLanguagePicker => {
                 this.show_command_palette(Some(PalettePage::EditorLanguage), _window, cx)
             }
+            WorkspaceEvent::OpenForwardEditor {
+                host_id,
+                quick,
+                edit,
+            } => {
+                this.open_forward_editor(host_id.clone(), quick.clone(), edit.clone(), _window, cx)
+            }
+            WorkspaceEvent::ManageForwards => manage_forwards(&forwards_view, &this.workspace, cx),
+            WorkspaceEvent::OpenForwardPrompt(id) => {
+                this.open_forward_prompt(id.clone(), _window, cx)
+            }
             WorkspaceEvent::DiffCursorFile(_) => {}
-        },
-    )
+        }
+    })
     .detach();
     // Shell re-render on workspace change — keeps the `.when(can_split)` action
     // bindings in `render` in sync with the active tab.
@@ -441,6 +484,36 @@ pub(crate) fn bootstrap(
             workspace.update(cx, |workspace, cx| {
                 workspace.refresh_sftp_after_transfer(session_id, *direction, cx);
             });
+        }
+    })
+    .detach();
+
+    // Forwards statusbar item: the workspace snapshot feeds the view; the
+    // view's typed requests are performed by the workspace (ADR 0016).
+    cx.subscribe(&forwards_view, {
+        let workspace = workspace.clone();
+        move |_this, _view, event: &labonair_forwards::ForwardsUiEvent, cx| {
+            // The popover footer ("Manage in Hosts") opens the Hosts page.
+            if matches!(event, labonair_forwards::ForwardsUiEvent::Manage { .. }) {
+                labonair_settings_ui::open_settings_window(Some("hosts"), cx);
+                return;
+            }
+            workspace.update(cx, |w, cx| w.handle_forwards_event(event.clone(), cx));
+        }
+    })
+    .detach();
+    cx.observe_in(&workspace, window, |this, _, window, cx| {
+        this.sync_forward_prompt_modal(window, cx)
+    })
+    .detach();
+    cx.observe(&workspace, {
+        let forwards_view = forwards_view.clone();
+        move |_this, workspace, cx| {
+            let rows = {
+                let w = workspace.read(cx);
+                labonair_forwards_ui::build_rows(w.forwards(), |id| w.forward_host_label(id, cx))
+            };
+            forwards_view.update(cx, |view, cx| view.set_rows(rows, cx));
         }
     })
     .detach();
@@ -531,10 +604,40 @@ pub(crate) fn bootstrap(
     }
     cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
     let main_window = window.window_handle();
+    let forwards_for_manage = forwards_view.clone();
     cx.subscribe(
         &host_manager,
         move |this, _, event: &HostManagerEvent, cx| {
-            let HostManagerEvent::Open(request) = event;
+            let request = match event {
+                HostManagerEvent::Open(request) => request,
+                HostManagerEvent::ForwardAction {
+                    forward_id, action, ..
+                } => {
+                    let id = labonair_ssh::ForwardId(forward_id.clone());
+                    let event = match action {
+                        ForwardAction::Start => labonair_forwards::ForwardsUiEvent::Toggle(id),
+                        ForwardAction::Stop => labonair_forwards::ForwardsUiEvent::Close(id),
+                    };
+                    this.workspace
+                        .update(cx, |w, cx| w.handle_forwards_event(event, cx));
+                    return;
+                }
+                HostManagerEvent::EditForward { host_id, edit } => {
+                    this.workspace.update(cx, |w, cx| {
+                        w.request_forward_editor(host_id.clone(), edit.clone(), cx)
+                    });
+                    return;
+                }
+                HostManagerEvent::ForwardsSaved { host_id, forwards } => {
+                    this.workspace
+                        .update(cx, |w, cx| w.apply_saved_forwards(host_id, forwards, cx));
+                    return;
+                }
+                HostManagerEvent::ManageForwards { .. } => {
+                    manage_forwards(&forwards_for_manage, &this.workspace, cx);
+                    return;
+                }
+            };
             this.workspace.update(cx, |workspace, cx| {
                 workspace.enqueue_host_request(request.clone(), cx)
             });
@@ -661,6 +764,10 @@ pub(crate) fn bootstrap(
     // that cross an entity boundary (for example opening a host in the
     // workspace). It does not decode feature-specific action variants.
     labonair_workspace::command_provider::register_palette_action_handlers(
+        command_registry.palette_action_handlers_mut(),
+        &workspace,
+    );
+    labonair_workspace::command_provider::register_forwards_palette_handlers(
         command_registry.palette_action_handlers_mut(),
         &workspace,
     );
@@ -939,6 +1046,7 @@ pub(crate) fn bootstrap(
         &updater,
         &agent_access,
         &transfers,
+        &forwards_view,
         cx,
     );
     let status_bar = cx.new(|cx| StatusBar::new(workspace.clone(), theme.clone(), cx));

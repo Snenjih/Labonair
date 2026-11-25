@@ -221,9 +221,10 @@ pub async fn sftp_connect(
     };
 
     // Resolve jump host fields (if any) — same helper the terminal path uses.
-    let jump = match jump_host_id.as_deref() {
-        Some(jid) => Some(client::resolve_jump_host(hosts_db, secrets, jid)?),
-        None => None,
+    let jump = if jump_host_id.is_some() {
+        client::resolve_jump_chain(hosts_db, secrets, &host_id, None)?
+    } else {
+        Vec::new()
     };
 
     let result = sftp_connect_inner(
@@ -277,7 +278,7 @@ async fn sftp_connect_inner(
     keep_alive_tries: Option<i64>,
     default_path_sftp: Option<String>,
     password: Option<String>,
-    jump: Option<client::JumpHostParams>,
+    jump: Vec<client::JumpHostParams>,
     existing: Option<Arc<RushSession>>,
     state: SshState,
     trust_state: TrustState,

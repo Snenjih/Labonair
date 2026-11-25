@@ -60,7 +60,7 @@ impl Workspace {
                 host_id.clone(),
                 label.to_string(),
                 ConnectionKind::Sftp,
-                None,
+                Vec::new(),
                 cx,
             );
         });
@@ -108,6 +108,7 @@ impl Workspace {
             .and_then(|view| view.read(cx).sftp_handle());
         self.sftp_views.remove(&pane);
         if let Some(session_id) = self.sftp_sessions.remove(&pane) {
+            self.stop_tunnels(&session_id);
             self.ssh_connection
                 .update(cx, |s, cx| s.remove(&session_id, cx));
             let sftp = self.sftp_session.clone();
